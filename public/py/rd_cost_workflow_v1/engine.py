@@ -1589,6 +1589,90 @@ def locate_summary_source(ledger_paths: list[Path]) -> tuple[Path, str] | None:
     return None
 
 
+def has_ledger_layout(path: Path) -> bool:
+    """判断工作簿是否含凭证明细结构，不依赖文件名或工作表名称。"""
+    wb = load_workbook(path, data_only=True, read_only=False)
+    for ws in wb.worksheets:
+        for row in range(1, min(ws.max_row, 30) + 1):
+            headers = cell_texts(ws, row, 80)
+            if "摘要" in headers and ("借方" in headers or "贷方" in headers):
+                return True
+    return False
+
+
+def has_combination_layout(path: Path) -> bool:
+    """判断工作簿是否含核算维度与项目组合结构，不依赖文件名。"""
+    wb = load_workbook(path, data_only=True, read_only=False)
+    for ws in wb.worksheets:
+        for row in range(1, min(ws.max_row, 100) + 1):
+            headers = cell_texts(ws, row, 100)
+            if "费用项目" in headers and "研发项目" in headers:
+                return True
+    return False
+
+
+def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
+    """根据表结构归类上传文件；文件名和工作表名称均不作为判断条件。"""
+    roles: dict[str, list[Path]] = {
+        "hours": [],
+        "combination": [],
+        "salary": [],
+        "dimension_ledger": [],
+        "expense_ledgers": [],
+    }
+    unknown: list[Path] = []
+    for path in paths:
+        if locate_summary_source([path]) is not None:
+            roles["dimension_ledger"].append(path)
+            continue
+        try:
+            _, hours_result, _ = calculate_hours(path, OrderedDict())
+            if hours_result.get("people"):
+                roles["hours"].append(path)
+                continue
+        except RuleError:
+            pass
+        try:
+            salary_rows, _, _ = read_salary(path)
+            if salary_rows:
+                roles["salary"].append(path)
+                continue
+        except RuleError:
+            pass
+        if has_ledger_layout(path):
+            roles["expense_ledgers"].append(path)
+            continue
+        if has_combination_layout(path):
+            roles["combination"].append(path)
+            continue
+        unknown.append(path)
+
+    missing = [label for label in ("工时表", "项目组合表", "工资表", "核算维度明细账") if not roles[
+        {"工时表": "hours", "项目组合表": "combination", "工资表": "salary", "核算维度明细账": "dimension_ledger"}[label]
+    ]]
+    duplicates = [label for label, key in {
+        "工时表": "hours", "项目组合表": "combination", "工资表": "salary", "核算维度明细账": "dimension_ledger",
+    }.items() if len(roles[key]) > 1]
+    if missing or duplicates or unknown or not roles["expense_ledgers"]:
+        messages: list[str] = []
+        if missing:
+            messages.append("未识别到" + "、".join(missing))
+        if duplicates:
+            messages.append("识别到多份" + "、".join(duplicates))
+        if not roles["expense_ledgers"]:
+            messages.append("未识别到费用明细账")
+        if unknown:
+            messages.append("无法归类：" + "、".join(path.name for path in unknown))
+        raise RuleError("；".join(messages) + "。请上传表结构完整且各类别唯一的工作簿")
+    return {
+        "hours": roles["hours"][0],
+        "combination": roles["combination"][0],
+        "salary": roles["salary"][0],
+        "dimension_ledger": roles["dimension_ledger"][0],
+        "expense_ledgers": roles["expense_ledgers"],
+    }
+
+
 def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str]]:
     """只读取核算维度明细账中的项目分类汇总表。
 
