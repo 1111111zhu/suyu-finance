@@ -1,7 +1,6 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 
 type InputSet = {
   hours: File | null;
@@ -192,9 +191,15 @@ json.dumps(result, ensure_ascii=False, default=str)
       engine.current.globals.delete("ledger_paths_json");
       const result = JSON.parse(String(resultText)) as RunSummary;
       const output = engine.current.FS.readFile("/work/研发成本测算结果.xlsx");
-      const verification = XLSX.read(output, { type: "array" });
-      if (!verification.SheetNames.includes("2.直接人工")) throw new Error("导出复核失败：缺少“2.直接人工”工作表。");
-      if (verification.SheetNames.at(-1) !== "2.直接人工") throw new Error("导出复核失败：“2.直接人工”不是最后一张工作表。");
+      const verificationText = await engine.current.runPythonAsync(`
+import json
+from openpyxl import load_workbook
+verification_book = load_workbook("/work/研发成本测算结果.xlsx", read_only=True, data_only=False)
+json.dumps(verification_book.sheetnames, ensure_ascii=False)
+`);
+      const sheetNames = JSON.parse(String(verificationText)) as string[];
+      if (!sheetNames.includes("2.直接人工")) throw new Error("导出复核失败：缺少“2.直接人工”工作表。");
+      if (sheetNames.at(-1) !== "2.直接人工") throw new Error("导出复核失败：“2.直接人工”不是最后一张工作表。");
       const blob = new Blob([output], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
