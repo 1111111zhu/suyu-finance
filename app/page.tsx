@@ -88,15 +88,13 @@ async function initializeEngine(): Promise<PyodideLike> {
   await copyAsset(pyodide, "/py/rd_hours_v1/engine.py", "/app/rule_packages/rd_hours_v1/engine.py");
   await copyAsset(pyodide, "/py/rd_hours_v1/rules.yaml", "/app/rule_packages/rd_hours_v1/rules.yaml");
   await copyAsset(pyodide, "/py/output_template.xlsx", "/app/rule_packages/rd_cost_workflow_v1/templates/研发成本输出模板.xlsx");
-
-  await pyodide.loadPackage(["micropip", "pyyaml"]);
-  await pyodide.runPythonAsync(`
-import micropip
-await micropip.install("openpyxl")
-`);
+  await copyAsset(pyodide, "/py/vendor.zip", "/app/vendor.zip");
   await pyodide.runPythonAsync(`
 import sys
+sys.path.insert(0, "/app/vendor.zip")
 sys.path.insert(0, "/app/rule_packages")
+import openpyxl
+import yaml
 `);
   return pyodide;
 }
