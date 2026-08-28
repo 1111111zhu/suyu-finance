@@ -31,7 +31,7 @@ from rd_hours_v1 import engine as hours_engine
 import yaml
 
 
-PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋其他费用）", "version": "2.0"}
+PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋其他费用）", "version": "2.1"}
 MONEY = Decimal("0.01")
 TOLERANCE = Decimal("0.000001")
 PROJECT_RE = re.compile(r"^RD[0-9A-Z]+(?:-[0-9A-Z]+)*$", re.I)
@@ -1094,6 +1094,12 @@ def copy_summary_to_template(wb: Any, summary_source: tuple[Path, str], month: i
     ws = safe_sheet(wb, old_name)
     if new_name != old_name:
         ws.title = new_name
+        # 费用页的预置公式引用月份汇总页；仅随允许的月份页更名同步更新引用。
+        for formula_ws in wb.worksheets:
+            for row in formula_ws.iter_rows():
+                for cell in row:
+                    if isinstance(cell.value, str) and cell.value.startswith("=") and old_name in cell.value:
+                        cell.value = cell.value.replace(old_name, new_name)
     source_path, source_sheet = summary_source
     source_book = load_workbook(source_path, data_only=True, read_only=False)
     source = source_book[source_sheet]
@@ -1167,17 +1173,139 @@ def write_template_hours_sheets(
         for col in range(3, max_input_col + 1):
             ws.cell(row, col).number_format = "0.00"
 
-    # H:J43:60 是固定模板中费用页公式引用的项目工时分配率预留区。
-    for row in range(43, 61):
+    # H:J43:60 是固定模板中费用页公式引用的18个项目工时分配率预留区；
+    # 合计行固定在第61行。即使本次项目少于18个，也不能把合计提前写入
+    # J57 等仍被费用页公式引用的项目行，否则会把全部费用错误分配给该行。
+    for row in range(43, 62):
         for col in range(8, 11):
-            ws.cell(row, col).value = None
+            cell = ws.cell(row, col)
+            if not isinstance(cell, MergedCell):
+                cell.value = None
     write_values(ws, 42, ["项目编码", "科目名称", "工时分配率"], start_col=8)
     for row, code in enumerate(project_codes, start=43):
         write_values(ws, row, [code, projects[code].name, float(projects[code].rate)], start_col=8)
         ws.cell(row, 10).number_format = "0.00%"
-    rate_total_row = 43 + len(project_codes)
+    rate_total_row = 61
     write_values(ws, rate_total_row, ["合计", None, float(sum((projects[code].rate for code in project_codes), Decimal("0")))], start_col=8)
     ws.cell(rate_total_row, 10).number_format = "0.00%"
+
+
+def standard_fee_allocation_table(ws: Any) -> tuple[int, list[int], int] | None:
+    """定位模板中既有的“项目编码、科目名称、N月费用合计”预留表。"""
+    for row in range(1, ws.max_row + 1):
+        if norm(ws.cell(row, 1).value) != "项目编码" or norm(ws.cell(row, 2).value) != "科目名称":
+            continue
+        if "费用合计" not in norm(ws.cell(row, 3).value):
+            continue
+        data_rows: list[int] = []
+        total_row = 0
+        for candidate in range(row + 1, ws.max_row + 1):
+            label = norm(ws.cell(candidate, 1).value)
+            if label == "合计":
+                total_row = candidate
+                break
+            if PROJECT_RE.fullmatch(code_key(label)):
+                data_rows.append(candidate)
+        if data_rows and total_row:
+            return row, data_rows, total_row
+    return None
+
+
+def write_static_fee_allocation_table(
+    ws: Any,
+    fee_name: str,
+    month: int,
+    projects: OrderedDict[str, Project],
+    project_totals: dict[str, Decimal],
+) -> bool:
+    """向模板已预留但没有公式的费用分配表写入本次计算结果。
+
+    已有正确公式的费用页保持公式不变；没有公式的费用页才回填既有的金额
+    单元格。这样既覆盖所有“其他”科目，也不改变固定模板的公式结构。
+    """
+    table = standard_fee_allocation_table(ws)
+    if table is None:
+        return False
+    header_row, data_rows, total_row = table
+    ws.cell(header_row, 3).value = f"{month or 1}月费用合计"
+    data_cells = [ws.cell(row, 3) for row in data_rows]
+    if any(isinstance(cell.value, str) and cell.value.startswith("=") for cell in data_cells):
+        for cell in data_cells:
+            cell.number_format = "#,##0.00"
+        ws.cell(total_row, 3).number_format = "#,##0.00"
+        return True
+
+    assigned_codes: set[str] = set()
+    for row in data_rows:
+        code = code_key(ws.cell(row, 1).value)
+        amount = Decimal("0")
+        # 同一模板可能有同编码、不同名称的历史槽位；一个当前项目只能进入
+        # 首个对应槽位，避免把费用重复写入两行。
+        if code in projects and code not in assigned_codes:
+            amount = money(project_totals.get(code, Decimal("0")))
+            assigned_codes.add(code)
+        cell = ws.cell(row, 3)
+        cell.value = float(amount)
+        cell.number_format = "#,##0.00"
+    ws.cell(total_row, 3).number_format = "#,##0.00"
+    return True
+
+
+def write_freight_allocation_table(
+    ws: Any,
+    projects: OrderedDict[str, Project],
+    project_totals: dict[str, Decimal],
+) -> bool:
+    """回填运费页原有的“项目编号/工时/分配率/费用”预留表。"""
+    header_row = 0
+    start_col = 0
+    for row in range(1, ws.max_row + 1):
+        for col in range(1, ws.max_column - 3):
+            labels = [norm(ws.cell(row, col + offset).value) for offset in range(4)]
+            if labels == ["项目编号", "工时合计", "工时分配率", "费用"]:
+                header_row, start_col = row, col
+                break
+        if header_row:
+            break
+    if not header_row:
+        return False
+    formula_col = start_col + 4
+    rows = [
+        row for row in range(header_row + 1, ws.max_row + 1)
+        if isinstance(ws.cell(row, formula_col).value, str) and ws.cell(row, formula_col).value.startswith("=")
+    ]
+    if not rows:
+        return False
+    total = money(sum(project_totals.values(), Decimal("0")))
+    ordered_projects = list(projects.values())
+    for index, row in enumerate(rows):
+        project = ordered_projects[index] if index < len(ordered_projects) else None
+        for col in range(start_col, start_col + 4):
+            ws.cell(row, col).value = None
+        if project is not None:
+            write_values(ws, row, [project.code, float(project.final_hours), float(project.rate), float(total)], start_col=start_col)
+            ws.cell(row, start_col + 1).number_format = "0.00"
+            ws.cell(row, start_col + 2).number_format = "0.0000%"
+            ws.cell(row, start_col + 3).number_format = "#,##0.00"
+        ws.cell(row, formula_col).number_format = "#,##0.00"
+    return True
+
+
+def write_template_other_fee_allocations(
+    wb: Any,
+    projects: OrderedDict[str, Project],
+    master_costs: dict[str, dict[str, Decimal]],
+    month: int,
+) -> None:
+    """用核算维度汇总结果回填所有20类其他费用页的既有分配表。"""
+    for rule in COST_RULES["fee_items"]:
+        ws = safe_sheet(wb, rule["detail_sheet"])
+        totals = master_costs[norm(rule["master_header"])]
+        written = write_static_fee_allocation_table(ws, rule["name"], month, projects, totals)
+        if not written and rule["code"] == code_key("FYXM02_SYS"):
+            written = write_freight_allocation_table(ws, projects, totals)
+        if not written:
+            raise RuleError(f"固定模板的{ws.title}缺少费用分配结果预留区域")
 
 
 def project_amounts_from_records(records: list[LedgerRecord]) -> dict[str, Decimal]:
@@ -1433,18 +1561,16 @@ def write_template_output(
         copy_summary_to_template(wb, summary_source, month)
     write_template_detail_sheet(wb, output_year(effective_records))
     write_template_hours_sheets(wb, hours_result, projects)
-    for rule in COST_RULES["fee_items"]:
-        ws = safe_sheet(wb, rule["detail_sheet"])
-        detail_records = [
-            record for record in effective_records
-            if record.fee_code == rule["code"] and record.source_kind == "ledger"
-        ]
-        write_template_expense_source(ws, detail_records, month)
+    # 不再写入或清空各费用页上方的原始明细账区。其他费用完全以核算维度
+    # 明细账的项目分类汇总为数据源，只回填模板下方既有的分配结果表。
+    write_template_other_fee_allocations(wb, projects, master_costs, month)
     write_template_labor_sheet(wb, projects, labor_totals, month)
     expected = [f"项目分类明细汇总表{month or 1}月" if name == TEMPLATE_MONTH_SHEET else name for name in original_sheets]
     if wb.sheetnames != expected:
         raise RuleError("输出工作表与固定模板不一致")
     assert_formula_errors_cleared(wb)
+    # 费用页分配表保留模板公式；下载后用自动计算和强制全量重算刷新其结果。
+    wb.calculation.calcMode = "auto"
     wb.calculation.fullCalcOnLoad = True
     wb.calculation.forceFullCalc = True
     wb.save(output_path)
@@ -1541,14 +1667,32 @@ def locate_summary_source(ledger_paths: list[Path]) -> tuple[Path, str] | None:
     return None
 
 
+def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str]]:
+    """只读取核算维度明细账中的项目分类汇总表。
+
+    “其他”费用的金额来源固定为这张汇总表；各费用页中的明细账区仅保留
+    固定模板原貌，页面下方的项目分配表才是本次输出的承载位置。因此不接收
+    运费、折旧等单独明细账，也不以它们做期间勾稽或覆盖汇总金额。
+    """
+    summary_source = locate_summary_source([path])
+    if summary_source is None:
+        raise RuleError("核算维度明细账缺少“项目分类明细汇总表N月”，无法测算其他费用")
+    source_book = load_workbook(path, data_only=True, read_only=False)
+    source_ws = source_book[summary_source[1]]
+    records, month = parse_summary_sheet(path, source_ws, warnings)
+    if records is None or not records:
+        raise RuleError("核算维度明细账的项目分类汇总表未识别到可测算的费用项目")
+    return records, month, summary_source
+
+
 def build_output(
     hours_path: Path,
     combination_path: Path,
     salary_path: Path,
-    ledger_paths: list[Path],
+    dimension_ledger_path: Path,
     output_path: Path,
 ) -> dict[str, Any]:
-    source_paths = [hours_path, combination_path, salary_path, *ledger_paths]
+    source_paths = [hours_path, combination_path, salary_path, dimension_ledger_path]
     if any(output_path.resolve() == source_path.resolve() for source_path in source_paths):
         raise RuleError("输入文件只读保留，结果必须保存为新的工作簿")
     warnings: list[str] = []
@@ -1583,15 +1727,9 @@ def build_output(
     for code in projects:
         labor_totals.setdefault(code, Decimal("0"))
 
-    parsed_records: list[LedgerRecord] = []
-    ledger_month = 0
-    for path in ledger_paths:
-        records, month, _ = parse_ledger_file(path, warnings)
-        parsed_records.extend(records)
-        ledger_month = ledger_month or month
+    parsed_records, ledger_month, summary_source = read_dimension_summary_workbook(dimension_ledger_path, warnings)
     month = ledger_month or salary_month or 1
-    summary_source = locate_summary_source(ledger_paths)
-    effective_records = select_effective_records(parsed_records, month)
+    effective_records = parsed_records
 
     records_by_fee: dict[str, list[LedgerRecord]] = defaultdict(list)
     for record in effective_records:
@@ -1660,7 +1798,7 @@ def main(argv: list[str] | None = None) -> int:
     references: dict[str, list[Path]] = defaultdict(list)
     for key, value in args.reference_input:
         references[key].append(Path(value))
-    missing = [key for key in ("combination_file", "salary_file", "ledger_files") if not references.get(key)]
+    missing = [key for key in ("combination_file", "salary_file", "dimension_ledger") if not references.get(key)]
     if missing:
         print("缺少输入：" + "、".join(missing), file=sys.stderr)
         return 2
@@ -1669,7 +1807,7 @@ def main(argv: list[str] | None = None) -> int:
             args.input,
             references["combination_file"][0],
             references["salary_file"][0],
-            references["ledger_files"],
+            references["dimension_ledger"][0],
             args.output,
         )
         report = {
@@ -1682,11 +1820,12 @@ def main(argv: list[str] | None = None) -> int:
                 "metrics": [
                     {"key": "projects", "label": "主表项目", "value": result["master_projects"], "format": "integer"},
                     {"key": "employees", "label": "工资人员", "value": len(read_salary(references["salary_file"][0])[0]), "format": "integer"},
-                    {"key": "ledgers", "label": "明细账文件", "value": len(references["ledger_files"]), "format": "integer"},
+                    {"key": "dimension_ledger", "label": "核算维度明细账", "value": 1, "format": "integer"},
                 ],
                 "totals": [
                     {"key": "labor", "label": "已分配直接人工", "value": float(result["labor_total"]), "format": "number"},
                     {"key": "freight", "label": "运费结果", "value": float(result["freight_total"]), "format": "number", "emphasis": True},
+                    {"key": "other", "label": "其他费用合计", "value": float(result["other_total"]), "format": "number", "emphasis": True},
                     {"key": "unmatched", "label": "未分配工资", "value": float(result["unmatched_salary"]), "format": "number"},
                 ],
             },

@@ -6,7 +6,7 @@ type InputSet = {
   hours: File | null;
   combination: File | null;
   salary: File | null;
-  ledgers: File[];
+  dimensionLedger: File | null;
 };
 
 type RunSummary = {
@@ -15,6 +15,7 @@ type RunSummary = {
   salary_total: string;
   labor_total: string;
   freight_total: string;
+  other_total: string;
   ledger_records: number;
   warnings: string[];
   output_sheets: string[];
@@ -41,8 +42,8 @@ const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
-const RULE_PACKAGE_REVISION = "20260828-cost-rules-v3";
-const initialInputs: InputSet = { hours: null, combination: null, salary: null, ledgers: [] };
+const RULE_PACKAGE_REVISION = "20260828-cost-rules-v4";
+const initialInputs: InputSet = { hours: null, combination: null, salary: null, dimensionLedger: null };
 
 function money(value: string | number | undefined) {
   const parsed = Number(value ?? 0);
@@ -135,11 +136,11 @@ export default function Home() {
     return () => { cancelled = true; };
   }, []);
 
-  const allInputsReady = Boolean(inputs.hours && inputs.combination && inputs.salary);
+  const allInputsReady = Boolean(inputs.hours && inputs.combination && inputs.salary && inputs.dimensionLedger);
   const buttonDisabled = phase !== "ready" || !allInputsReady;
-  const selectedCount = useMemo(() => [inputs.hours, inputs.combination, inputs.salary].filter(Boolean).length + inputs.ledgers.length, [inputs]);
+  const selectedCount = useMemo(() => [inputs.hours, inputs.combination, inputs.salary, inputs.dimensionLedger].filter(Boolean).length, [inputs]);
 
-  function selectOne(slot: "hours" | "combination" | "salary") {
+  function selectOne(slot: "hours" | "combination" | "salary" | "dimensionLedger") {
     return (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0] ?? null;
       if (file && file.size > MAX_FILE_BYTES) {
@@ -151,19 +152,8 @@ export default function Home() {
     };
   }
 
-  function selectLedgers(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    const oversized = files.find((file) => file.size > MAX_FILE_BYTES);
-    if (oversized) {
-      setMessage(`${oversized.name} 超过 20 MB 限制。`);
-      return;
-    }
-    setInputs((current) => ({ ...current, ledgers: files }));
-    setSummary(null);
-  }
-
   async function runCalculation() {
-    if (!engine.current || !inputs.hours || !inputs.combination || !inputs.salary) return;
+    if (!engine.current || !inputs.hours || !inputs.combination || !inputs.salary || !inputs.dimensionLedger) return;
     setPhase("running");
     setSummary(null);
     setMessage("正在浏览器本地读取 Excel、计算工时、直接人工和费用分配…");
@@ -171,13 +161,7 @@ export default function Home() {
       await writeInput(engine.current, inputs.hours, "/work/hours.xlsx");
       await writeInput(engine.current, inputs.combination, "/work/combination.xlsx");
       await writeInput(engine.current, inputs.salary, "/work/salary.xlsx");
-      const ledgerPaths: string[] = [];
-      for (const [index, file] of inputs.ledgers.entries()) {
-        const path = `/work/ledger_${index + 1}.xlsx`;
-        await writeInput(engine.current, file, path);
-        ledgerPaths.push(path);
-      }
-      engine.current.globals.set("ledger_paths_json", JSON.stringify(ledgerPaths));
+      await writeInput(engine.current, inputs.dimensionLedger, "/work/dimension_ledger.xlsx");
       const resultText = await engine.current.runPythonAsync(`
 import json
 from pathlib import Path
@@ -187,12 +171,11 @@ result = build_output(
     Path("/work/hours.xlsx"),
     Path("/work/combination.xlsx"),
     Path("/work/salary.xlsx"),
-    [Path(path) for path in json.loads(ledger_paths_json)],
+    Path("/work/dimension_ledger.xlsx"),
     Path("/work/研发成本测算结果.xlsx"),
 )
 json.dumps(result, ensure_ascii=False, default=str)
 `);
-      engine.current.globals.delete("ledger_paths_json");
       const result = JSON.parse(String(resultText)) as RunSummary;
       const output = engine.current.FS.readFile("/work/研发成本测算结果.xlsx");
       const verificationText = await engine.current.runPythonAsync(`
@@ -235,7 +218,7 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
 
       <section className="hero">
         <div><p className="eyebrow">ONE-CLICK COST CALCULATION</p><h2>在浏览器中完成测算，<br />原始文件不会上传。</h2><p>沿用已锁定的工时、直接人工与其他费用规则；结果严格按固定模板另存为新 Excel 文件。</p></div>
-        <div className="rule-card"><strong>已锁定的口径</strong><span>所有人员按已有项目工时比例分配公摊工时</span><span>运费、折旧等20类“其他费用”自动按规则回填既有模板页</span><span>核算维度汇总表按同构模板页逐格映射，金额显示两位小数</span></div>
+        <div className="rule-card"><strong>已锁定的口径</strong><span>所有人员按已有项目工时比例分配公摊工时</span><span>核算维度明细账是“其他费用”的唯一数据源；不再上传运费、折旧等单独明细账</span><span>20类其他费用在各自模板页的既有明细账下方生成分配结果，金额显示两位小数</span></div>
       </section>
 
       <section className="workspace">
@@ -244,14 +227,14 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
           <label className="upload-card"><span>工时表</span><small>姓名、月份总工时与连续 RD 项目列</small><input type="file" accept=".xlsx" onChange={selectOne("hours")} /><FileChip file={inputs.hours} /></label>
           <label className="upload-card"><span>项目组合表</span><small>核算维度与科目组合、项目主数据</small><input type="file" accept=".xlsx" onChange={selectOne("combination")} /><FileChip file={inputs.combination} /></label>
           <label className="upload-card"><span>工资表</span><small>人员姓名与当月工资费用</small><input type="file" accept=".xlsx" onChange={selectOne("salary")} /><FileChip file={inputs.salary} /></label>
-          <label className="upload-card ledgers"><span>核算维度汇总／费用明细账（可选）</span><small>支持“项目分类明细汇总表N月”直接映射，也支持含摘要、借方、贷方的费用明细账</small><input type="file" accept=".xlsx" multiple onChange={selectLedgers} />{inputs.ledgers.length ? <span className="file-chip">已选择 {inputs.ledgers.length} 份费用资料</span> : <span className="file-empty">未选择：仅测算工时和直接人工</span>}</label>
+          <label className="upload-card ledgers"><span>核算维度明细账（必填）</span><small>须包含“项目分类明细汇总表N月”；用于复制汇总并计算全部20类其他费用</small><input type="file" accept=".xlsx" onChange={selectOne("dimensionLedger")} /><FileChip file={inputs.dimensionLedger} /></label>
         </div>
         <div className={`notice ${phase}`} role="status">{message}</div>
         <button className="run-button" type="button" disabled={buttonDisabled} onClick={runCalculation}>{phase === "running" ? "正在本地测算…" : "开始测算并下载结果"}</button>
         <p className="privacy">文件仅进入当前浏览器的临时计算区；刷新、关闭页面或下载完成后不会保留在网站。</p>
       </section>
 
-      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>运费结果</small><strong>¥ {money(summary.freight_total)}</strong></div><div><small>明细记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}</section>}
+      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>其他费用合计</small><strong>¥ {money(summary.other_total)}</strong></div><div><small>分类记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}</section>}
 
       <footer>临时本地测算操作台 · 浏览器端运行 · 不安装程序、不执行本地 EXE</footer>
     </main>
