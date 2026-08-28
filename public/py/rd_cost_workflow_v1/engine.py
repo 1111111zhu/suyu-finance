@@ -28,9 +28,10 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from rd_hours_v1 import engine as hours_engine
+import yaml
 
 
-PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋运费）", "version": "1.0.4"}
+PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋其他费用）", "version": "2.0"}
 MONEY = Decimal("0.01")
 TOLERANCE = Decimal("0.000001")
 PROJECT_RE = re.compile(r"^RD[0-9A-Z]+(?:-[0-9A-Z]+)*$", re.I)
@@ -42,6 +43,7 @@ CHINESE_MONTHS = {
 SUMMARY_WORDS = {"期初余额", "期末余额", "本期合计", "本年累计", "结转研发支出"}
 OUTPUT_TEMPLATE = PACK_ROOT / "templates" / "研发成本输出模板.xlsx"
 TEMPLATE_MONTH_SHEET = "项目分类明细汇总表1月"
+COST_RULES_FILE = PACK_ROOT / "rules.yaml"
 
 MAIN_HEADERS = [
     "项目编码", "科目名称", "直接材料", "人员人工（含社保+公积金）", "运费", "折旧",
@@ -50,17 +52,6 @@ MAIN_HEADERS = [
     "水电费", "咨询/审计费", "测试费", "职工教育经费", "劳动保护费", "项目成本合计",
 ]
 
-EXPENSE_SHEETS = [
-    ("1.运费", "运费"), ("2.直接人工", "直接人工"), ("3.折旧", "折旧"),
-    ("4.业务招待费", "业务招待费"), ("5.差旅费", "差旅费"), ("7.办公费", "办公费"),
-    ("6.交通费", "交通费"), ("8.会展费", "会展费"), ("9.租金", "租赁费"),
-    ("10.福利费", "福利费"), ("11.社保明细账", "社保"), ("12.公积金", "公积金"),
-    ("13.工资明细账", "工资"), ("14.材料明细账", "材料"), ("15.长期待摊费用", "长期费用摊销"),
-    ("16.维修费", "维修费"), ("17.无形资产摊销", "无形资产摊销"),
-    ("18.招聘费", "招聘费"), ("19.服务费", "服务费"), ("20.专利服务费", "专利服务"),
-    ("21.水电费", "水电费"), ("22.咨询费", "咨询/审计费"), ("23.测试费", "测试费"),
-    ("24.职工教育经费", "职工教育经费"), ("25.劳动保护费", "劳动保护费"),
-]
 
 
 class RuleError(RuntimeError):
@@ -99,10 +90,13 @@ class LedgerRecord:
     summary: str
     debit: Decimal
     credit: Decimal
+    source_kind: str = "ledger"
+    source_row: int = 0
 
     @property
     def amount(self) -> Decimal:
-        return self.debit - self.credit
+        # 已接入的“其他”规则只取借方；贷方不参与本次费用分配。
+        return self.debit
 
 
 @dataclass(frozen=True)
@@ -133,6 +127,44 @@ def code_key(value: Any) -> str:
     return norm(value).replace(" ", "").replace("_", "-").upper()
 
 
+def load_cost_rules() -> dict[str, Any]:
+    if not COST_RULES_FILE.is_file():
+        raise RuleError(f"缺少网页端成本规则包：{COST_RULES_FILE.name}")
+    with COST_RULES_FILE.open("r", encoding="utf-8") as handle:
+        rules = yaml.safe_load(handle) or {}
+    items = rules.get("fee_items") or []
+    if not items:
+        raise RuleError("网页端成本规则包未定义费用映射")
+    for item in items:
+        required = ("code", "name", "detail_sheet", "master_header")
+        if any(not norm(item.get(key)) for key in required):
+            raise RuleError(f"网页端成本规则存在不完整费用映射：{item!r}")
+        item["code"] = code_key(item["code"])
+        item["name"] = norm(item["name"])
+        item["detail_sheet"] = norm(item["detail_sheet"])
+        item["master_header"] = norm(item["master_header"])
+        item["aliases"] = [norm(alias) for alias in item.get("aliases", []) if norm(alias)]
+    rules["fee_items"] = items
+    return rules
+
+
+COST_RULES = load_cost_rules()
+FEE_RULES_BY_CODE = {item["code"]: item for item in COST_RULES["fee_items"]}
+EXPENSE_SHEETS = [(item["detail_sheet"], item["name"]) for item in COST_RULES["fee_items"]]
+
+
+def fee_rule_for_text(*values: Any) -> dict[str, Any] | None:
+    text = " ".join(norm(value) for value in values if norm(value)).lower()
+    code_match = re.search(r"(FYXM\d+_SYS)", text, re.I)
+    if code_match and code_key(code_match.group(1)) in FEE_RULES_BY_CODE:
+        return FEE_RULES_BY_CODE[code_key(code_match.group(1))]
+    for item in COST_RULES["fee_items"]:
+        candidates = [item["name"], *item.get("aliases", [])]
+        if any(candidate.lower() in text for candidate in candidates):
+            return item
+    return None
+
+
 def decimal_value(value: Any, location: str, *, blank_zero: bool = False, signed: bool = True) -> Decimal:
     if value is None or (isinstance(value, str) and not value.strip()):
         if blank_zero:
@@ -158,13 +190,13 @@ def allocate_amount(total: Decimal, keys: list[str], weights: dict[str, Decimal]
     denominator = sum((weights[key] for key in positive), Decimal("0"))
     if not positive or denominator <= 0:
         return {}
-    output: dict[str, Decimal] = {}
-    assigned = Decimal("0")
-    for key in positive[:-1]:
-        value = money(total * weights[key] / denominator)
-        output[key] = value
-        assigned += value
-    output[positive[-1]] = money(total - assigned)
+    unrounded = {key: total * weights[key] / denominator for key in positive}
+    output = {key: money(value) for key, value in unrounded.items()}
+    residual = money(total) - sum(output.values(), Decimal("0"))
+    if residual:
+        # “其他”规则要求尾差进入未取整金额最大的项目；同额按项目编码排序。
+        target = sorted(positive, key=lambda key: (-abs(unrounded[key]), key))[0]
+        output[target] += residual
     return output
 
 
@@ -535,12 +567,84 @@ def parse_dimension_text(values: Iterable[Any]) -> tuple[str, str, str, str]:
     )
 
 
+def month_from_summary_title(title: str) -> int:
+    match = re.search(r"项目分类明细汇总表\s*([1-9]|1[0-2])月", norm(title))
+    return int(match.group(1)) if match else 0
+
+
+def parse_summary_sheet(path: Path, ws: Any, warnings: list[str]) -> tuple[list[LedgerRecord] | None, int]:
+    """读取核算维度的项目分类汇总表。
+
+    该表是本工作流的合法来源，不能再被误判为“没有摘要和借方列”而静默跳过。
+    它同时会在导出时逐格映射到模板中的同构汇总页。
+    """
+    headers = {norm(label): col for label, col in cell_texts(ws, 1, 40).items()}
+    required = [norm(item) for item in COST_RULES.get("summary_input", {}).get("required_headers", [])]
+    if not required or any(item not in headers for item in required):
+        return None, 0
+    fee_col, project_col, amount_col = (headers[required[1]], headers[required[2]], headers[required[3]])
+    inferred_month = month_from_summary_title(ws.title)
+    records: list[LedgerRecord] = []
+    current_fee = ""
+    for row in range(2, ws.max_row + 1):
+        fee_text = norm(ws.cell(row, fee_col).value)
+        project_text = norm(ws.cell(row, project_col).value)
+        amount_value = ws.cell(row, amount_col).value
+        if fee_text:
+            current_fee = fee_text
+        source_fee = fee_text or current_fee
+        if not source_fee:
+            continue
+        if source_fee.endswith("小计") or source_fee in {"五险合计", "总计", "合计"}:
+            continue
+        rule = fee_rule_for_text(source_fee)
+        if rule is None:
+            continue
+        parsed = re.search(r"(RD[0-9A-Z]+(?:-[0-9A-Z]+)*)\s*(.*)", project_text, re.I)
+        if not parsed:
+            if not project_text and COST_RULES.get("summary_input", {}).get("blank_project_policy") == "rd9999_public_allocation":
+                project_code, project_name = "RD9999", "研发公摊"
+                warnings.append(f"{ws.title}!{get_column_letter(project_col)}{row} 未填写研发项目，已按规则作为RD9999研发公摊分配")
+            else:
+                warnings.append(f"{ws.title}!{get_column_letter(project_col)}{row} 未识别研发项目，未进入费用分配")
+                continue
+        else:
+            project_code, project_name = code_key(parsed.group(1)), norm(parsed.group(2))
+        if not PROJECT_RE.fullmatch(project_code):
+            continue
+        amount = decimal_value(amount_value, f"{ws.title}!{get_column_letter(amount_col)}{row}", blank_zero=True)
+        records.append(LedgerRecord(
+            source_path=path,
+            sheet=ws.title,
+            fee_code=rule["code"],
+            fee_name=rule["name"],
+            project_code=project_code,
+            project_name=project_name,
+            posting_date=None,
+            fiscal_year=date.today().year,
+            period=inferred_month or None,
+            voucher_word="",
+            voucher_no=None,
+            summary=source_fee,
+            debit=amount,
+            credit=Decimal("0"),
+            source_kind="summary",
+            source_row=row,
+        ))
+    return records, inferred_month
+
+
 def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, list[LedgerSourceSheet]]:
     wb = load_workbook(path, data_only=True, read_only=False)
     records: list[LedgerRecord] = []
     source_sheets: list[LedgerSourceSheet] = []
     inferred_month = 0
     for ws in wb.worksheets:
+        summary_records, summary_month = parse_summary_sheet(path, ws, warnings)
+        if summary_records is not None:
+            records.extend(summary_records)
+            inferred_month = inferred_month or summary_month
+            continue
         header_row = 0
         columns: dict[str, int] = {}
         for row in range(1, min(ws.max_row, 30) + 1):
@@ -553,9 +657,10 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
             continue
         preface = [ws.cell(row, col).value for row in range(1, header_row) for col in range(1, min(ws.max_column, 20) + 1)]
         fee_code, fee_name, fixed_project_code, fixed_project_name = parse_dimension_text(preface + [ws.title])
-        if not fee_name and "运费" in norm(ws.title):
-            fee_code, fee_name = "FYXM02_SYS", "运费"
-        if not fee_name:
+        rule = FEE_RULES_BY_CODE.get(code_key(fee_code)) if fee_code else fee_rule_for_text(path.stem, ws.title, *preface)
+        if rule is not None:
+            fee_code, fee_name = rule["code"], rule["name"]
+        if not fee_name or rule is None:
             warnings.append(f"{ws.title} 未识别费用项目，已跳过")
             continue
         source_sheets.append(LedgerSourceSheet(path, ws.title, fee_code, fee_name))
@@ -583,9 +688,6 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
                 parsed = re.search(r"(RD[0-9A-Z]+(?:-[0-9A-Z]+)*)\s+([^,，;；]+)", summary, re.I)
                 if parsed:
                     project_code, project_name = code_key(parsed.group(1)), norm(parsed.group(2))
-            if not PROJECT_RE.fullmatch(project_code):
-                warnings.append(f"{ws.title}!{row} 未识别研发项目，记录未进入分配")
-                continue
             records.append(LedgerRecord(
                 source_path=path,
                 sheet=ws.title,
@@ -601,6 +703,8 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
                 summary=summary,
                 debit=debit,
                 credit=credit,
+                source_kind="ledger",
+                source_row=row,
             ))
     return records, inferred_month, source_sheets
 
@@ -610,13 +714,13 @@ def category_sheet(record: LedgerRecord) -> str:
 
 
 def category_sheet_for_fee(fee_code: str, fee_name: str) -> str:
-    label = norm(fee_name)
-    if fee_code == "FYXM02_SYS" or "运费" in label:
-        return "1.运费"
-    for sheet, keyword in EXPENSE_SHEETS:
-        if keyword in label:
-            return sheet
-    return ""
+    rule = FEE_RULES_BY_CODE.get(code_key(fee_code)) or fee_rule_for_text(fee_name)
+    return rule["detail_sheet"] if rule else ""
+
+
+def master_header_for_fee(fee_code: str, fee_name: str) -> str:
+    rule = FEE_RULES_BY_CODE.get(code_key(fee_code)) or fee_rule_for_text(fee_name)
+    return rule["master_header"] if rule else ""
 
 
 def allocate_expense_records(
@@ -648,9 +752,10 @@ def allocate_expense_records(
                 totals[code] += amount
             warnings.append(f"{expense_name} {record.project_code} 为母项目，未进入全项目公摊，仅在 {len(allocated)} 个子孙项目内分配")
             continue
-        projects[record.project_code] = Project(record.project_code, record.project_name or record.project_code)
-        totals[record.project_code] = money(record.amount)
-        warnings.append(f"{expense_name}具体项目 {record.project_code} 不在工时项目中，已作为直接归属项目加入主表")
+        raise RuleError(
+            f"{expense_name}具体项目 {record.project_code} 不在已确认的项目工时/模板槽位中，"
+            "不能新建项目行或按名称猜测归属"
+        )
     rate_codes = [code for code, project in projects.items() if project.rate > 0]
     pool_allocated = allocate_amount(pool, rate_codes, {code: projects[code].rate for code in rate_codes})
     for code, amount in pool_allocated.items():
@@ -934,99 +1039,92 @@ def output_year(records: list[LedgerRecord]) -> str:
 def write_template_main_sheet(
     wb: Any,
     projects: OrderedDict[str, Project],
-    labor: dict[str, Decimal],
-    freight: dict[str, Decimal],
+    master_costs: dict[str, dict[str, Decimal]],
 ) -> None:
     ws = safe_sheet(wb, "研发项目主表")
-    clear_sheet_values(ws)
-    write_values(ws, 1, MAIN_HEADERS)
-    start_row = 3
-    prepare_rows(ws, start_row, len(projects), 3, len(MAIN_HEADERS))
-    for row, project in enumerate(projects.values(), start=start_row):
-        values: list[Any] = [project.code, project.name, 0, float(labor.get(project.code, Decimal("0"))), float(freight.get(project.code, Decimal("0")))]
-        values.extend([0] * (len(MAIN_HEADERS) - 6))
-        values.append(float(labor.get(project.code, Decimal("0")) + freight.get(project.code, Decimal("0"))))
-        write_values(ws, row, values)
-    total_row = start_row + len(projects)
-    copy_row_style(ws, 21, total_row, len(MAIN_HEADERS))
-    totals = ["合计", None]
-    for col in range(3, len(MAIN_HEADERS) + 1):
-        totals.append(float(sum((decimal_value(ws.cell(row, col).value, f"主表{row}行", blank_zero=True) for row in range(start_row, total_row)), Decimal("0"))))
-    write_values(ws, total_row, totals)
-    ws.auto_filter.ref = f"A1:Y{total_row}"
+    header_columns = {norm(ws.cell(1, col).value): col for col in range(1, ws.max_column + 1)}
+    for header in MAIN_HEADERS:
+        if norm(header) not in header_columns:
+            raise RuleError(f"固定模板主表缺少费用列：{header}")
+    slot_rows: dict[str, int] = {}
+    slot_code_rows: dict[str, list[int]] = defaultdict(list)
+    for row in range(3, 21):
+        slot_name = name_key(ws.cell(row, 2).value)
+        if slot_name:
+            if slot_name in slot_rows:
+                raise RuleError(f"固定模板主表项目名称重复：{ws.cell(row, 2).value}")
+            slot_rows[slot_name] = row
+        # 固定模板的“2.直接人工”按相同行序预置项目编码；名称不完整但编码
+        # 唯一时可作为精确的兜底主键，编码重复仍只允许按名称消歧。
+        direct_code = code_key(safe_sheet(wb, "2.直接人工").cell(row + 6, 1).value)
+        if PROJECT_RE.fullmatch(direct_code):
+            slot_code_rows[direct_code].append(row)
+        for col in [1, *range(3, 26)]:
+            cell = ws.cell(row, col)
+            if not (isinstance(cell.value, str) and cell.value.startswith("=")):
+                cell.value = None
+
+    for project in projects.values():
+        values_by_header = {norm(header): costs.get(project.code, Decimal("0")) for header, costs in master_costs.items()}
+        active = project.rate > 0 or any(values_by_header.values())
+        if not active:
+            continue
+        row = slot_rows.get(name_key(project.name))
+        if row is None:
+            candidates = slot_code_rows.get(project.code, [])
+            if len(candidates) == 1:
+                row = candidates[0]
+        if row is None:
+            raise RuleError(f"项目“{project.code} {project.name}”不在固定模板的18个项目名称槽位中")
+        ws.cell(row, 1).value = project.code
+        total = Decimal("0")
+        for header in MAIN_HEADERS[2:-1]:
+            value = money(values_by_header.get(norm(header), Decimal("0")))
+            cell = ws.cell(row, header_columns[norm(header)])
+            cell.value = float(value)
+            cell.number_format = "#,##0.00"
+            total += value
+        ws.cell(row, header_columns[norm("项目成本合计")]).value = float(money(total))
+        ws.cell(row, header_columns[norm("项目成本合计")]).number_format = "#,##0.00"
 
 
-def write_template_combo_summary(wb: Any, records: list[LedgerRecord], month: int) -> str:
+def copy_summary_to_template(wb: Any, summary_source: tuple[Path, str], month: int) -> str:
     old_name = TEMPLATE_MONTH_SHEET
     new_name = f"项目分类明细汇总表{month or 1}月"
     ws = safe_sheet(wb, old_name)
     if new_name != old_name:
         ws.title = new_name
-    clear_sheet_values(ws)
-    write_values(ws, 1, ["序号", "费用项目", "研发项目", "费用金额（元）"])
-    grouped: OrderedDict[tuple[str, str], Decimal] = OrderedDict()
-    for record in records:
-        fee = f"{record.fee_code}  {record.fee_name}".strip()
-        project = f"{record.project_code}  {record.project_name}".strip()
-        key = (fee, project)
-        grouped[key] = grouped.get(key, Decimal("0")) + record.amount
-    prepare_rows(ws, 2, len(grouped), 2, 4)
-    for row, ((fee, project), amount) in enumerate(grouped.items(), start=2):
-        write_values(ws, row, [row - 1, fee, project, float(money(amount))])
-    total_row = 2 + len(grouped)
-    copy_row_style(ws, 48, total_row, 4)
-    write_values(ws, total_row, ["总计", None, None, float(money(sum(grouped.values(), Decimal("0"))))])
+    source_path, source_sheet = summary_source
+    source_book = load_workbook(source_path, data_only=True, read_only=False)
+    source = source_book[source_sheet]
+    if source.max_row > ws.max_row or source.max_column > ws.max_column:
+        raise RuleError("核算维度汇总表超出固定模板预留区域，不能扩展模板布局")
+    for row in range(1, ws.max_row + 1):
+        for col in range(1, ws.max_column + 1):
+            target = ws.cell(row, col)
+            if isinstance(target, MergedCell) or (isinstance(target.value, str) and target.value.startswith("=")):
+                continue
+            target.value = None
+    for row in range(1, source.max_row + 1):
+        for col in range(1, source.max_column + 1):
+            target = ws.cell(row, col)
+            if isinstance(target, MergedCell) or (isinstance(target.value, str) and target.value.startswith("=")):
+                continue
+            target.value = source.cell(row, col).value
+            if col == 4 and isinstance(target.value, (int, float, Decimal)):
+                target.number_format = "#,##0.00"
     return new_name
 
 
 def write_template_detail_sheet(
     wb: Any,
     year: str,
-    labor: dict[str, Decimal],
-    records: list[LedgerRecord],
 ) -> None:
     ws = safe_sheet(wb, "研发明细表")
-    clear_sheet_values(ws)
+    # 该页的审核数和审定数本来就引用主表；保留正常公式，避免把模板变成
+    # 无法追溯的静态报表。
     write_values(ws, 1, [f"{year}年研发费用审核明细表"])
     write_values(ws, 2, ["编制单位："])
-    write_values(ws, 3, ["序号", "费用类别", "未审数", "审减数", "审定数", "备注"])
-    source_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for record in records:
-        source_totals[category_sheet(record)] += record.amount
-    total_labor = sum(labor.values(), Decimal("0"))
-    category_amounts = {
-        "材料": Decimal("0"),
-        "工资": total_labor,
-        "社保": Decimal("0"),
-        "公积金": Decimal("0"),
-        "会展费": source_totals["8.会展费"],
-        "仪器设备折旧费": source_totals["3.折旧"],
-        "无形资产摊销": source_totals["17.无形资产摊销"],
-        "服务费": source_totals["19.服务费"],
-        "知识产权费": source_totals["20.专利服务费"],
-        "维修费": source_totals["16.维修费"],
-        "差旅费": source_totals["5.差旅费"],
-        "劳动保护费": source_totals["25.劳动保护费"],
-        "交通费": source_totals["6.交通费"],
-        "办公费": source_totals["7.办公费"],
-        "运费": source_totals["1.运费"],
-        "房租": source_totals["9.租金"],
-        "福利费": source_totals["10.福利费"],
-        "长期待摊费用": source_totals["15.长期待摊费用"],
-        "招聘费": source_totals["18.招聘费"],
-        "水电费": source_totals["21.水电费"],
-        "招待费": source_totals["4.业务招待费"],
-        "咨询费": source_totals["22.咨询费"],
-        "职工教育经费": source_totals["24.职工教育经费"],
-    }
-    labels = list(category_amounts)
-    prepare_rows(ws, 6, len(labels), 6, 6)
-    for index, label in enumerate(labels, start=1):
-        amount = money(category_amounts[label])
-        write_values(ws, index + 5, [index, label, float(amount), 0.0, float(amount), None])
-    total_row = 33
-    total_amount = money(sum(category_amounts.values(), Decimal("0")))
-    write_values(ws, total_row, ["合  计", None, float(total_amount), 0.0, float(total_amount), None])
 
 
 def copy_input_values_to_template(source_ws: Any, target_ws: Any) -> None:
@@ -1040,35 +1138,46 @@ def copy_input_values_to_template(source_ws: Any, target_ws: Any) -> None:
 
 def write_template_hours_sheets(
     wb: Any,
-    source_ws: Any,
     hours_result: dict[str, Any],
     projects: OrderedDict[str, Project],
 ) -> None:
-    raw_ws = safe_sheet(wb, "研发人员工时统计")
-    copy_input_values_to_template(source_ws, raw_ws)
-
     ws = safe_sheet(wb, "研发人员工时统计合计")
-    clear_sheet_values(ws)
     project_codes = [item["project_code"] for item in hours_result["projects"]]
+    if len(project_codes) > 18:
+        raise RuleError("工时项目超过固定模板的18个项目预留槽位")
     project_map = {item["project_code"]: item for item in hours_result["projects"]}
     headers = ["序号", "姓名", "工时汇总"] + project_codes
+    # 只更新模板预留的人员矩阵输入区；AD:AH等正常公式必须继续保留。
+    max_input_col = 3 + len(project_codes)
+    matrix_last_row = 3 + len(hours_result["people"])
+    if matrix_last_row > 42:
+        raise RuleError("人员数超出固定模板工时矩阵预留行，不能扩展布局")
+    for row in range(1, matrix_last_row + 1):
+        for col in range(1, max_input_col + 1):
+            cell = ws.cell(row, col)
+            if not isinstance(cell, MergedCell) and not (isinstance(cell.value, str) and cell.value.startswith("=")):
+                cell.value = None
     write_values(ws, 1, headers)
     write_values(ws, 2, [None, None, None] + [project_map[code]["project_name"] for code in project_codes])
-    prepare_rows(ws, 3, len(hours_result["people"]), 3, len(headers))
     for row, person in enumerate(hours_result["people"], start=3):
         write_values(ws, row, [person.get("employee_id"), person["employee_name"], float(person["final_hours"])] + [float(person["final_by_project"][code]) for code in project_codes])
     total_row = 3 + len(hours_result["people"])
-    copy_row_style(ws, 36, total_row, len(headers))
     write_values(ws, total_row, ["合计", None, float(hours_result["totals"]["final_hours"])] + [float(project_map[code]["final_hours"]) for code in project_codes])
+    for row in range(3, total_row + 1):
+        for col in range(3, max_input_col + 1):
+            ws.cell(row, col).number_format = "0.00"
 
-    rate_start = total_row + 4
-    prepare_rows(ws, rate_start, len(project_codes) + 1, 3, 6)
-    write_values(ws, rate_start, ["项目编码", "科目名称", "项目最终工时", "工时分配率"])
-    for row, code in enumerate(project_codes, start=rate_start + 1):
-        write_values(ws, row, [code, projects[code].name, float(projects[code].final_hours), float(projects[code].rate)])
-        ws.cell(row, 4).number_format = "0.00%"
-    write_values(ws, rate_start + len(project_codes) + 1, ["合计", None, float(sum((projects[code].final_hours for code in project_codes), Decimal("0"))), float(sum((projects[code].rate for code in project_codes), Decimal("0")))])
-    ws.cell(rate_start + len(project_codes) + 1, 4).number_format = "0.00%"
+    # H:J43:60 是固定模板中费用页公式引用的项目工时分配率预留区。
+    for row in range(43, 61):
+        for col in range(8, 11):
+            ws.cell(row, col).value = None
+    write_values(ws, 42, ["项目编码", "科目名称", "工时分配率"], start_col=8)
+    for row, code in enumerate(project_codes, start=43):
+        write_values(ws, row, [code, projects[code].name, float(projects[code].rate)], start_col=8)
+        ws.cell(row, 10).number_format = "0.00%"
+    rate_total_row = 43 + len(project_codes)
+    write_values(ws, rate_total_row, ["合计", None, float(sum((projects[code].rate for code in project_codes), Decimal("0")))], start_col=8)
+    ws.cell(rate_total_row, 10).number_format = "0.00%"
 
 
 def project_amounts_from_records(records: list[LedgerRecord]) -> dict[str, Decimal]:
@@ -1116,6 +1225,80 @@ def write_template_expense_sheet(
     copy_row_style(ws, min(9, ws.max_row), summary_total_row, 3)
     write_values(ws, summary_total_row, ["合计", None, float(money(sum(summary_items.values(), Decimal("0"))))])
     ws.cell(summary_total_row, 3).number_format = "#,##0.00"
+
+
+def clear_broken_formula_cells(wb: Any, warnings: list[str]) -> None:
+    """模板已存在的不可审计错误仅清内容、保留单元格格式和布局。"""
+    tokens = ("#REF!", "#NAME?", "#N/A", "#VALUE!", "#DIV/0!")
+    cleared: list[str] = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                value = cell.value
+                if isinstance(value, str) and any(token in value.upper() for token in tokens):
+                    cell.value = None
+                    cleared.append(f"{ws.title}!{cell.coordinate}")
+    if cleared:
+        warnings.append(f"已清除固定模板中{len(cleared)}个既有公式错误内容，保留原有格式和布局")
+
+
+def clear_non_formula_cells(ws: Any, start_row: int, end_row: int, start_col: int, end_col: int) -> None:
+    for row in range(start_row, end_row + 1):
+        for col in range(start_col, end_col + 1):
+            cell = ws.cell(row, col)
+            if isinstance(cell, MergedCell) or (isinstance(cell.value, str) and cell.value.startswith("=")):
+                continue
+            cell.value = None
+
+
+def write_template_expense_source(ws: Any, records: list[LedgerRecord], month: int) -> None:
+    """将凭证明细写入模板原有账区，保留该页既有的分配公式。"""
+    formula_rows = [
+        cell.row for row in ws.iter_rows(min_row=5) for cell in row
+        if isinstance(cell.value, str) and cell.value.startswith("=")
+    ]
+    raw_end = min(formula_rows) - 1 if formula_rows else ws.max_row
+    if raw_end < 5:
+        return
+    if len(records) > raw_end - 4:
+        raise RuleError(f"{ws.title} 的原始明细行数超出固定模板预留区域，不能扩展布局")
+    clear_non_formula_cells(ws, 5, raw_end, 1, min(9, ws.max_column))
+    for row, record in enumerate(records, start=5):
+        write_values(ws, row, [
+            record.posting_date, record.fiscal_year, record.period, record.voucher_word,
+            record.voucher_no, record.summary, float(money(record.amount)),
+            record.project_code, record.project_name,
+        ])
+        ws.cell(row, 7).number_format = "#,##0.00"
+
+
+def write_template_labor_sheet(wb: Any, projects: OrderedDict[str, Project], labor_totals: dict[str, Decimal], month: int) -> None:
+    ws = safe_sheet(wb, "2.直接人工")
+    clear_non_formula_cells(ws, 5, 5, 1, min(9, ws.max_column))
+    ws.cell(5, 7).value = float(money(sum(labor_totals.values(), Decimal("0"))))
+    ws.cell(5, 7).number_format = "#,##0.00"
+    slot_rows = {code_key(ws.cell(row, 1).value): row for row in range(9, 27) if code_key(ws.cell(row, 1).value)}
+    for row in range(9, 27):
+        if not (isinstance(ws.cell(row, 3).value, str) and ws.cell(row, 3).value.startswith("=")):
+            ws.cell(row, 3).value = None
+    for code, project in projects.items():
+        row = slot_rows.get(code)
+        if row is None:
+            continue
+        ws.cell(row, 3).value = float(money(labor_totals.get(code, Decimal("0"))))
+        ws.cell(row, 3).number_format = "#,##0.00"
+
+
+def assert_formula_errors_cleared(wb: Any) -> None:
+    tokens = ("#REF!", "#NAME?", "#N/A", "#VALUE!", "#DIV/0!")
+    errors = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and any(token in cell.value.upper() for token in tokens):
+                    errors.append(f"{ws.title}!{cell.coordinate}")
+    if errors:
+        raise RuleError("输出模板仍存在公式错误：" + "、".join(errors[:10]))
 
 
 def last_populated_row(ws: Any) -> int:
@@ -1228,50 +1411,40 @@ def write_template_ledger_sheets(
 
 
 def write_template_output(
-    hours_path: Path,
-    layout: Any,
     hours_result: dict[str, Any],
     projects: OrderedDict[str, Project],
+    master_costs: dict[str, dict[str, Decimal]],
     labor_totals: dict[str, Decimal],
-    freight_totals: dict[str, Decimal],
-    ledger_records: list[LedgerRecord],
-    ledger_source_sheets: list[LedgerSourceSheet],
-    source_allocations: dict[tuple[Path, str], dict[str, Decimal]],
+    effective_records: list[LedgerRecord],
+    summary_source: tuple[Path, str] | None,
     month: int,
     output_path: Path,
+    warnings: list[str],
 ) -> list[str]:
     if not OUTPUT_TEMPLATE.is_file():
         raise RuleError(f"缺少固定输出模板：{OUTPUT_TEMPLATE.name}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(OUTPUT_TEMPLATE, output_path)
     wb = load_workbook(output_path, data_only=False, read_only=False)
-    write_template_main_sheet(wb, projects, labor_totals, freight_totals)
-    write_template_combo_summary(wb, ledger_records, month)
-    write_template_detail_sheet(wb, output_year(ledger_records), labor_totals, ledger_records)
-    source_values = load_workbook(hours_path, data_only=True, read_only=False)
-    write_template_hours_sheets(wb, source_values[layout.sheet], hours_result, projects)
-
-    material_ws = safe_sheet(wb, "研发费用材料项目台账")
-    clear_sheet_values(material_ws)
-    write_values(material_ws, 1, ["项目编号", "项目名称", "科目名称"] + [f"{index}月" for index in range(1, 12)] + ["1-11月总计"])
-
-    # 费用不再写入模板中的结果-only工作表。保留每张原始明细账，并在其
-    # 最后一条有效记录之后追加项目分配表；直接人工仍保留为最后一张结果表。
-    for sheet_name, _ in EXPENSE_SHEETS:
-        if sheet_name != "2.直接人工" and sheet_name in wb.sheetnames:
-            wb.remove(wb[sheet_name])
-    ledger_output_sheets = write_template_ledger_sheets(
-        wb,
-        ledger_source_sheets,
-        ledger_records,
-        source_allocations,
-        projects,
-        month,
-    )
-    write_template_expense_sheet(safe_sheet(wb, "2.直接人工"), [], month, projects, labor_totals)
-    order_sheets(wb, month, ledger_output_sheets)
-    if wb.sheetnames != expected_template_sheets(month, ledger_output_sheets):
+    original_sheets = list(wb.sheetnames)
+    clear_broken_formula_cells(wb, warnings)
+    write_template_main_sheet(wb, projects, master_costs)
+    if summary_source is not None:
+        copy_summary_to_template(wb, summary_source, month)
+    write_template_detail_sheet(wb, output_year(effective_records))
+    write_template_hours_sheets(wb, hours_result, projects)
+    for rule in COST_RULES["fee_items"]:
+        ws = safe_sheet(wb, rule["detail_sheet"])
+        detail_records = [
+            record for record in effective_records
+            if record.fee_code == rule["code"] and record.source_kind == "ledger"
+        ]
+        write_template_expense_source(ws, detail_records, month)
+    write_template_labor_sheet(wb, projects, labor_totals, month)
+    expected = [f"项目分类明细汇总表{month or 1}月" if name == TEMPLATE_MONTH_SHEET else name for name in original_sheets]
+    if wb.sheetnames != expected:
         raise RuleError("输出工作表与固定模板不一致")
+    assert_formula_errors_cleared(wb)
     wb.calculation.fullCalcOnLoad = True
     wb.calculation.forceFullCalc = True
     wb.save(output_path)
@@ -1286,7 +1459,7 @@ def order_sheets(wb: Any, month: int, ledger_sheets: list[str]) -> None:
     wb._sheets = [wb[name] for name in desired if name in wb.sheetnames] + [ws for ws in wb.worksheets if ws.title not in desired]
 
 
-def expected_template_sheets(month: int, ledger_sheets: list[str]) -> list[str]:
+def expected_template_sheets(month: int, ledger_sheets: list[str] | None = None) -> list[str]:
     return [
         "研发费用材料项目台账",
         "研发项目主表",
@@ -1294,7 +1467,78 @@ def expected_template_sheets(month: int, ledger_sheets: list[str]) -> list[str]:
         "研发明细表",
         "研发人员工时统计",
         "研发人员工时统计合计",
-    ] + ledger_sheets + ["2.直接人工"]
+        "1.运费", "2.直接人工", "3.折旧", "4.业务招待费", "5.差旅费", "7.办公费",
+        "6.交通费", "8.会展费", "9.租金", "10.福利费", "11.社保明细账", "12.公积金",
+        "13.工资明细账", "14.材料明细账", "15.长期待摊费用", "16.维修费", "17.无形资产摊销",
+        "18.招聘费", "19.服务费", "20.专利服务费", "21.水电费", "22.咨询费", "23.测试费",
+        "24.职工教育经费", "25.劳动保护费",
+    ]
+
+
+def record_month(record: LedgerRecord) -> int:
+    value = record.period
+    if isinstance(value, (int, float)) and 1 <= int(value) <= 12:
+        return int(value)
+    match = re.search(r"(?:^|\D)(1[0-2]|[1-9])(?:月|$)", norm(value))
+    if match:
+        return int(match.group(1))
+    if isinstance(record.posting_date, (date, datetime)):
+        return record.posting_date.month
+    return 0
+
+
+def select_effective_records(records: list[LedgerRecord], month: int) -> list[LedgerRecord]:
+    """优先使用期间一致的凭证明细，并与汇总表交叉勾稽。
+
+    只有汇总表时，汇总表本身是可追溯的费用来源；一旦同时上传逐笔明细，
+    则不允许把 2、3 月交易混入 1 月或与汇总金额不一致后仍继续出表。
+    """
+    selected: list[LedgerRecord] = []
+    for fee_code in FEE_RULES_BY_CODE:
+        summary_rows = [row for row in records if row.fee_code == fee_code and row.source_kind == "summary"]
+        ledger_rows = [row for row in records if row.fee_code == fee_code and row.source_kind == "ledger"]
+        if ledger_rows:
+            blank_project_rows = [row for row in ledger_rows if not PROJECT_RE.fullmatch(row.project_code)]
+            if blank_project_rows:
+                summary_is_public = summary_rows and all(row.project_code == "RD9999" for row in summary_rows)
+                if len(blank_project_rows) == len(ledger_rows) and summary_is_public:
+                    for row in ledger_rows:
+                        row.project_code, row.project_name = "RD9999", "研发公摊"
+                else:
+                    locations = "、".join(f"{row.sheet}!{row.source_row}" for row in blank_project_rows[:5])
+                    raise RuleError(
+                        f"{FEE_RULES_BY_CODE[fee_code]['name']}明细账缺少研发项目：{locations}；"
+                        "仅当同费用分类汇总表明确为RD9999研发公摊时才可按公摊处理"
+                    )
+            unknown_periods = [row for row in ledger_rows if not record_month(row)]
+            if unknown_periods:
+                locations = "、".join(f"{row.sheet}!{row.source_row}" for row in unknown_periods[:5])
+                raise RuleError(f"{FEE_RULES_BY_CODE[fee_code]['name']}明细账缺少可识别期间：{locations}")
+            scoped_rows = [row for row in ledger_rows if record_month(row) == month]
+            if summary_rows:
+                summary_total = money(sum((row.amount for row in summary_rows), Decimal("0")))
+                detail_total = money(sum((row.amount for row in scoped_rows), Decimal("0")))
+                if summary_total != detail_total:
+                    raise RuleError(
+                        f"{FEE_RULES_BY_CODE[fee_code]['name']}的{month}月分类汇总为{summary_total}，"
+                        f"同月明细账为{detail_total}，差额{money(summary_total - detail_total)}；"
+                        "请提供同一期间的资料后再测算"
+                    )
+            selected.extend(scoped_rows)
+        else:
+            selected.extend(summary_rows)
+    return selected
+
+
+def locate_summary_source(ledger_paths: list[Path]) -> tuple[Path, str] | None:
+    for path in ledger_paths:
+        wb = load_workbook(path, data_only=True, read_only=False)
+        for ws in wb.worksheets:
+            headers = {norm(label): col for label, col in cell_texts(ws, 1, 40).items()}
+            required = [norm(item) for item in COST_RULES.get("summary_input", {}).get("required_headers", [])]
+            if required and all(item in headers for item in required):
+                return path, ws.title
+    return None
 
 
 def build_output(
@@ -1339,35 +1583,41 @@ def build_output(
     for code in projects:
         labor_totals.setdefault(code, Decimal("0"))
 
-    ledger_records: list[LedgerRecord] = []
-    ledger_source_sheets: list[LedgerSourceSheet] = []
+    parsed_records: list[LedgerRecord] = []
     ledger_month = 0
     for path in ledger_paths:
-        records, month, source_sheets = parse_ledger_file(path, warnings)
-        ledger_records.extend(records)
-        ledger_source_sheets.extend(source_sheets)
+        records, month, _ = parse_ledger_file(path, warnings)
+        parsed_records.extend(records)
         ledger_month = ledger_month or month
     month = ledger_month or salary_month or 1
+    summary_source = locate_summary_source(ledger_paths)
+    effective_records = select_effective_records(parsed_records, month)
 
-    records_by_source: dict[tuple[Path, str], list[LedgerRecord]] = defaultdict(list)
-    for record in ledger_records:
-        records_by_source[(record.source_path, record.sheet)].append(record)
-    source_allocations: dict[tuple[Path, str], dict[str, Decimal]] = {}
+    records_by_fee: dict[str, list[LedgerRecord]] = defaultdict(list)
+    for record in effective_records:
+        records_by_fee[record.fee_code].append(record)
+    master_costs: dict[str, dict[str, Decimal]] = {
+        norm(header): {code: Decimal("0") for code in projects}
+        for header in MAIN_HEADERS[2:-1]
+    }
+    for code, amount in labor_totals.items():
+        master_costs[norm("人员人工（含社保+公积金）")][code] = money(amount)
     freight_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    freight_pool = Decimal("0")
-    freight_direct = Decimal("0")
-    freight_total = Decimal("0")
-    for source_sheet in ledger_source_sheets:
+    other_total = Decimal("0")
+    for rule in COST_RULES["fee_items"]:
+        source_records = records_by_fee[rule["code"]]
+        if not source_records:
+            continue
         allocations, pool, direct, result_total, _ = allocate_expense_records(
-            records_by_source[source_sheet.key], projects, warnings, source_sheet.fee_name
+            source_records, projects, warnings, rule["name"]
         )
-        source_allocations[source_sheet.key] = allocations
-        if category_sheet_for_fee(source_sheet.fee_code, source_sheet.fee_name) == "1.运费":
+        target_costs = master_costs[norm(rule["master_header"])]
+        for code, amount in allocations.items():
+            target_costs[code] = money(target_costs.get(code, Decimal("0")) + amount)
+        other_total += result_total
+        if rule["code"] == code_key("FYXM02_SYS"):
             for code, amount in allocations.items():
                 freight_totals[code] += amount
-            freight_pool += pool
-            freight_direct += direct
-            freight_total += result_total
     for code in projects:
         freight_totals.setdefault(code, Decimal("0"))
         labor_totals.setdefault(code, Decimal("0"))
@@ -1379,25 +1629,22 @@ def build_output(
         "matched_salary": matched_salary,
         "labor_total": sum(labor_totals.values(), Decimal("0")),
         "unmatched_salary": unmatched_salary,
-        "freight_direct": freight_direct,
-        "freight_pool": freight_pool,
-        "freight_total": freight_total,
+        "freight_total": sum(freight_totals.values(), Decimal("0")),
+        "other_total": other_total,
         "master_projects": len(projects),
         "salary_source": salary_source,
-        "ledger_records": len(ledger_records),
+        "ledger_records": len(effective_records),
     }
     output_sheets = write_template_output(
-        hours_path,
-        layout,
         hours_result,
         projects,
+        master_costs,
         labor_totals,
-        freight_totals,
-        ledger_records,
-        ledger_source_sheets,
-        source_allocations,
+        effective_records,
+        summary_source,
         month,
         output_path,
+        warnings,
     )
     return {**audit_data, "month": month, "warnings": warnings, "output_sheets": output_sheets}
 

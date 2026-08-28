@@ -1,0 +1,52 @@
+rule_set:
+  id: rd_cost_workflow_v2
+  title: 研发成本综合测算（工时、直接人工与其他费用）
+  version: "2.0"
+  status: confirmed
+
+# 本文件是网页端实际加载的规则包。费用明细账必须按项目直接归集；RD9999
+# 研发公摊则按工时分配率分摊，金额使用四舍五入至两位小数并保证尾差守恒。
+period:
+  source_sheet_pattern: '^项目分类明细汇总表(?P<month>[1-9]|1[0-2])月(?: \([1-9][0-9]*\))?$'
+  transaction_period_match: required_when_present
+
+summary_input:
+  required_headers: [序号, 费用项目, 研发项目, 费用金额（元）]
+  fee_column: 2
+  project_column: 3
+  amount_column: 4
+  inherited_fee_on_blank: true
+  blank_project_policy: rd9999_public_allocation
+  excluded_fee_suffixes: [小计]
+  excluded_fee_names: [五险合计, 总计, 合计]
+  copy_mode: template_equivalent_cells
+
+calculation:
+  public_project_code: RD9999
+  public_project_names: [研发公摊, 研发公摊费用]
+  decimal_places: 2
+  rounding: half_up
+  residual_target: largest_unrounded_amount_then_project_code
+
+fee_items:
+  # “其他”规则 v2.1：网页运行时使用此清单，而不是仅在本地规则目录留存。
+  - { code: FYXM02_SYS, name: 运费, detail_sheet: 1.运费, master_header: 运费, aliases: [运费, 快递, 物流] }
+  - { code: FYXM08_SYS, name: 折旧费用, detail_sheet: 3.折旧, master_header: 折旧, aliases: [折旧, 折旧费用] }
+  - { code: FYXM09_SYS, name: 业务招待费, detail_sheet: 4.业务招待费, master_header: 业务招待费, aliases: [业务招待, 招待费] }
+  - { code: FYXM10_SYS, name: 差旅费, detail_sheet: 5.差旅费, master_header: 差旅费, aliases: [差旅] }
+  - { code: FYXM11_SYS, name: 交通费, detail_sheet: 6.交通费, master_header: 交通费, aliases: [交通] }
+  - { code: FYXM14_SYS, name: 办公费, detail_sheet: 7.办公费, master_header: 办公费, aliases: [办公] }
+  - { code: FYXM15_SYS, name: 会展费, detail_sheet: 8.会展费, master_header: 会展费, aliases: [会展] }
+  - { code: FYXM17_SYS, name: 租赁费, detail_sheet: 9.租金, master_header: 租赁费, aliases: [租赁, 租金] }
+  - { code: FYXM19_SYS, name: 福利费, detail_sheet: 10.福利费, master_header: 福利费, aliases: [福利] }
+  - { code: FYXM30_SYS, name: 长期费用摊销, detail_sheet: 15.长期待摊费用, master_header: 长期费用摊销, aliases: [长期费用摊销, 长期待摊] }
+  - { code: FYXM32_SYS, name: 维修费, detail_sheet: 16.维修费, master_header: 维修费, aliases: [维修] }
+  - { code: FYXM33_SYS, name: 无形资产摊销, detail_sheet: 17.无形资产摊销, master_header: 无形资产摊销, aliases: [无形资产摊销] }
+  - { code: FYXM34_SYS, name: 招聘费, detail_sheet: 18.招聘费, master_header: 招聘费, aliases: [招聘] }
+  - { code: FYXM36_SYS, name: 服务费, detail_sheet: 19.服务费, master_header: 服务费, aliases: [服务] }
+  - { code: FYXM37_SYS, name: 专利服务, detail_sheet: 20.专利服务费, master_header: 专利服务, aliases: [专利] }
+  - { code: FYXM39_SYS, name: 水电费, detail_sheet: 21.水电费, master_header: 水电费, aliases: [水电] }
+  - { code: FYXM42_SYS, name: 咨询/审计费, detail_sheet: 22.咨询费, master_header: 咨询/审计费, aliases: [咨询, 审计] }
+  - { code: FYXM43_SYS, name: 测试费, detail_sheet: 23.测试费, master_header: 测试费, aliases: [测试] }
+  - { code: FYXM45_SYS, name: 职工教育经费, detail_sheet: 24.职工教育经费, master_header: 职工教育经费, aliases: [职工教育] }
+  - { code: FYXM46_SYS, name: 劳动保护费, detail_sheet: 25.劳动保护费, master_header: 劳动保护费, aliases: [劳动保护] }

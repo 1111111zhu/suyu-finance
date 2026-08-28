@@ -41,7 +41,7 @@ const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
-const RULE_PACKAGE_REVISION = "20260828-month-aliases-v2";
+const RULE_PACKAGE_REVISION = "20260828-cost-rules-v3";
 const initialInputs: InputSet = { hours: null, combination: null, salary: null, ledgers: [] };
 
 function money(value: string | number | undefined) {
@@ -87,6 +87,7 @@ async function initializeEngine(): Promise<PyodideLike> {
   pyodide.FS.mkdirTree("/work");
 
   await copyAsset(pyodide, `/py/rd_cost_workflow_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/engine.py");
+  await copyAsset(pyodide, `/py/rd_cost_workflow_v1/rules.yaml?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/rules.yaml");
   await copyAsset(pyodide, `/py/rd_hours_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/engine.py");
   await copyAsset(pyodide, `/py/rd_hours_v1/rules.yaml?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/rules.yaml");
   await copyAsset(pyodide, "/py/output_template.xlsx", "/app/rule_packages/rd_cost_workflow_v1/templates/研发成本输出模板.xlsx");
@@ -201,8 +202,10 @@ verification_book = load_workbook("/work/研发成本测算结果.xlsx", read_on
 json.dumps(verification_book.sheetnames, ensure_ascii=False)
 `);
       const sheetNames = JSON.parse(String(verificationText)) as string[];
-      if (!sheetNames.includes("2.直接人工")) throw new Error("导出复核失败：缺少“2.直接人工”工作表。");
-      if (sheetNames.at(-1) !== "2.直接人工") throw new Error("导出复核失败：“2.直接人工”不是最后一张工作表。");
+      if (JSON.stringify(sheetNames) !== JSON.stringify(result.output_sheets)) {
+        throw new Error("导出复核失败：工作表清单、顺序或名称与固定模板不一致。");
+      }
+      if (sheetNames.length !== 31) throw new Error("导出复核失败：固定模板应保留31个工作表。");
       const blob = new Blob([output], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -214,7 +217,7 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
       URL.revokeObjectURL(url);
       setSummary(result);
       setPhase("ready");
-      setMessage("测算完成，结果已自动下载；导出文件已重新读取并确认“2.直接人工”为最后一个工作表。");
+      setMessage("测算完成，结果已自动下载；已复核31个固定模板工作表的名称和顺序。");
     } catch (error) {
       setPhase("error");
       const reason = error instanceof Error ? error.message : String(error);
@@ -231,8 +234,8 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
       </header>
 
       <section className="hero">
-        <div><p className="eyebrow">ONE-CLICK COST CALCULATION</p><h2>在浏览器中完成测算，<br />原始文件不会上传。</h2><p>沿用已锁定的工时、公摊、直接人工与明细账追加分配表规则。结果另存为新的 Excel 文件。</p></div>
-        <div className="rule-card"><strong>已锁定的口径</strong><span>所有人员按已有项目工时比例分配公摊工时</span><span>原始明细账保留，并在账下追加项目分配表</span><span>“2.直接人工”固定为结果末页</span></div>
+        <div><p className="eyebrow">ONE-CLICK COST CALCULATION</p><h2>在浏览器中完成测算，<br />原始文件不会上传。</h2><p>沿用已锁定的工时、直接人工与其他费用规则；结果严格按固定模板另存为新 Excel 文件。</p></div>
+        <div className="rule-card"><strong>已锁定的口径</strong><span>所有人员按已有项目工时比例分配公摊工时</span><span>运费、折旧等20类“其他费用”自动按规则回填既有模板页</span><span>核算维度汇总表按同构模板页逐格映射，金额显示两位小数</span></div>
       </section>
 
       <section className="workspace">
@@ -241,7 +244,7 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
           <label className="upload-card"><span>工时表</span><small>姓名、月份总工时与连续 RD 项目列</small><input type="file" accept=".xlsx" onChange={selectOne("hours")} /><FileChip file={inputs.hours} /></label>
           <label className="upload-card"><span>项目组合表</span><small>核算维度与科目组合、项目主数据</small><input type="file" accept=".xlsx" onChange={selectOne("combination")} /><FileChip file={inputs.combination} /></label>
           <label className="upload-card"><span>工资表</span><small>人员姓名与当月工资费用</small><input type="file" accept=".xlsx" onChange={selectOne("salary")} /><FileChip file={inputs.salary} /></label>
-          <label className="upload-card ledgers"><span>核算维度明细账（可选）</span><small>如有原始费用账可多选；需含摘要、借方、贷方</small><input type="file" accept=".xlsx" multiple onChange={selectLedgers} />{inputs.ledgers.length ? <span className="file-chip">已选择 {inputs.ledgers.length} 份明细账</span> : <span className="file-empty">未选择：仅测算工时和直接人工</span>}</label>
+          <label className="upload-card ledgers"><span>核算维度汇总／费用明细账（可选）</span><small>支持“项目分类明细汇总表N月”直接映射，也支持含摘要、借方、贷方的费用明细账</small><input type="file" accept=".xlsx" multiple onChange={selectLedgers} />{inputs.ledgers.length ? <span className="file-chip">已选择 {inputs.ledgers.length} 份费用资料</span> : <span className="file-empty">未选择：仅测算工时和直接人工</span>}</label>
         </div>
         <div className={`notice ${phase}`} role="status">{message}</div>
         <button className="run-button" type="button" disabled={buttonDisabled} onClick={runCalculation}>{phase === "running" ? "正在本地测算…" : "开始测算并下载结果"}</button>
