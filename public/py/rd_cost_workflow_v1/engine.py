@@ -1380,12 +1380,25 @@ def clear_non_formula_cells(ws: Any, start_row: int, end_row: int, start_col: in
 
 
 def write_template_expense_source(ws: Any, records: list[LedgerRecord], month: int) -> None:
-    """将凭证明细写入模板原有账区，保留该页既有的分配公式。"""
+    """把上传的费用明细账写进该费用页的既有原始账区。
+
+    分配表由下方的固定模板预留区域承载，不能因为清空原始账区而被覆盖。
+    """
+    allocation_starts: list[int] = []
+    standard_table = standard_fee_allocation_table(ws)
+    if standard_table is not None:
+        allocation_starts.append(standard_table[0])
+    for row in range(1, ws.max_row + 1):
+        for col in range(1, ws.max_column - 3):
+            labels = [norm(ws.cell(row, col + offset).value) for offset in range(4)]
+            if labels == ["项目编号", "工时合计", "工时分配率", "费用"]:
+                allocation_starts.append(row)
     formula_rows = [
         cell.row for row in ws.iter_rows(min_row=5) for cell in row
         if isinstance(cell.value, str) and cell.value.startswith("=")
     ]
-    raw_end = min(formula_rows) - 1 if formula_rows else ws.max_row
+    boundaries = allocation_starts + formula_rows
+    raw_end = min(boundaries) - 1 if boundaries else ws.max_row
     if raw_end < 5:
         return
     if len(records) > raw_end - 4:
@@ -1429,121 +1442,13 @@ def assert_formula_errors_cleared(wb: Any) -> None:
         raise RuleError("输出模板仍存在公式错误：" + "、".join(errors[:10]))
 
 
-def last_populated_row(ws: Any) -> int:
-    """返回原始台账中最后一个有内容的行，忽略只有格式的模板尾行。"""
-    for row in range(ws.max_row, 0, -1):
-        if any(ws.cell(row, col).value not in (None, "") for col in range(1, ws.max_column + 1)):
-            return row
-    return 0
-
-
-def unique_sheet_title(wb: Any, requested: str) -> str:
-    """保留原始工作表名称；与固定模板冲突时用可读后缀避免覆盖。"""
-    base = requested[:31]
-    if base not in wb.sheetnames:
-        return base
-    index = 2
-    while True:
-        suffix = f"（明细账{index}）"
-        candidate = f"{base[:31 - len(suffix)]}{suffix}"
-        if candidate not in wb.sheetnames:
-            return candidate
-        index += 1
-
-
-def existing_allocation_header_row(ws: Any) -> int:
-    """识别已由本规则追加过的分配表，重复运行时原位刷新而不再次附表。"""
-    for row in range(1, ws.max_row + 1):
-        headers = [norm(ws.cell(row, col).value) for col in range(1, 5)]
-        if headers[:3] == ["项目编码", "科目名称", "工时分配率"] and headers[3].endswith("分配"):
-            return row
-    return 0
-
-
-def clear_existing_allocation_table(ws: Any, header_row: int) -> None:
-    """只清理识别出的旧分配块内容，保留其格式以便原位刷新。"""
-    for row in range(header_row, ws.max_row + 1):
-        values = [ws.cell(row, col).value for col in range(1, 5)]
-        for col in range(1, 5):
-            if not isinstance(ws.cell(row, col), MergedCell):
-                ws.cell(row, col).value = None
-        if norm(values[0]) == "合计":
-            break
-
-
-def append_allocation_table(
-    ws: Any,
-    fee_name: str,
-    month: int,
-    projects: OrderedDict[str, Project],
-    project_totals: dict[str, Decimal],
-) -> None:
-    """在原始明细账的最后有效行之后追加项目工时分配表。"""
-    header_row = existing_allocation_header_row(ws)
-    if header_row:
-        clear_existing_allocation_table(ws, header_row)
-    else:
-        header_row = last_populated_row(ws) + 6
-    fee_label = norm(fee_name) or "费用"
-    write_values(ws, header_row, ["项目编码", "科目名称", "工时分配率", f"{month or 1}月{fee_label}分配"])
-    style_header(ws, header_row, 1, 4)
-
-    included_codes = [
-        code for code, project in projects.items()
-        if project.rate > 0 or project_totals.get(code, Decimal("0")) != 0
-    ]
-    for row, code in enumerate(included_codes, start=header_row + 1):
-        project = projects[code]
-        write_values(ws, row, [code, project.name, float(project.rate), float(money(project_totals.get(code, Decimal("0"))))])
-        ws.cell(row, 3).number_format = "0.0000%"
-        ws.cell(row, 4).number_format = "#,##0.00"
-    total_row = header_row + len(included_codes) + 1
-    write_values(ws, total_row, ["合计", None, float(sum((projects[code].rate for code in included_codes), Decimal("0"))), float(money(sum(project_totals.values(), Decimal("0"))))])
-    ws.cell(total_row, 3).number_format = "0.0000%"
-    ws.cell(total_row, 4).number_format = "#,##0.00"
-    style_table(ws, header_row, total_row, 1, 4)
-    for column, width in {"A": 18, "B": 34, "C": 15, "D": 20}.items():
-        current = ws.column_dimensions[column].width or 0
-        ws.column_dimensions[column].width = max(current, width)
-
-
-def write_template_ledger_sheets(
-    wb: Any,
-    source_sheets: list[LedgerSourceSheet],
-    records: list[LedgerRecord],
-    source_allocations: dict[tuple[Path, str], dict[str, Decimal]],
-    projects: OrderedDict[str, Project],
-    month: int,
-) -> list[str]:
-    """复制每张原始明细账，并将该明细账自己的项目分配表附在其下方。"""
-    records_by_source: dict[tuple[Path, str], list[LedgerRecord]] = defaultdict(list)
-    for record in records:
-        records_by_source[(record.source_path, record.sheet)].append(record)
-    source_books: dict[Path, Any] = {}
-    output_names: list[str] = []
-    for item in source_sheets:
-        source_book = source_books.setdefault(item.source_path, load_workbook(item.source_path, data_only=False, read_only=False))
-        if item.sheet not in source_book.sheetnames:
-            raise RuleError(f"原始明细账缺少工作表：{item.source_path.name} / {item.sheet}")
-        target = wb.create_sheet(unique_sheet_title(wb, item.sheet))
-        copy_sheet_values(source_book[item.sheet], target)
-        append_allocation_table(
-            target,
-            item.fee_name,
-            month,
-            projects,
-            source_allocations.get(item.key, project_amounts_from_records(records_by_source[item.key])),
-        )
-        output_names.append(target.title)
-    return output_names
-
-
 def write_template_output(
     hours_result: dict[str, Any],
     projects: OrderedDict[str, Project],
     master_costs: dict[str, dict[str, Decimal]],
     labor_totals: dict[str, Decimal],
     effective_records: list[LedgerRecord],
+    expense_detail_records: list[LedgerRecord],
     summary_source: tuple[Path, str] | None,
     month: int,
     output_path: Path,
@@ -1561,8 +1466,25 @@ def write_template_output(
         copy_summary_to_template(wb, summary_source, month)
     write_template_detail_sheet(wb, output_year(effective_records))
     write_template_hours_sheets(wb, hours_result, projects)
-    # 不再写入或清空各费用页上方的原始明细账区。其他费用完全以核算维度
-    # 明细账的项目分类汇总为数据源，只回填模板下方既有的分配结果表。
+    detail_records_by_fee: dict[str, list[LedgerRecord]] = defaultdict(list)
+    for record in expense_detail_records:
+        detail_records_by_fee[record.fee_code].append(record)
+    missing_detail_names: list[str] = []
+    for rule in COST_RULES["fee_items"]:
+        ws = safe_sheet(wb, rule["detail_sheet"])
+        detail_rows = detail_records_by_fee.get(rule["code"], [])
+        # 每个费用页的上方账区都只由用户上传的费用明细账承载，避免模板中
+        # 可能存在的历史交易被误认为本次输入。
+        write_template_expense_source(ws, detail_rows, month)
+        if not detail_rows:
+            missing_detail_names.append(rule["name"])
+    if missing_detail_names:
+        warnings.append(
+            "未上传以下费用明细账，上方原始账区已留空但下方分配表仍按核算维度明细账计算："
+            + "、".join(missing_detail_names)
+        )
+    # 费用金额只取核算维度明细账的项目分类汇总；上传的费用明细账只保留在
+    # 对应费用页上方，不能覆盖或校验计算金额。
     write_template_other_fee_allocations(wb, projects, master_costs, month)
     write_template_labor_sheet(wb, projects, labor_totals, month)
     expected = [f"项目分类明细汇总表{month or 1}月" if name == TEMPLATE_MONTH_SHEET else name for name in original_sheets]
@@ -1670,9 +1592,9 @@ def locate_summary_source(ledger_paths: list[Path]) -> tuple[Path, str] | None:
 def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str]]:
     """只读取核算维度明细账中的项目分类汇总表。
 
-    “其他”费用的金额来源固定为这张汇总表；各费用页中的明细账区仅保留
-    固定模板原貌，页面下方的项目分配表才是本次输出的承载位置。因此不接收
-    运费、折旧等单独明细账，也不以它们做期间勾稽或覆盖汇总金额。
+    “其他”费用的金额来源固定为这张汇总表。运费、折旧等费用明细账会被
+    写入各自模板页的上方账区；它们不参与金额计算、不做期间勾稽，也不覆盖
+    汇总表的金额。
     """
     summary_source = locate_summary_source([path])
     if summary_source is None:
@@ -1685,14 +1607,28 @@ def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[li
     return records, month, summary_source
 
 
+def read_expense_detail_workbooks(paths: list[Path], warnings: list[str]) -> list[LedgerRecord]:
+    """读取用户上传的费用明细账，仅供复制至对应费用模板页。"""
+    records: list[LedgerRecord] = []
+    for path in paths:
+        parsed, _, _ = parse_ledger_file(path, warnings)
+        detail_rows = [record for record in parsed if record.source_kind == "ledger"]
+        if not detail_rows:
+            warnings.append(f"{path.name} 未识别到可写入费用页的凭证明细")
+            continue
+        records.extend(detail_rows)
+    return records
+
+
 def build_output(
     hours_path: Path,
     combination_path: Path,
     salary_path: Path,
     dimension_ledger_path: Path,
+    expense_detail_paths: list[Path],
     output_path: Path,
 ) -> dict[str, Any]:
-    source_paths = [hours_path, combination_path, salary_path, dimension_ledger_path]
+    source_paths = [hours_path, combination_path, salary_path, dimension_ledger_path, *expense_detail_paths]
     if any(output_path.resolve() == source_path.resolve() for source_path in source_paths):
         raise RuleError("输入文件只读保留，结果必须保存为新的工作簿")
     warnings: list[str] = []
@@ -1728,6 +1664,7 @@ def build_output(
         labor_totals.setdefault(code, Decimal("0"))
 
     parsed_records, ledger_month, summary_source = read_dimension_summary_workbook(dimension_ledger_path, warnings)
+    expense_detail_records = read_expense_detail_workbooks(expense_detail_paths, warnings)
     month = ledger_month or salary_month or 1
     effective_records = parsed_records
 
@@ -1771,7 +1708,7 @@ def build_output(
         "other_total": other_total,
         "master_projects": len(projects),
         "salary_source": salary_source,
-        "ledger_records": len(effective_records),
+        "ledger_records": len(expense_detail_records),
     }
     output_sheets = write_template_output(
         hours_result,
@@ -1779,6 +1716,7 @@ def build_output(
         master_costs,
         labor_totals,
         effective_records,
+        expense_detail_records,
         summary_source,
         month,
         output_path,
@@ -1798,7 +1736,7 @@ def main(argv: list[str] | None = None) -> int:
     references: dict[str, list[Path]] = defaultdict(list)
     for key, value in args.reference_input:
         references[key].append(Path(value))
-    missing = [key for key in ("combination_file", "salary_file", "dimension_ledger") if not references.get(key)]
+    missing = [key for key in ("combination_file", "salary_file", "dimension_ledger", "expense_detail") if not references.get(key)]
     if missing:
         print("缺少输入：" + "、".join(missing), file=sys.stderr)
         return 2
@@ -1808,6 +1746,7 @@ def main(argv: list[str] | None = None) -> int:
             references["combination_file"][0],
             references["salary_file"][0],
             references["dimension_ledger"][0],
+            references["expense_detail"],
             args.output,
         )
         report = {
