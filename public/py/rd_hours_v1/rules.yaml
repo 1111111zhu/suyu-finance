@@ -1,0 +1,169 @@
+rule_set:
+  id: rd_labor_hours_v1
+  title: 研发人员RD工时与公摊RD工时规则
+  version: "1.3.0"
+  status: template_based_personal_allocation
+  scope: labor_hours_only
+
+identification:
+  # 项目编码正则只是结构候选；正式识别还会核对项目名称、两行表头和数字矩阵。
+  project_code_pattern: '^RD[0-9A-Z]+(?:-[0-9A-Z]+)*$'
+  minimum_project_columns: 2
+  minimum_employee_rows: 2
+  auto_confirm_threshold: 0.70
+  preferred_hours_sheet_names:
+    - 研发人员工时统计合计
+    - 研发人员工时统计
+    - 人员工时
+    - 工时统计
+  scan_limits:
+    hours_header_rows: 100
+    hours_header_columns: 300
+    master_header_rows: 80
+    master_header_columns: 80
+    statistics_columns_right: 12
+  aliases:
+    project_code_header:
+      - 项目编码
+      - 研发项目编码
+      - 项目编号
+    project_name_header:
+      - 项目名称
+      - 研发项目名称
+      - 科目名称
+      - 研发名称
+    employee_id_header:
+      - 人员编号
+      - 员工编号
+      - 工号
+      - 人员编码
+    employee_name_header:
+      - 人员姓名
+      - 员工姓名
+      - 姓名
+      - 研发人员
+    month_reference_header:
+      - 1月
+      - 2月
+      - 3月
+      - 4月
+      - 5月
+      - 6月
+      - 7月
+      - 8月
+      - 9月
+      - 10月
+      - 11月
+      - 12月
+    actual_hours_header:
+      - RD工时
+      - 实际工时
+      - 项目实际工时
+      - 填报工时
+      - 项目工时合计
+      - 工时统计
+    allocated_hours_header:
+      - 公摊RD工时
+      - 分摊工时
+      - 待分摊工时
+      - 未填报工时
+      - 补充分摊工时
+    total_hours_header:
+      - 工时汇总
+      - 最终总工时
+      - 总工时
+      - 工时总计
+    summary_row_labels:
+      - 项目汇总区
+      - 项目实际工时
+      - 项目分摊工时
+      - 项目最终总工时
+      - 项目总工时
+      - 合计
+      - 总计
+      - 小计
+    grand_total_row:
+      - 合计
+      - 总计
+    project_actual_summary:
+      - 项目实际工时
+      - 项目实际工时合计
+    project_allocated_summary:
+      - 项目分摊工时
+      - 项目分摊工时合计
+    project_final_summary:
+      - 项目最终总工时
+      - 项目总工时
+
+calculation:
+  # 人员 i 在项目 p 的源RD工时 h(i,p) 来自已确认的项目矩阵单元格。
+  personal_rd_hours: 'sum_over_projects(h(i,p))'
+  personal_allocated_rd_hours: 'hours_total_i - rd_i'
+  source_public_rd_reconciliation: 'source_public_rd_i == hours_total_i - rd_i'
+  personal_allocation_ratio: 'public_rd_i / rd_i'
+  allocated_rd_hours_by_person_project: 'h(i,p) * public_rd_i / rd_i'
+  personal_final_hours: 'rd_i + public_rd_i'
+  project_actual_hours: 'sum_over_employees(h(i,p))'
+  project_allocated_hours: 'sum_over_employees(h(i,p) * public_rd_i / rd_i)'
+  project_final_hours: 'project_actual_p + project_allocated_p'
+  allow_negative_allocation: false
+  reconciliation_tolerance: 0.000001
+  display_decimal_places: 2
+  rounding_residual_method: none
+  context_independent_principle: 必须依据已识别表头和数值勾稽执行；不以人员名称或对话上下文改变公式
+
+compact_layout_contract:
+  enabled: true
+  accepted_layout: 姓名列、紧邻连续RD项目列左侧的月份列、至少两个连续RD项目列
+  total_hours_source: 紧邻RD项目列左侧的月份列数值即个人工时汇总
+  source_project_hours: 连续RD项目列中的数值即项目源工时
+  public_hours_formula: 个人工时汇总 - 个人项目源工时合计
+  project_final_hours_formula: 项目源工时 × 个人工时汇总 ÷ 个人项目源工时合计
+  person_exceptions: forbidden
+  ambiguity: stop_and_report_instead_of_guessing
+
+exceptions:
+  blank_inside_confirmed_matrix: treat_as_zero
+  non_numeric_matrix_value: stop_and_report_cell
+  excel_error_value: stop_and_report_cell
+  missing_month_reference_column: stop_and_report_layout
+  missing_rd_hours: stop_and_report_person
+  missing_allocated_rd_hours: stop_and_report_person
+  missing_hours_summary: stop_and_report_person
+  negative_hours: stop
+  zero_rd_hours_and_nonzero_allocated: stop_without_guessing
+  duplicate_project_code: stop
+  duplicate_employee_id: stop
+  duplicate_employee_name_without_id: stop
+  low_confidence_layout: stop_and_show_candidates
+  output_overwrite_source: forbidden
+
+reconciliations:
+  - id: matrix_bidirectional_total
+    expression: 'sum_i(rd_i) == sum_p(project_rd_p)'
+  - id: personal_allocation_conservation
+    expression: 'sum_p(h(i,p) * public_rd_i / rd_i) == public_rd_i'
+  - id: allocated_hours_conservation
+    expression: 'sum_p(project_allocated_p) == sum_i(public_rd_i)'
+  - id: final_hours_conservation
+    expression: 'sum_p(project_final_p) == sum_i(rd_i + public_rd_i)'
+  - id: zero_actual_project_zero_allocation
+    expression: 'project_rd_p == 0 implies project_allocated_p == 0'
+
+outputs:
+  machine_report: json
+  optional_workbook_copy:
+    source_sheet_right_table:
+      - 项目公摊RD工时矩阵
+    new_sheets:
+      - RD工时加公摊
+    audit_sheets:
+      - 智能体识别日志
+    overwrite_input: false
+
+template_requirements:
+  - 人员列使用“姓名”表头
+  - 标准模板中的月份列使用“1月”至“12月”之一；简版结构中紧邻RD项目列左侧的月份列数值作为个人工时汇总参与公式
+  - 右侧统计列依次至少包含“工时汇总”“RD工时”“公摊RD工时”
+  - RD工时必须等于项目源RD工时行合计
+  - 工时汇总必须等于RD工时加公摊RD工时
