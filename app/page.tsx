@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 type InputSet = {
   files: File[];
@@ -140,8 +140,9 @@ export default function Home() {
     return () => { cancelled = true; };
   }, []);
 
-  const buttonDisabled = phase !== "ready" || !inputs.files.length;
-  const selectedCount = useMemo(() => inputs.files.length, [inputs.files]);
+  const selectedFiles = inputs.files ?? [];
+  const buttonDisabled = phase !== "ready" || !selectedFiles.length;
+  const selectedCount = selectedFiles.length;
 
   function selectFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
@@ -156,15 +157,15 @@ export default function Home() {
   }
 
   async function runCalculation() {
-    if (!engine.current || !inputs.files.length) return;
+    if (!engine.current || !selectedFiles.length) return;
     setPhase("running");
     setSummary(null);
     setMessage("正在浏览器本地读取 Excel、计算工时、直接人工和费用分配…");
     try {
-      for (const [index, file] of inputs.files.entries()) {
+      for (const [index, file] of selectedFiles.entries()) {
         await writeInput(engine.current, file, `/work/input_${index + 1}.xlsx`);
       }
-      const inputPaths = inputs.files.map((_, index) => `Path("/work/input_${index + 1}.xlsx")`).join(",\n    ");
+      const inputPaths = selectedFiles.map((_, index) => `Path("/work/input_${index + 1}.xlsx")`).join(",\n    ");
       const resultText = await engine.current.runPythonAsync(`
 import json
 from pathlib import Path
@@ -238,14 +239,14 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
       <section className="workspace">
         <div className="step-heading"><span>01</span><div><h3>选择测算文件</h3><p>请使用 `.xlsx` 文件；每个文件不超过 20 MB。</p></div><b>{selectedCount} 份文件已选择</b></div>
         <div className="upload-grid">
-          <label className="upload-card upload-card-wide"><span>上传全部测算文件</span><small>一次选择工时、项目组合、工资、核算维度及费用明细账。系统只根据工作表结构归类，不读取或限制文件名。</small><input type="file" accept=".xlsx" multiple onChange={selectFiles} /><FileChips files={inputs.files} /></label>
+          <label className="upload-card upload-card-wide"><span>上传全部测算文件</span><small>一次选择工时、项目组合、工资、核算维度及费用明细账。系统只根据工作表结构归类，不读取或限制文件名。</small><input type="file" accept=".xlsx" multiple onChange={selectFiles} /><FileChips files={selectedFiles} /></label>
         </div>
         <div className={`notice ${phase}`} role="status">{message}</div>
         <button className="run-button" type="button" disabled={buttonDisabled} onClick={runCalculation}>{phase === "running" ? "正在本地测算…" : "开始测算并下载结果"}</button>
         <p className="privacy">文件仅进入当前浏览器的临时计算区；刷新、关闭页面或下载完成后不会保留在网站。</p>
       </section>
 
-      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="classified"><strong>已自动归类</strong><span>工时：{inputs.files[Number(summary.classified_paths.hours.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　项目组合：{inputs.files[Number(summary.classified_paths.combination.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　工资：{inputs.files[Number(summary.classified_paths.salary.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　核算维度：{inputs.files[Number(summary.classified_paths.dimension_ledger.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　费用明细：{summary.classified_paths.expense_ledgers.map((path) => inputs.files[Number(path.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name).join("、")}</span></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>其他费用合计</small><strong>¥ {money(summary.other_total)}</strong></div><div><small>分类记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}</section>}
+      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="classified"><strong>已自动归类</strong><span>工时：{selectedFiles[Number(summary.classified_paths.hours.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　项目组合：{selectedFiles[Number(summary.classified_paths.combination.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　工资：{selectedFiles[Number(summary.classified_paths.salary.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　核算维度：{selectedFiles[Number(summary.classified_paths.dimension_ledger.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　费用明细：{summary.classified_paths.expense_ledgers.map((path) => selectedFiles[Number(path.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name).join("、")}</span></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>其他费用合计</small><strong>¥ {money(summary.other_total)}</strong></div><div><small>分类记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}</section>}
 
       <footer>临时本地测算操作台 · 浏览器端运行 · 不安装程序、不执行本地 EXE</footer>
     </main>
