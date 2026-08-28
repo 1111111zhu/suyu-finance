@@ -41,9 +41,10 @@ declare global {
 
 const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const DIMENSION_LEDGER_NAME_TOKEN = "核算维度明细账";
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
-const RULE_PACKAGE_REVISION = "20260828-cost-rules-v5";
+const RULE_PACKAGE_REVISION = "20260828-cost-rules-v6";
 const initialInputs: InputSet = { hours: null, combination: null, salary: null, dimensionLedger: null, ledgers: [] };
 
 function money(value: string | number | undefined) {
@@ -149,6 +150,12 @@ export default function Home() {
       const file = event.target.files?.[0] ?? null;
       if (file && file.size > MAX_FILE_BYTES) {
         setMessage(`${file.name} 超过 20 MB 限制。`);
+        event.target.value = "";
+        return;
+      }
+      if (file && slot === "dimensionLedger" && !file.name.includes(DIMENSION_LEDGER_NAME_TOKEN)) {
+        setMessage(`核算维度明细账的文件名只需包含“${DIMENSION_LEDGER_NAME_TOKEN}”；请重新选择对应文件。`);
+        event.target.value = "";
         return;
       }
       setInputs((current) => ({ ...current, [slot]: file }));
@@ -246,7 +253,7 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
           <label className="upload-card"><span>工时表</span><small>姓名、月份总工时与连续 RD 项目列</small><input type="file" accept=".xlsx" onChange={selectOne("hours")} /><FileChip file={inputs.hours} /></label>
           <label className="upload-card"><span>项目组合表</span><small>核算维度与科目组合、项目主数据</small><input type="file" accept=".xlsx" onChange={selectOne("combination")} /><FileChip file={inputs.combination} /></label>
           <label className="upload-card"><span>工资表</span><small>人员姓名与当月工资费用</small><input type="file" accept=".xlsx" onChange={selectOne("salary")} /><FileChip file={inputs.salary} /></label>
-          <label className="upload-card ledgers"><span>核算维度明细账（必填）</span><small>须包含“项目分类明细汇总表N月”；用于复制汇总并计算全部20类其他费用</small><input type="file" accept=".xlsx" onChange={selectOne("dimensionLedger")} /><FileChip file={inputs.dimensionLedger} /></label>
+          <label className="upload-card ledgers"><span>核算维度明细账（必填）</span><small>文件名包含“核算维度明细账”即可；汇总页按列结构识别，名称可带后缀</small><input type="file" accept=".xlsx" onChange={selectOne("dimensionLedger")} /><FileChip file={inputs.dimensionLedger} /></label>
           <label className="upload-card ledgers"><span>费用明细账（必填，可多选）</span><small>上传运费、折旧等费用账；系统将原始明细写入对应费用页，并在其下方生成分配表</small><input type="file" accept=".xlsx" multiple onChange={selectLedgers} />{inputs.ledgers.length ? <span className="file-chip">已选择 {inputs.ledgers.length} 份费用明细账</span> : <span className="file-empty">未选择</span>}</label>
         </div>
         <div className={`notice ${phase}`} role="status">{message}</div>
