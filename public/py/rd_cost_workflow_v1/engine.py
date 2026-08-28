@@ -30,11 +30,15 @@ from openpyxl.utils import get_column_letter
 from rd_hours_v1 import engine as hours_engine
 
 
-PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋运费）", "version": "1.0.3"}
+PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋运费）", "version": "1.0.4"}
 MONEY = Decimal("0.01")
 TOLERANCE = Decimal("0.000001")
 PROJECT_RE = re.compile(r"^RD[0-9A-Z]+(?:-[0-9A-Z]+)*$", re.I)
-MONTH_RE = re.compile(r"(1[0-2]|[1-9])月")
+MONTH_RE = re.compile(r"(?:1[0-2]|[1-9]|一|二|三|四|五|六|七|八|九|十|十一|十二)月")
+CHINESE_MONTHS = {
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
+    "七": 7, "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12,
+}
 SUMMARY_WORDS = {"期初余额", "期末余额", "本期合计", "本年累计", "结转研发支出"}
 OUTPUT_TEMPLATE = PACK_ROOT / "templates" / "研发成本输出模板.xlsx"
 TEMPLATE_MONTH_SHEET = "项目分类明细汇总表1月"
@@ -436,7 +440,8 @@ def read_salary(path: Path) -> tuple[list[SalaryRow], str, int]:
     salary_header_text = norm(ws.cell(header_row, headers["salary"]).value)
     match = MONTH_RE.search(salary_header_text)
     if match:
-        month = int(match.group(1))
+        month_label = match.group(0)[:-1]
+        month = CHINESE_MONTHS[month_label] if month_label in CHINESE_MONTHS else int(month_label)
     for row in range(header_row + 1, min(ws.max_row, header_row + 2000) + 1):
         name = norm(ws.cell(row, headers["name"]).value)
         employee_id = norm(ws.cell(row, headers["id"]).value) if headers["id"] else ""

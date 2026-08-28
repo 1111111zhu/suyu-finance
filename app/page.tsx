@@ -39,6 +39,9 @@ declare global {
 
 const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+// 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
+// 使用浏览器已缓存的旧 engine.py / rules.yaml。
+const RULE_PACKAGE_REVISION = "20260828-month-aliases-v2";
 const initialInputs: InputSet = { hours: null, combination: null, salary: null, ledgers: [] };
 
 function money(value: string | number | undefined) {
@@ -83,9 +86,9 @@ async function initializeEngine(): Promise<PyodideLike> {
   pyodide.FS.mkdirTree("/app/rule_packages/rd_hours_v1");
   pyodide.FS.mkdirTree("/work");
 
-  await copyAsset(pyodide, "/py/rd_cost_workflow_v1/engine.py", "/app/rule_packages/rd_cost_workflow_v1/engine.py");
-  await copyAsset(pyodide, "/py/rd_hours_v1/engine.py", "/app/rule_packages/rd_hours_v1/engine.py");
-  await copyAsset(pyodide, "/py/rd_hours_v1/rules.yaml", "/app/rule_packages/rd_hours_v1/rules.yaml");
+  await copyAsset(pyodide, `/py/rd_cost_workflow_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/engine.py");
+  await copyAsset(pyodide, `/py/rd_hours_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/engine.py");
+  await copyAsset(pyodide, `/py/rd_hours_v1/rules.yaml?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/rules.yaml");
   await copyAsset(pyodide, "/py/output_template.xlsx", "/app/rule_packages/rd_cost_workflow_v1/templates/研发成本输出模板.xlsx");
   await copyAsset(pyodide, "/py/vendor.zip", "/app/vendor.zip");
   await pyodide.runPythonAsync(`

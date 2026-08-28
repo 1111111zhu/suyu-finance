@@ -406,7 +406,7 @@ def locate_layout(
         max(first_project_col - 1, 1),
     )
     if not month_col:
-        raise RuleError("未定位到模板月份列（如“1月”）；该列仅用于展示")
+        raise RuleError("未定位到模板月份列（如“1月”或“一月”）；该列仅用于展示")
 
     stats_end = min(ws.max_column, last_project_col + int(rules["identification"]["scan_limits"]["statistics_columns_right"]))
     rd_col = find_alias_column(

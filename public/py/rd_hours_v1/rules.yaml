@@ -1,7 +1,7 @@
 rule_set:
   id: rd_labor_hours_v1
   title: 研发人员RD工时与公摊RD工时规则
-  version: "1.3.0"
+  version: "1.3.1"
   status: template_based_personal_allocation
   scope: labor_hours_only
 
@@ -44,17 +44,29 @@ identification:
       - 研发人员
     month_reference_header:
       - 1月
+      - 一月
       - 2月
+      - 二月
       - 3月
+      - 三月
       - 4月
+      - 四月
       - 5月
+      - 五月
       - 6月
+      - 六月
       - 7月
+      - 七月
       - 8月
+      - 八月
       - 9月
+      - 九月
       - 10月
+      - 十月
       - 11月
+      - 十一月
       - 12月
+      - 十二月
     actual_hours_header:
       - RD工时
       - 实际工时
@@ -163,7 +175,7 @@ outputs:
 
 template_requirements:
   - 人员列使用“姓名”表头
-  - 标准模板中的月份列使用“1月”至“12月”之一；简版结构中紧邻RD项目列左侧的月份列数值作为个人工时汇总参与公式
+  - 标准模板中的月份列可使用“1月”至“12月”或“一月”至“十二月”；简版结构中紧邻RD项目列左侧的月份列数值作为个人工时汇总参与公式
   - 右侧统计列依次至少包含“工时汇总”“RD工时”“公摊RD工时”
   - RD工时必须等于项目源RD工时行合计
   - 工时汇总必须等于RD工时加公摊RD工时
