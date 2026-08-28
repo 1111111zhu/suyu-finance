@@ -44,6 +44,8 @@ SUMMARY_WORDS = {"期初余额", "期末余额", "本期合计", "本年累计",
 OUTPUT_TEMPLATE = PACK_ROOT / "templates" / "研发成本输出模板.xlsx"
 TEMPLATE_MONTH_SHEET = "项目分类明细汇总表1月"
 COST_RULES_FILE = PACK_ROOT / "rules.yaml"
+DIRECT_MATERIAL_CODE = "FYXM28-SYS"
+PUBLIC_PROJECT_CODE = "RD9999"
 
 MAIN_HEADERS = [
     "项目编码", "科目名称", "直接材料", "人员人工（含社保+公积金）", "运费", "折旧",
@@ -150,6 +152,14 @@ def load_cost_rules() -> dict[str, Any]:
 
 COST_RULES = load_cost_rules()
 FEE_RULES_BY_CODE = {item["code"]: item for item in COST_RULES["fee_items"]}
+DIRECT_MATERIAL_RULE = {
+    "code": DIRECT_MATERIAL_CODE,
+    "name": "直接材料",
+    "detail_sheet": "14.材料明细账",
+    "master_header": "直接材料",
+    "aliases": ["直接投入(材料、燃料)", "直接投入（材料、燃料）", "材料费", "材料明细账"],
+}
+FEE_RULES_BY_CODE[DIRECT_MATERIAL_CODE] = DIRECT_MATERIAL_RULE
 EXPENSE_SHEETS = [(item["detail_sheet"], item["name"]) for item in COST_RULES["fee_items"]]
 
 
@@ -158,6 +168,8 @@ def fee_rule_for_text(*values: Any) -> dict[str, Any] | None:
     code_match = re.search(r"(FYXM\d+_SYS)", text, re.I)
     if code_match and code_key(code_match.group(1)) in FEE_RULES_BY_CODE:
         return FEE_RULES_BY_CODE[code_key(code_match.group(1))]
+    if any(alias.lower() in text for alias in DIRECT_MATERIAL_RULE["aliases"]):
+        return DIRECT_MATERIAL_RULE
     for item in COST_RULES["fee_items"]:
         candidates = [item["name"], *item.get("aliases", [])]
         if any(candidate.lower() in text for candidate in candidates):
@@ -237,43 +249,6 @@ def copy_sheet_values(source: Any, target: Any) -> None:
     target.sheet_view.showGridLines = source.sheet_view.showGridLines
     target.sheet_properties = copy(source.sheet_properties)
     target.sheet_format = copy(source.sheet_format)
-
-
-def read_combo_projects(path: Path, warnings: list[str]) -> OrderedDict[str, Project]:
-    wb = load_workbook(path, data_only=True, read_only=False)
-    projects: OrderedDict[str, Project] = OrderedDict()
-    preferred = [ws for ws in wb.worksheets if norm(ws.title) == "研发项目主表"]
-    source_sheets = preferred or wb.worksheets
-    for ws in source_sheets:
-        for header_row in range(1, min(ws.max_row, 100) + 1):
-            headers = cell_texts(ws, header_row, 100)
-            code_col = next((headers[item] for item in ("项目编码", "研发项目编码", "项目编号") if item in headers), None)
-            name_col = next((headers[item] for item in ("项目名称", "科目名称", "研发名称", "研发项目名称") if item in headers), None)
-            if not code_col or not name_col:
-                continue
-            blanks = 0
-            started = False
-            for row in range(header_row + 1, min(ws.max_row, header_row + 5000) + 1):
-                code = code_key(ws.cell(row, code_col).value)
-                name = norm(ws.cell(row, name_col).value)
-                if code in {"合计", "总计", "小计"}:
-                    break
-                if not code and not name:
-                    blanks += 1
-                    if started and blanks >= 5:
-                        break
-                    continue
-                blanks = 0
-                if not PROJECT_RE.fullmatch(code) or not name:
-                    continue
-                started = True
-                if code in projects and name_key(projects[code].name) != name_key(name):
-                    warnings.append(f"组合表项目编码 {code} 对应多个名称，主表保留首次名称“{projects[code].name}”")
-                    continue
-                projects.setdefault(code, Project(code, name))
-            if started and "研发项目主表" in norm(ws.title):
-                break
-    return projects
 
 
 def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tuple[Any, dict[str, Any], OrderedDict[str, Project]]:
@@ -634,6 +609,100 @@ def parse_summary_sheet(path: Path, ws: Any, warnings: list[str]) -> tuple[list[
     return records, inferred_month
 
 
+def locate_combination_summary_sheet(path: Path) -> tuple[Path, str, int] | None:
+    """定位“核算维度与科目组合”导出的交叉汇总结构。
+
+    该结构的表头不在首行：同一行包含“费用项目”“研发项目”和位于研发
+    项目右侧的“借方发生(原币)”。它是核算维度金额来源，不是项目清单。
+    """
+    wb = load_workbook(path, data_only=True, read_only=False)
+    for ws in wb.worksheets:
+        for row in range(1, min(ws.max_row, 100) + 1):
+            headers = cell_texts(ws, row, 100)
+            if "费用项目" not in headers or "研发项目" not in headers:
+                continue
+            project_col = headers["研发项目"]
+            debit_cols = [
+                col for label, col in headers.items()
+                if label in {"借方发生(原币)", "借方发生（原币）", "借方发生"} and col > project_col
+            ]
+            if debit_cols:
+                return path, ws.title, row
+    return None
+
+
+def parse_combination_summary_sheet(
+    path: Path,
+    ws: Any,
+    header_row: int,
+    warnings: list[str],
+) -> tuple[list[LedgerRecord], int]:
+    """把“核算维度与科目组合”交叉表规范化为分类汇总记录。"""
+    headers = cell_texts(ws, header_row, 100)
+    fee_col = headers["费用项目"]
+    project_col = headers["研发项目"]
+    debit_cols = [
+        col for label, col in headers.items()
+        if label in {"借方发生(原币)", "借方发生（原币）", "借方发生"} and col > project_col
+    ]
+    if not debit_cols:
+        raise RuleError(f"{ws.title}!{header_row} 未找到研发项目右侧的借方发生(原币)列")
+    amount_col = min(debit_cols)
+    inferred_month = month_from_summary_title(ws.title)
+    records: list[LedgerRecord] = []
+    current_fee_text = ""
+    current_fee_code = ""
+    current_fee_name = ""
+    for row in range(header_row + 1, ws.max_row + 1):
+        fee_text = norm(ws.cell(row, fee_col).value)
+        project_text = norm(ws.cell(row, project_col).value)
+        if fee_text in {"总计", "合计"}:
+            break
+        if fee_text and not fee_text.endswith("小计"):
+            fee_match = re.search(r"(FYXM\d+[_-]SYS)\s*(.*)", fee_text, re.I)
+            if fee_match:
+                current_fee_text = fee_text
+                current_fee_code = code_key(fee_match.group(1))
+                current_fee_name = norm(fee_match.group(2))
+                known_rule = FEE_RULES_BY_CODE.get(current_fee_code)
+                if known_rule is not None:
+                    current_fee_name = known_rule["name"]
+        if not current_fee_code or not project_text or fee_text.endswith("小计"):
+            continue
+        project_match = re.search(r"(RD\s*[0-9A-Z]+(?:\s*-\s*[0-9A-Z]+)*)\s*(.*)", project_text, re.I)
+        if project_match is None:
+            warnings.append(f"{ws.title}!{get_column_letter(project_col)}{row} 未识别研发项目，未进入费用分配")
+            continue
+        project_code = code_key(project_match.group(1))
+        project_name = norm(project_match.group(2))
+        if not PROJECT_RE.fullmatch(project_code):
+            continue
+        amount = decimal_value(
+            ws.cell(row, amount_col).value,
+            f"{ws.title}!{get_column_letter(amount_col)}{row}",
+            blank_zero=True,
+        )
+        records.append(LedgerRecord(
+            source_path=path,
+            sheet=ws.title,
+            fee_code=current_fee_code,
+            fee_name=current_fee_name or current_fee_text,
+            project_code=project_code,
+            project_name=project_name,
+            posting_date=None,
+            fiscal_year=date.today().year,
+            period=inferred_month or None,
+            voucher_word="",
+            voucher_no=None,
+            summary=current_fee_text,
+            debit=amount,
+            credit=Decimal("0"),
+            source_kind="combination_summary",
+            source_row=row,
+        ))
+    return records, inferred_month
+
+
 def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, list[LedgerSourceSheet]]:
     wb = load_workbook(path, data_only=True, read_only=False)
     records: list[LedgerRecord] = []
@@ -680,7 +749,11 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
                 continue
             posting_date = ws.cell(row, columns.get("日期", 0)).value if columns.get("日期") else None
             voucher_no = ws.cell(row, columns.get("凭证号", 0)).value if columns.get("凭证号") else None
-            if posting_date in (None, "") and voucher_no in (None, ""):
+            if (
+                posting_date in (None, "")
+                and voucher_no in (None, "")
+                and re.search(r"RD\s*[0-9A-Z]+", summary, re.I) is None
+            ):
                 continue
             project_code = code_key(ws.cell(row, project_col).value) if project_col else fixed_project_code
             project_name = norm(ws.cell(row, project_name_col).value) if project_name_col else fixed_project_name
@@ -1046,37 +1119,19 @@ def write_template_main_sheet(
     for header in MAIN_HEADERS:
         if norm(header) not in header_columns:
             raise RuleError(f"固定模板主表缺少费用列：{header}")
-    slot_rows: dict[str, int] = {}
-    slot_code_rows: dict[str, list[int]] = defaultdict(list)
+    slot_rows = list(range(3, 21))
+    if len(projects) > len(slot_rows):
+        raise RuleError(f"研发项目共{len(projects)}个，超出固定模板的18个项目预留槽位")
     for row in range(3, 21):
-        slot_name = name_key(ws.cell(row, 2).value)
-        if slot_name:
-            if slot_name in slot_rows:
-                raise RuleError(f"固定模板主表项目名称重复：{ws.cell(row, 2).value}")
-            slot_rows[slot_name] = row
-        # 固定模板的“2.直接人工”按相同行序预置项目编码；名称不完整但编码
-        # 唯一时可作为精确的兜底主键，编码重复仍只允许按名称消歧。
-        direct_code = code_key(safe_sheet(wb, "2.直接人工").cell(row + 6, 1).value)
-        if PROJECT_RE.fullmatch(direct_code):
-            slot_code_rows[direct_code].append(row)
-        for col in [1, *range(3, 26)]:
+        for col in range(1, 26):
             cell = ws.cell(row, col)
             if not (isinstance(cell.value, str) and cell.value.startswith("=")):
                 cell.value = None
 
-    for project in projects.values():
+    for row, project in zip(slot_rows, projects.values()):
         values_by_header = {norm(header): costs.get(project.code, Decimal("0")) for header, costs in master_costs.items()}
-        active = project.rate > 0 or any(values_by_header.values())
-        if not active:
-            continue
-        row = slot_rows.get(name_key(project.name))
-        if row is None:
-            candidates = slot_code_rows.get(project.code, [])
-            if len(candidates) == 1:
-                row = candidates[0]
-        if row is None:
-            raise RuleError(f"项目“{project.code} {project.name}”不在固定模板的18个项目名称槽位中")
         ws.cell(row, 1).value = project.code
+        ws.cell(row, 2).value = project.name
         total = Decimal("0")
         for header in MAIN_HEADERS[2:-1]:
             value = money(values_by_header.get(norm(header), Decimal("0")))
@@ -1088,7 +1143,12 @@ def write_template_main_sheet(
         ws.cell(row, header_columns[norm("项目成本合计")]).number_format = "#,##0.00"
 
 
-def copy_summary_to_template(wb: Any, summary_source: tuple[Path, str], month: int) -> str:
+def copy_summary_to_template(
+    wb: Any,
+    summary_source: tuple[Path, str, str],
+    records: list[LedgerRecord],
+    month: int,
+) -> str:
     old_name = TEMPLATE_MONTH_SHEET
     new_name = f"项目分类明细汇总表{month or 1}月"
     ws = safe_sheet(wb, old_name)
@@ -1100,7 +1160,42 @@ def copy_summary_to_template(wb: Any, summary_source: tuple[Path, str], month: i
                 for cell in row:
                     if isinstance(cell.value, str) and cell.value.startswith("=") and old_name in cell.value:
                         cell.value = cell.value.replace(old_name, new_name)
-    source_path, source_sheet = summary_source
+    source_path, source_sheet, source_kind = summary_source
+    if source_kind == "combination":
+        records_by_fee: dict[str, list[LedgerRecord]] = defaultdict(list)
+        for record in records:
+            records_by_fee[record.fee_code].append(record)
+
+        current_fee = ""
+        rows_by_fee: dict[str, list[int]] = defaultdict(list)
+        for row in range(2, ws.max_row + 1):
+            fee_label = norm(ws.cell(row, 2).value)
+            fee_match = re.search(r"(FYXM\d+[_-]SYS)", fee_label, re.I)
+            if fee_match:
+                current_fee = code_key(fee_match.group(1))
+            if not current_fee or fee_label.endswith("小计") or fee_label in {"五险合计", "总计", "合计"}:
+                continue
+            amount_cell = ws.cell(row, 4)
+            if isinstance(amount_cell.value, str) and amount_cell.value.startswith("="):
+                continue
+            rows_by_fee[current_fee].append(row)
+            ws.cell(row, 3).value = None
+            amount_cell.value = None
+
+        for fee_code, fee_records in records_by_fee.items():
+            available_rows = rows_by_fee.get(fee_code, [])
+            if len(fee_records) > len(available_rows):
+                raise RuleError(
+                    f"{fee_records[0].fee_name}有{len(fee_records)}条项目记录，"
+                    f"超出固定模板的{len(available_rows)}个预留槽位"
+                )
+            for index, record in enumerate(fee_records):
+                row = available_rows[index]
+                ws.cell(row, 3).value = f"{record.project_code}  {record.project_name}".rstrip()
+                ws.cell(row, 4).value = float(money(record.amount))
+                ws.cell(row, 4).number_format = "#,##0.00"
+        return new_name
+
     source_book = load_workbook(source_path, data_only=True, read_only=False)
     source = source_book[source_sheet]
     if source.max_row > ws.max_row or source.max_column > ws.max_column:
@@ -1120,6 +1215,32 @@ def copy_summary_to_template(wb: Any, summary_source: tuple[Path, str], month: i
             if col == 4 and isinstance(target.value, (int, float, Decimal)):
                 target.number_format = "#,##0.00"
     return new_name
+
+
+def write_template_material_sheet(
+    wb: Any,
+    material_records: list[LedgerRecord],
+    month: int,
+) -> None:
+    """将直接材料的核算维度原始归属写入模板已有材料台账区域。"""
+    ws = safe_sheet(wb, "研发费用材料项目台账")
+    data_rows = list(range(2, 19))
+    if len(material_records) > len(data_rows):
+        raise RuleError("直接材料项目记录超出固定模板材料台账的17个预留槽位")
+    month_col = 3 + (month or 1)
+    if month_col < 4 or month_col > 14:
+        raise RuleError(f"固定模板材料台账不支持{month}月")
+    for row in data_rows:
+        for col in range(1, 15):
+            cell = ws.cell(row, col)
+            if not (isinstance(cell.value, str) and cell.value.startswith("=")):
+                cell.value = None
+    for row, record in zip(data_rows, material_records):
+        ws.cell(row, 1).value = record.project_code
+        ws.cell(row, 2).value = record.project_name
+        ws.cell(row, 3).value = "材料费"
+        ws.cell(row, month_col).value = float(money(record.amount))
+        ws.cell(row, month_col).number_format = "#,##0.00"
 
 
 def write_template_detail_sheet(
@@ -1227,23 +1348,24 @@ def write_static_fee_allocation_table(
     if table is None:
         return False
     header_row, data_rows, total_row = table
+    ordered_projects = list(projects.values())
+    if len(ordered_projects) > len(data_rows):
+        raise RuleError(f"固定模板的{ws.title}仅预留{len(data_rows)}个项目槽位")
     ws.cell(header_row, 3).value = f"{month or 1}月费用合计"
     data_cells = [ws.cell(row, 3) for row in data_rows]
+    for index, row in enumerate(data_rows):
+        project = ordered_projects[index] if index < len(ordered_projects) else None
+        ws.cell(row, 1).value = project.code if project is not None else None
+        ws.cell(row, 2).value = project.name if project is not None else None
     if any(isinstance(cell.value, str) and cell.value.startswith("=") for cell in data_cells):
         for cell in data_cells:
             cell.number_format = "#,##0.00"
         ws.cell(total_row, 3).number_format = "#,##0.00"
         return True
 
-    assigned_codes: set[str] = set()
-    for row in data_rows:
-        code = code_key(ws.cell(row, 1).value)
-        amount = Decimal("0")
-        # 同一模板可能有同编码、不同名称的历史槽位；一个当前项目只能进入
-        # 首个对应槽位，避免把费用重复写入两行。
-        if code in projects and code not in assigned_codes:
-            amount = money(project_totals.get(code, Decimal("0")))
-            assigned_codes.add(code)
+    for index, row in enumerate(data_rows):
+        project = ordered_projects[index] if index < len(ordered_projects) else None
+        amount = money(project_totals.get(project.code, Decimal("0"))) if project is not None else Decimal("0")
         cell = ws.cell(row, 3)
         cell.value = float(amount)
         cell.number_format = "#,##0.00"
@@ -1418,15 +1540,17 @@ def write_template_labor_sheet(wb: Any, projects: OrderedDict[str, Project], lab
     clear_non_formula_cells(ws, 5, 5, 1, min(9, ws.max_column))
     ws.cell(5, 7).value = float(money(sum(labor_totals.values(), Decimal("0"))))
     ws.cell(5, 7).number_format = "#,##0.00"
-    slot_rows = {code_key(ws.cell(row, 1).value): row for row in range(9, 27) if code_key(ws.cell(row, 1).value)}
+    slot_rows = list(range(9, 27))
+    if len(projects) > len(slot_rows):
+        raise RuleError("固定模板直接人工页仅预留18个项目槽位")
     for row in range(9, 27):
-        if not (isinstance(ws.cell(row, 3).value, str) and ws.cell(row, 3).value.startswith("=")):
-            ws.cell(row, 3).value = None
-    for code, project in projects.items():
-        row = slot_rows.get(code)
-        if row is None:
-            continue
-        ws.cell(row, 3).value = float(money(labor_totals.get(code, Decimal("0"))))
+        for col in range(1, 4):
+            if not (isinstance(ws.cell(row, col).value, str) and ws.cell(row, col).value.startswith("=")):
+                ws.cell(row, col).value = None
+    for row, project in zip(slot_rows, projects.values()):
+        ws.cell(row, 1).value = project.code
+        ws.cell(row, 2).value = project.name
+        ws.cell(row, 3).value = float(money(labor_totals.get(project.code, Decimal("0"))))
         ws.cell(row, 3).number_format = "#,##0.00"
 
 
@@ -1449,7 +1573,7 @@ def write_template_output(
     labor_totals: dict[str, Decimal],
     effective_records: list[LedgerRecord],
     expense_detail_records: list[LedgerRecord],
-    summary_source: tuple[Path, str] | None,
+    summary_source: tuple[Path, str, str] | None,
     month: int,
     output_path: Path,
     warnings: list[str],
@@ -1463,12 +1587,22 @@ def write_template_output(
     clear_broken_formula_cells(wb, warnings)
     write_template_main_sheet(wb, projects, master_costs)
     if summary_source is not None:
-        copy_summary_to_template(wb, summary_source, month)
+        copy_summary_to_template(wb, summary_source, effective_records, month)
+    write_template_material_sheet(
+        wb,
+        [record for record in effective_records if record.fee_code == DIRECT_MATERIAL_CODE],
+        month,
+    )
     write_template_detail_sheet(wb, output_year(effective_records))
     write_template_hours_sheets(wb, hours_result, projects)
     detail_records_by_fee: dict[str, list[LedgerRecord]] = defaultdict(list)
     for record in expense_detail_records:
         detail_records_by_fee[record.fee_code].append(record)
+    write_template_expense_source(
+        safe_sheet(wb, DIRECT_MATERIAL_RULE["detail_sheet"]),
+        detail_records_by_fee.get(DIRECT_MATERIAL_CODE, []),
+        month,
+    )
     missing_detail_names: list[str] = []
     for rule in COST_RULES["fee_items"]:
         ws = safe_sheet(wb, rule["detail_sheet"])
@@ -1600,29 +1734,17 @@ def has_ledger_layout(path: Path) -> bool:
     return False
 
 
-def has_combination_layout(path: Path) -> bool:
-    """判断工作簿是否含核算维度与项目组合结构，不依赖文件名。"""
-    wb = load_workbook(path, data_only=True, read_only=False)
-    for ws in wb.worksheets:
-        for row in range(1, min(ws.max_row, 100) + 1):
-            headers = cell_texts(ws, row, 100)
-            if "费用项目" in headers and "研发项目" in headers:
-                return True
-    return False
-
-
 def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
-    """根据表结构归类上传文件；文件名和工作表名称均不作为判断条件。"""
+    """根据表结构归类上传文件；“研发项目主表”由本工作流输出，不再是输入。"""
     roles: dict[str, list[Path]] = {
         "hours": [],
-        "combination": [],
         "salary": [],
         "dimension_ledger": [],
         "expense_ledgers": [],
     }
     unknown: list[Path] = []
     for path in paths:
-        if locate_summary_source([path]) is not None:
+        if locate_summary_source([path]) is not None or locate_combination_summary_sheet(path) is not None:
             roles["dimension_ledger"].append(path)
             continue
         try:
@@ -1642,16 +1764,13 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
         if has_ledger_layout(path):
             roles["expense_ledgers"].append(path)
             continue
-        if has_combination_layout(path):
-            roles["combination"].append(path)
-            continue
         unknown.append(path)
 
-    missing = [label for label in ("工时表", "项目组合表", "工资表", "核算维度明细账") if not roles[
-        {"工时表": "hours", "项目组合表": "combination", "工资表": "salary", "核算维度明细账": "dimension_ledger"}[label]
+    missing = [label for label in ("工时表", "工资表", "核算维度明细账") if not roles[
+        {"工时表": "hours", "工资表": "salary", "核算维度明细账": "dimension_ledger"}[label]
     ]]
     duplicates = [label for label, key in {
-        "工时表": "hours", "项目组合表": "combination", "工资表": "salary", "核算维度明细账": "dimension_ledger",
+        "工时表": "hours", "工资表": "salary", "核算维度明细账": "dimension_ledger",
     }.items() if len(roles[key]) > 1]
     if missing or duplicates or unknown or not roles["expense_ledgers"]:
         messages: list[str] = []
@@ -1666,14 +1785,13 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
         raise RuleError("；".join(messages) + "。请上传表结构完整且各类别唯一的工作簿")
     return {
         "hours": roles["hours"][0],
-        "combination": roles["combination"][0],
         "salary": roles["salary"][0],
         "dimension_ledger": roles["dimension_ledger"][0],
         "expense_ledgers": roles["expense_ledgers"],
     }
 
 
-def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str]]:
+def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str, str]]:
     """只读取核算维度明细账中的项目分类汇总表。
 
     “其他”费用的金额来源固定为这张汇总表。运费、折旧等费用明细账会被
@@ -1681,14 +1799,26 @@ def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[li
     汇总表的金额。
     """
     summary_source = locate_summary_source([path])
-    if summary_source is None:
-        raise RuleError("核算维度明细账缺少“项目分类明细汇总表N月”，无法测算其他费用")
-    source_book = load_workbook(path, data_only=True, read_only=False)
-    source_ws = source_book[summary_source[1]]
-    records, month = parse_summary_sheet(path, source_ws, warnings)
-    if records is None or not records:
-        raise RuleError("核算维度明细账的项目分类汇总表未识别到可测算的费用项目")
-    return records, month, summary_source
+    if summary_source is not None:
+        source_book = load_workbook(path, data_only=True, read_only=False)
+        source_ws = source_book[summary_source[1]]
+        records, month = parse_summary_sheet(path, source_ws, warnings)
+        if records is None or not records:
+            raise RuleError("核算维度明细账的项目分类汇总表未识别到可测算的费用项目")
+        return records, month, (summary_source[0], summary_source[1], "summary")
+
+    combination_source = locate_combination_summary_sheet(path)
+    if combination_source is not None:
+        source_book = load_workbook(path, data_only=True, read_only=False)
+        source_ws = source_book[combination_source[1]]
+        records, month = parse_combination_summary_sheet(
+            path, source_ws, combination_source[2], warnings
+        )
+        if not records:
+            raise RuleError("核算维度与科目组合表未识别到可测算的费用项目")
+        return records, month, (path, source_ws.title, "combination")
+
+    raise RuleError("未找到项目分类汇总表或核算维度与科目组合表，无法测算费用")
 
 
 def read_expense_detail_workbooks(paths: list[Path], warnings: list[str]) -> list[LedgerRecord]:
@@ -1706,35 +1836,47 @@ def read_expense_detail_workbooks(paths: list[Path], warnings: list[str]) -> lis
 
 def build_output(
     hours_path: Path,
-    combination_path: Path,
     salary_path: Path,
     dimension_ledger_path: Path,
     expense_detail_paths: list[Path],
     output_path: Path,
 ) -> dict[str, Any]:
-    source_paths = [hours_path, combination_path, salary_path, dimension_ledger_path, *expense_detail_paths]
+    source_paths = [hours_path, salary_path, dimension_ledger_path, *expense_detail_paths]
     if any(output_path.resolve() == source_path.resolve() for source_path in source_paths):
         raise RuleError("输入文件只读保留，结果必须保存为新的工作簿")
     warnings: list[str] = []
-    combo_projects = read_combo_projects(combination_path, warnings)
-    layout, hours_result, hour_projects = calculate_hours(hours_path, combo_projects)
-    projects: OrderedDict[str, Project] = OrderedDict()
-    for code, project in combo_projects.items():
-        projects[code] = project
-    for code, project in hour_projects.items():
-        if code in projects:
-            projects[code].final_hours = project.final_hours
-            projects[code].rate = project.rate
-            if not projects[code].name:
-                projects[code].name = project.name
-        else:
-            projects[code] = project
-
-    for code, project_name in read_salary_project_names(salary_path).items():
+    salary_project_names = read_salary_project_names(salary_path)
+    project_name_hints = OrderedDict(
+        (code, Project(code, name)) for code, name in salary_project_names.items()
+    )
+    layout, hours_result, hour_projects = calculate_hours(hours_path, project_name_hints)
+    # 研发项目主表由系统生成：先取工时项目，再补充核算维度中直接归属且
+    # 不是已有母项目的末级项目；母项目金额仍按其工时子项目分配。
+    projects: OrderedDict[str, Project] = OrderedDict(
+        (code, Project(project.code, project.name, project.final_hours, project.rate))
+        for code, project in hour_projects.items()
+    )
+    for code, project_name in salary_project_names.items():
         if code in projects and (not projects[code].name or projects[code].name == code):
             projects[code].name = project_name
         if code in hour_projects and (not hour_projects[code].name or hour_projects[code].name == code):
             hour_projects[code].name = project_name
+
+    parsed_records, ledger_month, summary_source = read_dimension_summary_workbook(dimension_ledger_path, warnings)
+    for record in parsed_records:
+        code = record.project_code
+        if code == PUBLIC_PROJECT_CODE:
+            continue
+        if code in projects:
+            if record.project_name and (not projects[code].name or projects[code].name == code):
+                projects[code].name = record.project_name
+            continue
+        if any(existing.startswith(code + "-") for existing in projects):
+            continue
+        projects[code] = Project(code, record.project_name or code)
+    if len(projects) > 18:
+        raise RuleError(f"工时及核算维度合计识别到{len(projects)}个末级项目，超出固定模板18个槽位")
+
     for item in hours_result["projects"]:
         if item["project_code"] in projects:
             item["project_name"] = projects[item["project_code"]].name
@@ -1747,7 +1889,6 @@ def build_output(
     for code in projects:
         labor_totals.setdefault(code, Decimal("0"))
 
-    parsed_records, ledger_month, summary_source = read_dimension_summary_workbook(dimension_ledger_path, warnings)
     expense_detail_records = read_expense_detail_workbooks(expense_detail_paths, warnings)
     month = ledger_month or salary_month or 1
     effective_records = parsed_records
@@ -1761,6 +1902,15 @@ def build_output(
     }
     for code, amount in labor_totals.items():
         master_costs[norm("人员人工（含社保+公积金）")][code] = money(amount)
+
+    material_records = records_by_fee.get(DIRECT_MATERIAL_CODE, [])
+    if material_records:
+        allocations, _, _, _, _ = allocate_expense_records(
+            material_records, projects, warnings, "直接材料"
+        )
+        for code, amount in allocations.items():
+            master_costs[norm("直接材料")][code] = money(amount)
+
     freight_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     other_total = Decimal("0")
     for rule in COST_RULES["fee_items"]:
@@ -1820,14 +1970,13 @@ def main(argv: list[str] | None = None) -> int:
     references: dict[str, list[Path]] = defaultdict(list)
     for key, value in args.reference_input:
         references[key].append(Path(value))
-    missing = [key for key in ("combination_file", "salary_file", "dimension_ledger", "expense_detail") if not references.get(key)]
+    missing = [key for key in ("salary_file", "dimension_ledger", "expense_detail") if not references.get(key)]
     if missing:
         print("缺少输入：" + "、".join(missing), file=sys.stderr)
         return 2
     try:
         result = build_output(
             args.input,
-            references["combination_file"][0],
             references["salary_file"][0],
             references["dimension_ledger"][0],
             references["expense_detail"],

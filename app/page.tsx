@@ -18,7 +18,6 @@ type RunSummary = {
   output_sheets: string[];
   classified_paths: {
     hours: string;
-    combination: string;
     salary: string;
     dimension_ledger: string;
     expense_ledgers: string[];
@@ -46,7 +45,7 @@ const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
-const RULE_PACKAGE_REVISION = "20260828-cost-rules-v7";
+const RULE_PACKAGE_REVISION = "20260829-cost-rules-v9";
 const initialInputs: InputSet = { files: [] };
 
 function money(value: string | number | undefined) {
@@ -176,7 +175,6 @@ classified = classify_input_workbooks([
 ])
 result = build_output(
     classified["hours"],
-    classified["combination"],
     classified["salary"],
     classified["dimension_ledger"],
     classified["expense_ledgers"],
@@ -184,7 +182,6 @@ result = build_output(
 )
 result["classified_paths"] = {
     "hours": str(classified["hours"]),
-    "combination": str(classified["combination"]),
     "salary": str(classified["salary"]),
     "dimension_ledger": str(classified["dimension_ledger"]),
     "expense_ledgers": [str(path) for path in classified["expense_ledgers"]],
@@ -239,14 +236,14 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
       <section className="workspace">
         <div className="step-heading"><span>01</span><div><h3>选择测算文件</h3><p>请使用 `.xlsx` 文件；每个文件不超过 20 MB。</p></div><b>{selectedCount} 份文件已选择</b></div>
         <div className="upload-grid">
-          <label className="upload-card upload-card-wide"><span>上传全部测算文件</span><small>一次选择工时、项目组合、工资、核算维度及费用明细账。系统只根据工作表结构归类，不读取或限制文件名。</small><input type="file" accept=".xlsx" multiple onChange={selectFiles} /><FileChips files={selectedFiles} /></label>
+          <label className="upload-card upload-card-wide"><span>上传全部测算文件</span><small>一次选择工时、工资、核算维度与科目组合、费用明细账。研发项目主表由系统按固定模板自动生成；系统只根据工作表结构归类，不读取或限制文件名。</small><input type="file" accept=".xlsx" multiple onChange={selectFiles} /><FileChips files={selectedFiles} /></label>
         </div>
         <div className={`notice ${phase}`} role="status">{message}</div>
         <button className="run-button" type="button" disabled={buttonDisabled} onClick={runCalculation}>{phase === "running" ? "正在本地测算…" : "开始测算并下载结果"}</button>
         <p className="privacy">文件仅进入当前浏览器的临时计算区；刷新、关闭页面或下载完成后不会保留在网站。</p>
       </section>
 
-      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="classified"><strong>已自动归类</strong><span>工时：{selectedFiles[Number(summary.classified_paths.hours.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　项目组合：{selectedFiles[Number(summary.classified_paths.combination.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　工资：{selectedFiles[Number(summary.classified_paths.salary.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　核算维度：{selectedFiles[Number(summary.classified_paths.dimension_ledger.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　费用明细：{summary.classified_paths.expense_ledgers.map((path) => selectedFiles[Number(path.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name).join("、")}</span></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>其他费用合计</small><strong>¥ {money(summary.other_total)}</strong></div><div><small>分类记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}</section>}
+      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="classified"><strong>已自动归类</strong><span>工时：{selectedFiles[Number(summary.classified_paths.hours.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　工资：{selectedFiles[Number(summary.classified_paths.salary.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　核算维度：{selectedFiles[Number(summary.classified_paths.dimension_ledger.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　费用明细：{summary.classified_paths.expense_ledgers.map((path) => selectedFiles[Number(path.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name).join("、")}</span></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>其他费用合计</small><strong>¥ {money(summary.other_total)}</strong></div><div><small>分类记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}</section>}
 
       <footer>临时本地测算操作台 · 浏览器端运行 · 不安装程序、不执行本地 EXE</footer>
     </main>
