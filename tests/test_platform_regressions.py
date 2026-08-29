@@ -19,6 +19,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     OUTPUT_TEMPLATE,
     Project,
     fee_source_content_last_row,
+    hours_workbook_month,
     locate_combination_summary_sheet,
     normalize_combination_workbook,
     parse_combination_summary_sheet,
@@ -58,6 +59,19 @@ def records(fee_code: str, fee_name: str, count: int) -> list[LedgerRecord]:
 
 
 class PlatformRegressionTests(unittest.TestCase):
+    def test_hours_month_reads_chinese_month_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "hours.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.title = "工时合计"
+            sheet.append(["序号", "姓名", "六月", "RD141232"])
+            source_book.save(source_path)
+
+            month = hours_workbook_month(source_path, "工时合计")
+
+        self.assertEqual(month, 6)
+
     def test_explicit_detail_period_drives_output_month_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             source_path = Path(temp_dir) / "freight_detail.xlsx"

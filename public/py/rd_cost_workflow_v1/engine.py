@@ -436,6 +436,21 @@ def calculate_hours(path: Path, project_names: dict[str, Project]) -> tuple[Any,
     return layout, result, projects
 
 
+def hours_workbook_month(path: Path, sheet_name: str) -> int:
+    """读取工时表头中独立的月份标签，仅用于期间一致性提示。"""
+    wb = load_workbook(path, data_only=True, read_only=False)
+    ws = safe_sheet(wb, sheet_name)
+    for row in range(1, min(ws.max_row, 5) + 1):
+        for col in range(1, min(ws.max_column, 40) + 1):
+            label = norm(ws.cell(row, col).value)
+            match = MONTH_RE.fullmatch(label)
+            if not match:
+                continue
+            month_label = match.group(0)[:-1]
+            return CHINESE_MONTHS[month_label] if month_label in CHINESE_MONTHS else int(month_label)
+    return 0
+
+
 def salary_header(path: Path) -> tuple[Any, Any, int, dict[str, int], int]:
     wb = load_workbook(path, data_only=True, read_only=False)
     name_aliases = {"人员名称", "姓名", "员工姓名", "研发人员"}
@@ -2481,6 +2496,12 @@ def build_output(
         expense_detail_paths, warnings
     )
     month = ledger_month or expense_detail_month or salary_month or 1
+    hours_month = hours_workbook_month(hours_path, layout.sheet)
+    if hours_month and hours_month != month:
+        warnings.append(
+            f"费用明细账明确为{month}月，工时表表头显示{hours_month}月；"
+            f"固定模板期间按{month}月输出，工时数据仍按上传内容分配"
+        )
     if salary_month and salary_month != month:
         warnings.append(
             f"费用明细账明确为{month}月，工资表表头显示{salary_month}月；"
