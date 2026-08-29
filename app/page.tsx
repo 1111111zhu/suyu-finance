@@ -45,7 +45,7 @@ const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
-const RULE_PACKAGE_REVISION = "20260829-cost-rules-v15";
+const RULE_PACKAGE_REVISION = "20260829-cost-rules-v16";
 const initialInputs: InputSet = { files: [] };
 
 function money(value: string | number | undefined) {
@@ -148,7 +148,6 @@ export default function Home() {
   const [phase, setPhase] = useState<"loading" | "ready" | "running" | "error">("loading");
   const [message, setMessage] = useState("正在准备本地测算环境…首次使用约需下载浏览器运行环境。");
   const [summary, setSummary] = useState<RunSummary | null>(null);
-  const [combinationFile, setCombinationFile] = useState<File | null>(null);
   const engine = useRef<PyodideLike | null>(null);
 
   useEffect(() => {
@@ -185,63 +184,20 @@ export default function Home() {
     setMessage(files.length ? `已选择 ${files.length} 份文件；开始测算时将按工作簿结构自动归类。` : "请至少选择一份 .xlsx 文件。");
   }
 
-  function selectCombinationFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    if (file && file.size > MAX_FILE_BYTES) {
-      setMessage(`${file.name} 超过 20 MB 限制。`);
-      return;
-    }
-    setCombinationFile(file);
-    setSummary(null);
-    if (engine.current) setPhase("ready");
-    setMessage(file ? `已选择 ${file.name}；将生成仅保留一列费用金额的整理副本。` : "请选择核算维度与科目组合表。");
-  }
-
-  async function normalizeCombinationWorkbook() {
-    if (!engine.current || !combinationFile) return;
-    setPhase("running");
-    setSummary(null);
-    setMessage("正在复制核算维度与科目组合表，并清理冗余表头和金额列…");
-    try {
-      await writeInput(engine.current, combinationFile, "/work/核算维度与科目组合.xlsx");
-      const resultText = await engine.current.runPythonAsync(`
-import json
-from pathlib import Path
-from rd_cost_workflow_v1.engine import normalize_combination_workbook
-
-result = normalize_combination_workbook(
-    Path("/work/核算维度与科目组合.xlsx"),
-    Path("/work/核算维度与科目组合_整理版.xlsx"),
-)
-json.dumps(result, ensure_ascii=False)
-`);
-      const result = JSON.parse(String(resultText)) as {
-        retained_rows: number;
-        primary_amount_column: string;
-        cleared_amount_columns: string[];
-      };
-      const output = engine.current.FS.readFile("/work/核算维度与科目组合_整理版.xlsx");
-      const baseName = combinationFile.name.replace(/\.xlsx$/i, "") || "核算维度与科目组合";
-      downloadWorkbook(output, `${baseName}_整理版.xlsx`);
-      setPhase("ready");
-      setMessage(`整理完成：保留 ${result.retained_rows} 行明细，仅保留 ${result.primary_amount_column} 列费用金额；已清空 ${result.cleared_amount_columns.join("、")} 列重复金额。`);
-    } catch (error) {
-      setPhase("error");
-      const reason = userFacingError(error, combinationFile ? [combinationFile] : []);
-      setMessage(`整理已停止：${reason}`);
-    }
-  }
-
   async function runCalculation() {
     if (!engine.current || !selectedFiles.length) return;
     setPhase("running");
     setSummary(null);
     setMessage("正在浏览器本地读取 Excel、计算工时、直接人工和费用分配…");
     try {
+      const inputDestinations: string[] = [];
       for (const [index, file] of selectedFiles.entries()) {
-        await writeInput(engine.current, file, `/work/input_${index + 1}.xlsx`);
+        const safeName = file.name.replace(/\.xlsx$/i, "").replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 80) || "workbook";
+        const destination = `/work/input_${index + 1}__${safeName}.xlsx`;
+        inputDestinations.push(destination);
+        await writeInput(engine.current, file, destination);
       }
-      const inputPaths = selectedFiles.map((_, index) => `Path("/work/input_${index + 1}.xlsx")`).join(",\n    ");
+      const inputPaths = inputDestinations.map((path) => `Path(${JSON.stringify(path)})`).join(",\n    ");
       const resultText = await engine.current.runPythonAsync(`
 import json
 from pathlib import Path
@@ -299,18 +255,13 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
 
       <section className="hero">
         <div><p className="eyebrow">ONE-CLICK COST CALCULATION</p><h2>在浏览器中完成测算，<br />原始文件不会上传。</h2><p>沿用已锁定的工时、直接人工与其他费用规则；结果严格按固定模板另存为新 Excel 文件。</p></div>
-        <div className="rule-card"><strong>已锁定的口径</strong><span>所有人员按已有项目工时比例分配公摊工时，同时回填工时汇总、RD工时和公摊RD工时</span><span>核算维度明细账用于计算全部20类其他费用；费用明细账是可选的，仅用于保留各费用页的原始明细</span><span>核算维度与科目组合表可单独整理：删除前置表头，仅保留“费用项目、研发项目、费用金额（元）”</span><span>每张费用页的项目分配表都在最后一条有字内容后留3个空白行生成；运费始终生成在可见区域并校正尾差</span></div>
+        <div className="rule-card"><strong>已锁定的口径</strong><span>所有人员按已有项目工时比例分配公摊工时，同时回填工时汇总、RD工时和公摊RD工时</span><span>核算维度与科目组合表在总测算中自动整理，并逐行写入项目分类明细汇总表</span><span>费用明细账是可选的，仅用于保留各费用页的原始明细，不替代核算维度金额</span><span>所有费用分配表只回填固定模板原预留区，不移动表块、工作表或合并单元格</span></div>
       </section>
 
       <section className="workspace">
         <div className="step-heading"><span>01</span><div><h3>选择测算文件</h3><p>请使用 `.xlsx` 文件；每个文件不超过 20 MB。</p></div><b>{selectedCount} 份文件已选择</b></div>
-        <div className="quick-cleanup">
-          <div><strong>先整理核算维度与科目组合（可选）</strong><p>完整复制原表，删除表头上方的报表信息；仅保留首个借方发生额，并将表头改为“费用金额（元）”。原文件不会被修改。</p></div>
-          <label className="compact-upload"><span>{combinationFile ? combinationFile.name : "选择核算维度与科目组合表"}</span><input type="file" accept=".xlsx" onChange={selectCombinationFile} /></label>
-          <button className="secondary-button" type="button" disabled={phase === "loading" || phase === "running" || !combinationFile} onClick={normalizeCombinationWorkbook}>整理并下载副本</button>
-        </div>
         <div className="upload-grid">
-          <label className="upload-card upload-card-wide"><span>上传全部测算文件</span><small>选择工时、工资和核算维度文件；费用明细账可选。研发项目主表由系统按固定模板自动生成；系统只根据工作表结构归类，不读取或限制文件名。</small><input type="file" accept=".xlsx" multiple onChange={selectFiles} /><FileChips files={selectedFiles} /></label>
+          <label className="upload-card upload-card-wide"><span>上传全部测算文件</span><small>选择工时、工资、核算维度与科目组合文件；费用明细账可选。组合表会在总结果中自动复制并整理表头；文件名只作关键词提示，最终仍按工作表结构校验。</small><input type="file" accept=".xlsx" multiple onChange={selectFiles} /><FileChips files={selectedFiles} /></label>
         </div>
         <div className={`notice ${phase}`} role="status">{message}</div>
         <button className="run-button" type="button" disabled={buttonDisabled} onClick={runCalculation}>{phase === "running" ? "正在本地测算…" : "开始测算并下载结果"}</button>

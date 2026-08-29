@@ -18,6 +18,8 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     LedgerRecord,
     OUTPUT_TEMPLATE,
     Project,
+    combination_filename_matches,
+    copy_summary_to_template,
     fee_source_content_last_row,
     hours_workbook_month,
     locate_combination_summary_sheet,
@@ -31,6 +33,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     standard_fee_allocation_table,
     write_template_expense_source,
     write_template_hours_sheets,
+    write_template_material_allocation,
     write_visible_freight_allocation_table,
 )
 
@@ -59,6 +62,11 @@ def records(fee_code: str, fee_name: str, count: int) -> list[LedgerRecord]:
 
 
 class PlatformRegressionTests(unittest.TestCase):
+    def test_combination_filename_recognition_uses_keywords_not_full_name(self) -> None:
+        self.assertTrue(combination_filename_matches(Path("2026核算维度_费用科目组合表_最终版.xlsx")))
+        self.assertTrue(combination_filename_matches(Path("客户A核算收入与组合数据.xlsx")))
+        self.assertFalse(combination_filename_matches(Path("科目组合.xlsx")))
+
     def test_hours_month_reads_chinese_month_header(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             source_path = Path(temp_dir) / "hours.xlsx"
@@ -142,6 +150,77 @@ class PlatformRegressionTests(unittest.TestCase):
         self.assertEqual(result["cleared_amount_columns"], [])
         self.assertEqual(normalized.active["E1"].value, "费用金额（元）")
         self.assertEqual(normalized.active["E2"].value, 100)
+
+    def test_combination_source_is_copied_row_for_row_into_month_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "任意客户_核算收入_科目组合_导出.xlsx"
+            source_book = Workbook()
+            source = source_book.active
+            source.title = "导出数据"
+            source.append(["报表名称", None, None, None, None])
+            source.append(["期间", "2026-01", None, None, None])
+            source.append(["费用项目", None, None, "研发项目", "借方发生(原币)"])
+            source.append(["FYXM02_SYS  运费", None, None, "RD9999  研发公摊", 100])
+            source.append(["FYXM02_SYS  运费 小计", None, None, None, 100])
+            source.append(["FYXM28_SYS  直接投入(材料、燃料)", None, None, "RD1260301  生产自研工装", 50])
+            source_book.save(source_path)
+
+            workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+            copy_summary_to_template(
+                workbook,
+                (source_path, "导出数据", "combination"),
+                [],
+                month=1,
+            )
+            summary = workbook["项目分类明细汇总表1月"]
+
+        self.assertEqual(
+            [summary.cell(1, col).value for col in range(1, 5)],
+            ["序号", "费用项目", "研发项目", "费用金额（元）"],
+        )
+        self.assertEqual(
+            [summary.cell(2, col).value for col in range(1, 5)],
+            [1, "FYXM02_SYS  运费", "RD9999  研发公摊", 100],
+        )
+        self.assertEqual(
+            [summary.cell(3, col).value for col in range(1, 5)],
+            [None, "FYXM02_SYS  运费 小计", None, 100],
+        )
+        self.assertEqual(
+            [summary.cell(4, col).value for col in range(1, 5)],
+            [2, "FYXM28_SYS  直接投入(材料、燃料)", "RD1260301  生产自研工装", 50],
+        )
+
+    def test_material_allocation_overwrites_old_helper_addition(self) -> None:
+        workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+        projects = OrderedDict(
+            [
+                ("RD141232", Project("RD141232", "80V低压驱动器研发")),
+                ("RD1260301", Project("RD1260301", "生产自研工装")),
+            ]
+        )
+        sheet = workbook["14.材料明细账"]
+        sheet["D52"] = "=G7+G12+G15"
+
+        write_template_material_allocation(
+            workbook,
+            projects,
+            direct_totals={"RD141232": Decimal("10"), "RD1260301": Decimal("30")},
+            public_totals={"RD141232": Decimal("2"), "RD1260301": Decimal("3")},
+            combined_totals={"RD141232": Decimal("12"), "RD1260301": Decimal("33")},
+            month=1,
+        )
+
+        self.assertIsNone(sheet["D52"].value)
+        self.assertEqual([sheet["C50"].value, sheet["G50"].value, sheet["K50"].value], [10.0, 2.0, 12.0])
+        self.assertEqual([sheet["C51"].value, sheet["G51"].value, sheet["K51"].value], [30.0, 3.0, 33.0])
+        self.assertEqual([sheet["C68"].value, sheet["G68"].value, sheet["K68"].value], [40.0, 5.0, 45.0])
+
+    def test_direct_labor_total_uses_amount_number_format(self) -> None:
+        workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+        number_format = workbook["2.直接人工"]["C27"].number_format
+
+        self.assertEqual(number_format, "#,##0.00")
 
     def test_embedded_freight_allocation_table_is_not_parsed_as_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

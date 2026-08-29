@@ -1,7 +1,7 @@
 rule_set:
   id: rd_cost_workflow_v2
   title: 研发成本综合测算（工时、直接人工与其他费用）
-  version: "2.0"
+  version: "2.1"
   status: confirmed
 
 # 本文件是网页端实际加载的规则包。费用明细账必须按项目直接归集；RD9999
@@ -21,9 +21,9 @@ summary_input:
   excluded_fee_names: [五险合计, 总计, 合计]
   copy_mode: template_equivalent_cells
 
-# “核算维度与科目组合”原表整理：这是操作台中的独立导出步骤，不参与
-# 固定模板工作簿的工作表结构。结果从上传文件的副本生成，保留原有列位置、
-# 合并单元格和样式，仅清理报表前置表头及重复金额列。
+# “核算维度与科目组合”原表整理：总测算自动执行，不再单独下载中间文件。
+# 输出仍从固定模板副本生成，只把整理后的费用项目、研发项目和首个借方金额
+# 按来源顺序回填到月份汇总页的预留区域。
 combination_cleanup:
   source_headers: [费用项目, 研发项目]
   primary_amount_headers: [借方发生(原币), 借方发生（原币）, 借方发生]
@@ -33,9 +33,15 @@ combination_cleanup:
   output_mode: copied_workbook
   input_files: read_only
 
+input_recognition:
+  # 文件名只作候选提示，不要求完整名称相等；最终必须通过工作表表头复核。
+  combination_filename_keyword_groups:
+    - [核算维度, 核算收入]
+    - [科目组合, 组合]
+
 output_layout:
-  # 项目汇总表紧跟费用页上方的实际明细，中间保留3个空白行。
-  other_fee_summary_blank_rows: 3
+  # 固定模板结构锁定；费用结果表不得迁移，明细必须适配既有预留区。
+  preserve_template_regions: true
 
 calculation:
   public_project_code: RD9999
