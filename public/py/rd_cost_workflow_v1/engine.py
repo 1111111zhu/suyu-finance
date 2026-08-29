@@ -27,6 +27,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.workbook.properties import CalcProperties
 from rd_hours_v1 import engine as hours_engine
 import yaml
 
@@ -146,11 +147,24 @@ def load_cost_rules() -> dict[str, Any]:
         item["detail_sheet"] = norm(item["detail_sheet"])
         item["master_header"] = norm(item["master_header"])
         item["aliases"] = [norm(alias) for alias in item.get("aliases", []) if norm(alias)]
+    cleanup = rules.get("combination_cleanup") or {}
+    required_cleanup_keys = ("source_headers", "primary_amount_headers", "amount_header", "output_mode")
+    if any(not cleanup.get(key) for key in required_cleanup_keys):
+        raise RuleError("网页端成本规则缺少核算维度与科目组合整理配置")
+    cleanup["source_headers"] = [norm(value) for value in cleanup["source_headers"] if norm(value)]
+    cleanup["primary_amount_headers"] = [norm(value) for value in cleanup["primary_amount_headers"] if norm(value)]
+    # 输出表头需要保留用户指定的中文全角括号，不能用 ``norm`` 的 NFKC
+    # 规范化结果替换显示文本。
+    cleanup["amount_header"] = str(cleanup["amount_header"]).strip()
+    if len(cleanup["source_headers"]) != 2 or not cleanup["primary_amount_headers"]:
+        raise RuleError("网页端成本规则的核算维度与科目组合整理字段不完整")
     rules["fee_items"] = items
+    rules["combination_cleanup"] = cleanup
     return rules
 
 
 COST_RULES = load_cost_rules()
+COMBINATION_CLEANUP_RULES = COST_RULES["combination_cleanup"]
 FEE_RULES_BY_CODE = {item["code"]: item for item in COST_RULES["fee_items"]}
 DIRECT_MATERIAL_RULE = {
     "code": DIRECT_MATERIAL_CODE,
@@ -612,8 +626,9 @@ def parse_summary_sheet(path: Path, ws: Any, warnings: list[str]) -> tuple[list[
 def locate_combination_summary_sheet(path: Path) -> tuple[Path, str, int] | None:
     """定位“核算维度与科目组合”导出的交叉汇总结构。
 
-    该结构的表头不在首行：同一行包含“费用项目”“研发项目”和位于研发
-    项目右侧的“借方发生(原币)”。它是核算维度金额来源，不是项目清单。
+    该结构的表头同一行包含“费用项目”“研发项目”和位于研发
+    项目右侧的金额列。既接受原始导出的“借方发生(原币)”，也接受
+    操作台已整理过的“费用金额（元）”。它是核算维度金额来源，不是项目清单。
     """
     wb = load_workbook(path, data_only=True, read_only=False)
     for ws in wb.worksheets:
@@ -622,13 +637,127 @@ def locate_combination_summary_sheet(path: Path) -> tuple[Path, str, int] | None
             if "费用项目" not in headers or "研发项目" not in headers:
                 continue
             project_col = headers["研发项目"]
+            amount_headers = {
+                *COMBINATION_CLEANUP_RULES["primary_amount_headers"],
+                norm(COMBINATION_CLEANUP_RULES["amount_header"]),
+            }
             debit_cols = [
                 col for label, col in headers.items()
-                if label in {"借方发生(原币)", "借方发生（原币）", "借方发生"} and col > project_col
+                if label in amount_headers and col > project_col
             ]
             if debit_cols:
                 return path, ws.title, row
     return None
+
+
+def remove_top_rows_preserving_merges(ws: Any, row_count: int) -> None:
+    """删除来源报表的前置表头，同时保持保留下来的合并单元格位置正确。"""
+    if row_count <= 0:
+        return
+    merged_ranges = list(ws.merged_cells.ranges)
+    crossing = [str(item) for item in merged_ranges if item.min_row <= row_count < item.max_row]
+    if crossing:
+        raise RuleError(
+            f"{ws.title} 的前置表头与正文合并单元格交叉（{'、'.join(crossing[:5])}），不能安全删除"
+        )
+    for merged in merged_ranges:
+        ws.unmerge_cells(str(merged))
+    ws.delete_rows(1, row_count)
+    for merged in merged_ranges:
+        if merged.min_row <= row_count:
+            continue
+        ws.merge_cells(
+            start_row=merged.min_row - row_count,
+            start_column=merged.min_col,
+            end_row=merged.max_row - row_count,
+            end_column=merged.max_col,
+        )
+
+
+def combination_amount_columns(ws: Any, header_row: int, project_col: int) -> list[int]:
+    """定位研发项目右侧所有借/贷方金额列，首个借方列是唯一保留金额列。"""
+    related: list[int] = []
+    for col in range(project_col + 1, ws.max_column + 1):
+        label = norm(ws.cell(header_row, col).value)
+        if (
+            "借方发生" in label
+            or "贷方发生" in label
+            or label == norm(COMBINATION_CLEANUP_RULES["amount_header"])
+        ):
+            related.append(col)
+    return related
+
+
+def normalize_combination_workbook(source_path: Path, output_path: Path) -> dict[str, Any]:
+    """生成“核算维度与科目组合”整理副本。
+
+    规则严格对应用户确认的版式：保留费用项目、研发项目和首个借方金额列；
+    删除这三个字段之上的报表表头；将保留金额列命名为“费用金额（元）”；
+    清空其余借/贷方重复金额列。该函数只操作来源文件的副本。
+    """
+    if source_path.resolve() == output_path.resolve():
+        raise RuleError("核算维度与科目组合原文件只读，整理结果必须另存为新工作簿")
+    if not source_path.is_file():
+        raise RuleError(f"未找到核算维度与科目组合文件：{source_path.name}")
+    if COMBINATION_CLEANUP_RULES.get("output_mode") != "copied_workbook":
+        raise RuleError("当前规则不允许以来源副本方式整理核算维度与科目组合")
+
+    located = locate_combination_summary_sheet(source_path)
+    if located is None:
+        raise RuleError("未找到同一行包含“费用项目”“研发项目”和借方发生额的核算维度与科目组合表头")
+    _, sheet_name, header_row = located
+    shutil.copy2(source_path, output_path)
+    wb = load_workbook(output_path, data_only=False, read_only=False)
+    ws = wb[sheet_name]
+
+    headers = cell_texts(ws, header_row, 100)
+    fee_header, project_header = COMBINATION_CLEANUP_RULES["source_headers"]
+    if fee_header not in headers or project_header not in headers:
+        raise RuleError(f"{ws.title}!{header_row} 未找到费用项目或研发项目表头")
+    project_col = headers[project_header]
+    amount_columns = combination_amount_columns(ws, header_row, project_col)
+    primary_amount_headers = {
+        *COMBINATION_CLEANUP_RULES["primary_amount_headers"],
+        norm(COMBINATION_CLEANUP_RULES["amount_header"]),
+    }
+    primary_amount_columns = [
+        col for col in amount_columns
+        if norm(ws.cell(header_row, col).value) in primary_amount_headers
+    ]
+    if not primary_amount_columns:
+        raise RuleError(f"{ws.title}!{header_row} 未找到研发项目右侧的借方发生额列")
+    amount_col = primary_amount_columns[0]
+
+    removed_rows = header_row - 1 if COMBINATION_CLEANUP_RULES.get("remove_rows_before_header") else 0
+    remove_top_rows_preserving_merges(ws, removed_rows)
+    header_row -= removed_rows
+    ws.cell(header_row, amount_col).value = COMBINATION_CLEANUP_RULES["amount_header"]
+
+    cleared_columns: list[str] = []
+    if COMBINATION_CLEANUP_RULES.get("clear_redundant_amount_columns"):
+        for col in amount_columns:
+            if col == amount_col:
+                continue
+            for row in range(header_row, ws.max_row + 1):
+                cell = ws.cell(row, col)
+                if not isinstance(cell, MergedCell):
+                    cell.value = None
+            cleared_columns.append(get_column_letter(col))
+
+    retained_rows = sum(
+        1
+        for row in range(header_row + 1, ws.max_row + 1)
+        if any(ws.cell(row, col).value not in (None, "") for col in (headers[fee_header], project_col, amount_col))
+    )
+    wb.save(output_path)
+    return {
+        "sheet": sheet_name,
+        "header_row": header_row,
+        "retained_rows": retained_rows,
+        "primary_amount_column": get_column_letter(amount_col),
+        "cleared_amount_columns": cleared_columns,
+        "output_path": str(output_path),
+    }
 
 
 def parse_combination_summary_sheet(
@@ -641,12 +770,16 @@ def parse_combination_summary_sheet(
     headers = cell_texts(ws, header_row, 100)
     fee_col = headers["费用项目"]
     project_col = headers["研发项目"]
+    primary_amount_headers = {
+        *COMBINATION_CLEANUP_RULES["primary_amount_headers"],
+        norm(COMBINATION_CLEANUP_RULES["amount_header"]),
+    }
     debit_cols = [
         col for label, col in headers.items()
-        if label in {"借方发生(原币)", "借方发生（原币）", "借方发生"} and col > project_col
+        if label in primary_amount_headers and col > project_col
     ]
     if not debit_cols:
-        raise RuleError(f"{ws.title}!{header_row} 未找到研发项目右侧的借方发生(原币)列")
+        raise RuleError(f"{ws.title}!{header_row} 未找到研发项目右侧的借方发生或费用金额列")
     amount_col = min(debit_cols)
     inferred_month = month_from_summary_title(ws.title)
     records: list[LedgerRecord] = []
@@ -727,12 +860,14 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
         preface = [ws.cell(row, col).value for row in range(1, header_row) for col in range(1, min(ws.max_column, 20) + 1)]
         fee_code, fee_name, fixed_project_code, fixed_project_name = parse_dimension_text(preface + [ws.title])
         rule = FEE_RULES_BY_CODE.get(code_key(fee_code)) if fee_code else fee_rule_for_text(path.stem, ws.title, *preface)
+        fee_col = next((columns[item] for item in ("费用项目", "费用类别", "费用科目") if item in columns), 0)
         if rule is not None:
             fee_code, fee_name = rule["code"], rule["name"]
-        if not fee_name or rule is None:
+        if (not fee_name or rule is None) and not fee_col:
             warnings.append(f"{ws.title} 未识别费用项目，已跳过")
             continue
-        source_sheets.append(LedgerSourceSheet(path, ws.title, fee_code, fee_name))
+        if rule is not None:
+            source_sheets.append(LedgerSourceSheet(path, ws.title, fee_code, fee_name))
         for value in preface:
             match = re.search(r"期间.*?(\d{4})年(\d{1,2})月", norm(value))
             if match:
@@ -743,6 +878,26 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
             summary = norm(ws.cell(row, columns["摘要"]).value)
             if not summary or any(word in summary for word in SUMMARY_WORDS):
                 continue
+            # 部分旧版工作簿会在凭证明细下方（运费页甚至是隐藏行）
+            # 再嵌入“项目编号/工时合计/费用”或“项目编码/科目名称/
+            # 费用合计”表。这是本页的分配结果而不是凭证，遇到时必须结束
+            # 明细解析，否则“工时合计”会被误当成借方数值。
+            embedded_labels = [
+                norm(ws.cell(row, col).value)
+                for col in range(columns["摘要"], min(ws.max_column, columns["摘要"] + 4) + 1)
+            ]
+            if summary in {"项目编号", "项目编码"} and (
+                "工时合计" in embedded_labels
+                or "科目名称" in embedded_labels
+                or any("费用合计" in label for label in embedded_labels)
+            ):
+                break
+            row_rule = rule
+            if fee_col:
+                row_rule = fee_rule_for_text(ws.cell(row, fee_col).value) or row_rule
+            if row_rule is None:
+                continue
+            row_fee_code, row_fee_name = row_rule["code"], row_rule["name"]
             debit = decimal_value(ws.cell(row, columns.get("借方", 0)).value if columns.get("借方") else None, f"{ws.title}!{row}借方", blank_zero=True)
             credit = decimal_value(ws.cell(row, columns.get("贷方", 0)).value if columns.get("贷方") else None, f"{ws.title}!{row}贷方", blank_zero=True)
             if debit == 0 and credit == 0:
@@ -764,8 +919,8 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
             records.append(LedgerRecord(
                 source_path=path,
                 sheet=ws.title,
-                fee_code=fee_code,
-                fee_name=fee_name,
+                fee_code=row_fee_code,
+                fee_name=row_fee_name,
                 project_code=project_code,
                 project_name=project_name,
                 posting_date=posting_date,
@@ -1265,50 +1420,109 @@ def copy_input_values_to_template(source_ws: Any, target_ws: Any) -> None:
 
 def write_template_hours_sheets(
     wb: Any,
+    hours_path: Path,
+    hours_layout: Any,
     hours_result: dict[str, Any],
     projects: OrderedDict[str, Project],
+    month: int,
 ) -> None:
-    ws = safe_sheet(wb, "研发人员工时统计合计")
     project_codes = [item["project_code"] for item in hours_result["projects"]]
     if len(project_codes) > 18:
         raise RuleError("工时项目超过固定模板的18个项目预留槽位")
     project_map = {item["project_code"]: item for item in hours_result["projects"]}
-    headers = ["序号", "姓名", "工时汇总"] + project_codes
-    # 只更新模板预留的人员矩阵输入区；AD:AH等正常公式必须继续保留。
+
+    # 固定模板重构后曾漏掉“研发人员工时统计”源表的回填。
+    # 只处理上方预留矩阵 A:AF36，下方项目分配率区单独重写。
+    source_book = load_workbook(hours_path, data_only=True, read_only=False)
+    source_ws = safe_sheet(source_book, hours_layout.sheet)
+    raw_ws = safe_sheet(wb, "研发人员工时统计")
+    for row in range(1, 37):
+        for col in range(1, 33):
+            cell = raw_ws.cell(row, col)
+            if not isinstance(cell, MergedCell):
+                cell.value = None
+    for row in range(1, min(source_ws.max_row, 36) + 1):
+        for col in range(1, min(source_ws.max_column, 30) + 1):
+            target = raw_ws.cell(row, col)
+            if not isinstance(target, MergedCell):
+                target.value = source_ws.cell(row, col).value
+    raw_ws.cell(1, 30).value = "工时汇总"
+    raw_ws.cell(1, 31).value = "RD工时"
+    raw_ws.cell(1, 32).value = "公摊RD工时"
+    raw_ws.cell(1, 3).value = f"{month or 1}月"
+    for person in hours_result["people"]:
+        row = int(person["row"])
+        if row > 35:
+            raise RuleError("人员数超出固定模板工时源矩阵预留行")
+        raw_ws.cell(row, 1).value = person.get("employee_id")
+        raw_ws.cell(row, 2).value = person["employee_name"]
+        raw_ws.cell(row, 3).value = float(person["final_hours"])
+        raw_ws.cell(row, 30).value = float(person["final_hours"])
+        raw_ws.cell(row, 31).value = float(person["actual_hours"])
+        raw_ws.cell(row, 32).value = float(person["allocated_hours"])
+        for col in (3, 30, 31, 32):
+            raw_ws.cell(row, col).number_format = "0.00"
+    raw_total_row = 36
+    raw_ws.cell(raw_total_row, 1).value = "合计"
+    raw_ws.cell(raw_total_row, 3).value = float(hours_result["totals"]["final_hours"])
+    raw_ws.cell(raw_total_row, 30).value = float(hours_result["totals"]["final_hours"])
+    raw_ws.cell(raw_total_row, 31).value = float(hours_result["totals"]["actual_hours"])
+    raw_ws.cell(raw_total_row, 32).value = float(hours_result["totals"]["allocated_hours"])
+    for col in (3, 30, 31, 32):
+        raw_ws.cell(raw_total_row, col).number_format = "0.00"
+
+    for row in range(45, 64):
+        for col in range(2, 5):
+            cell = raw_ws.cell(row, col)
+            if not isinstance(cell, MergedCell):
+                cell.value = None
+    raw_ws.cell(43, 2).value = "项目编码"
+    raw_ws.cell(43, 3).value = "科目名称"
+    raw_ws.cell(43, 4).value = "工时分配率"
+    for row, project in zip(range(45, 63), projects.values()):
+        write_values(raw_ws, row, [project.code, project.name, float(project.rate)], start_col=2)
+        raw_ws.cell(row, 4).number_format = "0.00%"
+    raw_ws.cell(63, 2).value = "合计"
+    raw_ws.cell(63, 4).value = float(sum((project.rate for project in projects.values()), Decimal("0")))
+    raw_ws.cell(63, 4).number_format = "0.00%"
+
+    ws = safe_sheet(wb, "研发人员工时统计合计")
+    headers = ["序号", "姓名", f"{month or 1}月"] + project_codes
     max_input_col = 3 + len(project_codes)
     matrix_last_row = 3 + len(hours_result["people"])
     if matrix_last_row > 42:
         raise RuleError("人员数超出固定模板工时矩阵预留行，不能扩展布局")
-    for row in range(1, matrix_last_row + 1):
-        for col in range(1, max_input_col + 1):
+    # A:AH全量清理，避免R:AC残留模板历史非RD数据。
+    for row in range(1, 43):
+        for col in range(1, 35):
             cell = ws.cell(row, col)
-            if not isinstance(cell, MergedCell) and not (isinstance(cell.value, str) and cell.value.startswith("=")):
+            if not isinstance(cell, MergedCell):
                 cell.value = None
     write_values(ws, 1, headers)
+    write_values(ws, 1, ["工时汇总", "RD工时", "公摊RD工时"], start_col=30)
     write_values(ws, 2, [None, None, None] + [project_map[code]["project_name"] for code in project_codes])
     for row, person in enumerate(hours_result["people"], start=3):
         write_values(ws, row, [person.get("employee_id"), person["employee_name"], float(person["final_hours"])] + [float(person["final_by_project"][code]) for code in project_codes])
+        write_values(ws, row, [float(person["final_hours"]), float(person["actual_hours"]), float(person["allocated_hours"])], start_col=30)
     total_row = 3 + len(hours_result["people"])
     write_values(ws, total_row, ["合计", None, float(hours_result["totals"]["final_hours"])] + [float(project_map[code]["final_hours"]) for code in project_codes])
+    write_values(ws, total_row, [float(hours_result["totals"]["final_hours"]), float(hours_result["totals"]["actual_hours"]), float(hours_result["totals"]["allocated_hours"])], start_col=30)
     for row in range(3, total_row + 1):
-        for col in range(3, max_input_col + 1):
+        for col in list(range(3, max_input_col + 1)) + [30, 31, 32]:
             ws.cell(row, col).number_format = "0.00"
 
-    # H:J43:60 是固定模板中费用页公式引用的18个项目工时分配率预留区；
-    # 合计行固定在第61行。即使本次项目少于18个，也不能把合计提前写入
-    # J57 等仍被费用页公式引用的项目行，否则会把全部费用错误分配给该行。
+    # H:J43:60 固定预留18个项目槽位，合计行仍在第61行。
     for row in range(43, 62):
         for col in range(8, 11):
             cell = ws.cell(row, col)
             if not isinstance(cell, MergedCell):
                 cell.value = None
     write_values(ws, 42, ["项目编码", "科目名称", "工时分配率"], start_col=8)
-    for row, code in enumerate(project_codes, start=43):
-        write_values(ws, row, [code, projects[code].name, float(projects[code].rate)], start_col=8)
+    for row, project in zip(range(43, 61), projects.values()):
+        write_values(ws, row, [project.code, project.name, float(project.rate)], start_col=8)
         ws.cell(row, 10).number_format = "0.00%"
-    rate_total_row = 61
-    write_values(ws, rate_total_row, ["合计", None, float(sum((projects[code].rate for code in project_codes), Decimal("0")))], start_col=8)
-    ws.cell(rate_total_row, 10).number_format = "0.00%"
+    write_values(ws, 61, ["合计", None, float(sum((project.rate for project in projects.values()), Decimal("0")))], start_col=8)
+    ws.cell(61, 10).number_format = "0.00%"
 
 
 def standard_fee_allocation_table(ws: Any) -> tuple[int, list[int], int] | None:
@@ -1330,6 +1544,121 @@ def standard_fee_allocation_table(ws: Any) -> tuple[int, list[int], int] | None:
         if data_rows and total_row:
             return row, data_rows, total_row
     return None
+
+
+def relocate_standard_fee_allocation_table(
+    ws: Any,
+    blank_rows: int,
+    content_last_row: int | None = None,
+) -> int:
+    """把其他费用页的既有汇总表移到上方实际内容后。
+
+    模板原表块的合并、样式、公式和项目槽位全部原样迁移；项目行的
+    跨表公式不做相对平移，以继续引用固定的项目分配率行。
+    """
+    table = standard_fee_allocation_table(ws)
+    if table is None:
+        return 0
+    header_row, data_rows, total_row = table
+    last_content_row = content_last_row
+    if last_content_row is None:
+        last_content_row = max(
+            (
+                row
+                for row in range(1, header_row)
+                if any(
+                    ws.cell(row, col).value not in (None, "")
+                    for col in range(1, min(9, ws.max_column) + 1)
+                )
+            ),
+            default=4,
+        )
+    target_header_row = last_content_row + max(int(blank_rows), 0) + 1
+    if target_header_row == header_row:
+        return header_row
+
+    block_height = total_row - header_row + 1
+    target_total_row = target_header_row + block_height - 1
+    for row in range(target_header_row, target_total_row + 1):
+        # 旧表头之前的 A:I 是模板历史明细账区，本次生成时会
+        # 被完整清空并回填，因此不能将其误判为布局冲突。仅当
+        # 新表需要扩展到原汇总表之后时，才保护下方其他内容。
+        if row <= total_row:
+            continue
+        if any(ws.cell(row, col).value not in (None, "") for col in range(1, 4)):
+            raise RuleError(f"{ws.title} 的费用汇总表新位置与模板其他内容重叠")
+    snapshots: list[list[dict[str, Any]]] = []
+    for row in range(header_row, total_row + 1):
+        snapshot_row: list[dict[str, Any]] = []
+        for col in range(1, 4):
+            cell = ws.cell(row, col)
+            snapshot_row.append({
+                "value": cell.value,
+                "style": copy(cell._style),
+                "number_format": cell.number_format,
+                "protection": copy(cell.protection),
+                "alignment": copy(cell.alignment),
+            })
+        snapshots.append(snapshot_row)
+    row_heights = [ws.row_dimensions[row].height for row in range(header_row, total_row + 1)]
+    source_merges = []
+    for merged in list(ws.merged_cells.ranges):
+        if (
+            merged.min_row >= header_row
+            and merged.max_row <= total_row
+            and merged.min_col >= 1
+            and merged.max_col <= 3
+        ):
+            source_merges.append((merged.min_row, merged.max_row, merged.min_col, merged.max_col))
+            ws.unmerge_cells(str(merged))
+    # 新位置可能与模板中空白装饰性合并格重叠；表块会在完成写入后
+    # 按原表块的相对合并关系重建。
+    for merged in list(ws.merged_cells.ranges):
+        intersects_target = not (
+            merged.max_row < target_header_row
+            or merged.min_row > target_total_row
+            or merged.max_col < 1
+            or merged.min_col > 3
+        )
+        if intersects_target:
+            ws.unmerge_cells(str(merged))
+
+    raw_style_row = 5 if ws.max_row >= 5 else 1
+    raw_height = ws.row_dimensions[raw_style_row].height
+    for row in range(header_row, total_row + 1):
+        ws.row_dimensions[row].height = raw_height
+        for col in range(1, 4):
+            cell = ws.cell(row, col)
+            cell.value = None
+            cell._style = copy(ws.cell(raw_style_row, col)._style)
+
+    for row_offset, snapshot_row in enumerate(snapshots):
+        target_row = target_header_row + row_offset
+        ws.row_dimensions[target_row].height = row_heights[row_offset]
+        for col_offset, snapshot in enumerate(snapshot_row, start=1):
+            cell = ws.cell(target_row, col_offset)
+            cell.value = snapshot["value"]
+            cell._style = copy(snapshot["style"])
+            cell.number_format = snapshot["number_format"]
+            cell.protection = copy(snapshot["protection"])
+            cell.alignment = copy(snapshot["alignment"])
+    row_shift = target_header_row - header_row
+    for min_row, max_row, min_col, max_col in source_merges:
+        ws.merge_cells(
+            start_row=min_row + row_shift,
+            end_row=max_row + row_shift,
+            start_column=min_col,
+            end_column=max_col,
+        )
+
+    # 只重建块内合计公式；项目行的跨表公式必须保持原引用。
+    data_start_offset = data_rows[0] - header_row
+    data_end_offset = data_rows[-1] - header_row
+    new_total_row = target_header_row + block_height - 1
+    ws.cell(new_total_row, 3).value = (
+        f"=SUM(C{target_header_row + data_start_offset}:C{target_header_row + data_end_offset})"
+    )
+    return target_header_row
 
 
 def write_static_fee_allocation_table(
@@ -1413,19 +1742,154 @@ def write_freight_allocation_table(
     return True
 
 
+def fee_source_content_last_row(records: list[LedgerRecord]) -> int:
+    """明细从第5行开始；有明细时在末尾再写1行合计。"""
+    return 4 if not records else 5 + len(records)
+
+
+def relocate_freight_visible_table(ws: Any, target_header_row: int) -> int:
+    """迁移运费页已预留的可见 F82:H102 结果表块。
+
+    运费也使用“上方最后一条内容 + 3个空白行”的定位规则；
+    旧的隐藏表 F60:J81 只是模板历史遗留，不再作为生成目标。
+    """
+    source_header_row, source_total_row = 82, 102
+    if ws.max_row < source_total_row or ws.max_column < 8:
+        raise RuleError("固定模板的1.运费缺少可见结果表样式区 F82:H102")
+    block_height = source_total_row - source_header_row + 1
+    target_total_row = target_header_row + block_height - 1
+    snapshots: list[list[dict[str, Any]]] = []
+    for row in range(source_header_row, source_total_row + 1):
+        snapshot_row: list[dict[str, Any]] = []
+        for col in range(6, 9):
+            cell = ws.cell(row, col)
+            snapshot_row.append({
+                "value": cell.value,
+                "style": copy(cell._style),
+                "number_format": cell.number_format,
+                "protection": copy(cell.protection),
+                "alignment": copy(cell.alignment),
+            })
+        snapshots.append(snapshot_row)
+    row_heights = [ws.row_dimensions[row].height for row in range(source_header_row, source_total_row + 1)]
+    source_merges: list[tuple[int, int, int, int]] = []
+    for merged in list(ws.merged_cells.ranges):
+        if (
+            merged.min_row >= source_header_row
+            and merged.max_row <= source_total_row
+            and merged.min_col >= 6
+            and merged.max_col <= 8
+        ):
+            source_merges.append((merged.min_row, merged.max_row, merged.min_col, merged.max_col))
+            ws.unmerge_cells(str(merged))
+    # 解除新目标区和旧隐藏区中的历史合并，后面按可见表块重建。
+    for merged in list(ws.merged_cells.ranges):
+        intersects_target = not (
+            merged.max_row < target_header_row
+            or merged.min_row > target_total_row
+            or merged.max_col < 6
+            or merged.min_col > 8
+        )
+        inside_legacy = (
+            merged.min_row >= 60 and merged.max_row <= 81
+            and merged.min_col >= 6 and merged.max_col <= 10
+        )
+        if intersects_target or inside_legacy:
+            ws.unmerge_cells(str(merged))
+
+    raw_style_row = 5
+    raw_height = ws.row_dimensions[raw_style_row].height
+    for row in range(source_header_row, source_total_row + 1):
+        ws.row_dimensions[row].height = raw_height
+        for col in range(6, 9):
+            cell = ws.cell(row, col)
+            cell.value = None
+            cell._style = copy(ws.cell(raw_style_row, col)._style)
+    for row in range(60, 82):
+        for col in range(6, 11):
+            cell = ws.cell(row, col)
+            if not isinstance(cell, MergedCell):
+                cell.value = None
+
+    for row_offset, snapshot_row in enumerate(snapshots):
+        target_row = target_header_row + row_offset
+        ws.row_dimensions[target_row].height = row_heights[row_offset]
+        ws.row_dimensions[target_row].hidden = False
+        for col_offset, snapshot in enumerate(snapshot_row, start=6):
+            cell = ws.cell(target_row, col_offset)
+            cell.value = snapshot["value"]
+            cell._style = copy(snapshot["style"])
+            cell.number_format = snapshot["number_format"]
+            cell.protection = copy(snapshot["protection"])
+            cell.alignment = copy(snapshot["alignment"])
+    row_shift = target_header_row - source_header_row
+    for min_row, max_row, min_col, max_col in source_merges:
+        ws.merge_cells(
+            start_row=min_row + row_shift,
+            end_row=max_row + row_shift,
+            start_column=min_col,
+            end_column=max_col,
+        )
+    return target_header_row
+
+
+def write_visible_freight_allocation_table(
+    ws: Any,
+    month: int,
+    projects: OrderedDict[str, Project],
+    project_totals: dict[str, Decimal],
+    header_row: int,
+) -> bool:
+    """把运费直接写入已迁移到明细下方的可见结果表。
+
+    旧路径写到被隐藏的60:81行，且“总额×分配率”会重新产生0.01元
+    尾差。这里直接使用已完成四舍五入及尾差守恒的项目金额。
+    """
+    if not header_row or ws.max_column < 8:
+        return False
+    first_data_row, last_data_row, total_row = header_row + 2, header_row + 19, header_row + 20
+    slots = list(range(first_data_row, last_data_row + 1))
+    if len(projects) > len(slots):
+        raise RuleError("固定模板的1.运费可见结果区仅预留18个项目槽位")
+    ws.cell(header_row, 6).value = "项目编码"
+    ws.cell(header_row, 7).value = "科目名称"
+    ws.cell(header_row, 8).value = f"{month or 1}月费用合计"
+    for row in slots:
+        for col in range(6, 9):
+            cell = ws.cell(row, col)
+            if not isinstance(cell, MergedCell):
+                cell.value = None
+    for row, project in zip(slots, projects.values()):
+        amount = money(project_totals.get(project.code, Decimal("0")))
+        write_values(ws, row, [project.code, project.name, float(amount)], start_col=6)
+        ws.cell(row, 8).number_format = "#,##0.00"
+    ws.cell(total_row, 6).value = "合计"
+    ws.cell(total_row, 8).value = float(money(sum(project_totals.values(), Decimal("0"))))
+    ws.cell(total_row, 8).number_format = "#,##0.00"
+    return True
+
+
 def write_template_other_fee_allocations(
     wb: Any,
     projects: OrderedDict[str, Project],
     master_costs: dict[str, dict[str, Decimal]],
     month: int,
+    allocation_header_rows: dict[str, int],
 ) -> None:
     """用核算维度汇总结果回填所有20类其他费用页的既有分配表。"""
     for rule in COST_RULES["fee_items"]:
         ws = safe_sheet(wb, rule["detail_sheet"])
         totals = master_costs[norm(rule["master_header"])]
-        written = write_static_fee_allocation_table(ws, rule["name"], month, projects, totals)
-        if not written and rule["code"] == code_key("FYXM02_SYS"):
-            written = write_freight_allocation_table(ws, projects, totals)
+        expected_header_row = allocation_header_rows.get(rule["code"], 0)
+        if rule["code"] == code_key("FYXM02_SYS"):
+            written = write_visible_freight_allocation_table(
+                ws, month, projects, totals, expected_header_row
+            )
+        else:
+            table = standard_fee_allocation_table(ws)
+            if table is None or table[0] != expected_header_row:
+                raise RuleError(f"{ws.title} 的费用汇总表未按三行空白规则定位")
+            written = write_static_fee_allocation_table(ws, rule["name"], month, projects, totals)
         if not written:
             raise RuleError(f"固定模板的{ws.title}缺少费用分配结果预留区域")
 
@@ -1492,6 +1956,28 @@ def clear_broken_formula_cells(wb: Any, warnings: list[str]) -> None:
         warnings.append(f"已清除固定模板中{len(cleared)}个既有公式错误内容，保留原有格式和布局")
 
 
+def quote_internal_sheet_references(wb: Any) -> None:
+    """统一为跨表公式的工作表名加单引号。
+
+    Excel 对部分中文工作表名能容忍无引号写法，但其他标准解析器会将
+    它们误当作名称并计算为 ``#NAME?``。单引号写法是兼容 Excel 的标准
+    内部引用，不改变公式含义。
+    """
+    replacements = [
+        (name, name.replace("'", "''"))
+        for name in sorted(wb.sheetnames, key=len, reverse=True)
+    ]
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                value = cell.value
+                if not (isinstance(value, str) and value.startswith("=")):
+                    continue
+                for name, escaped in replacements:
+                    value = value.replace(f"{name}!", f"'{escaped}'!")
+                cell.value = value
+
+
 def clear_non_formula_cells(ws: Any, start_row: int, end_row: int, start_col: int, end_col: int) -> None:
     for row in range(start_row, end_row + 1):
         for col in range(start_col, end_col + 1):
@@ -1501,31 +1987,63 @@ def clear_non_formula_cells(ws: Any, start_row: int, end_row: int, start_col: in
             cell.value = None
 
 
-def write_template_expense_source(ws: Any, records: list[LedgerRecord], month: int) -> None:
+def write_template_expense_source(
+    ws: Any,
+    records: list[LedgerRecord],
+    month: int,
+    allocation_start_row: int | None = None,
+) -> None:
     """把上传的费用明细账写进该费用页的既有原始账区。
 
     分配表由下方的固定模板预留区域承载，不能因为清空原始账区而被覆盖。
     """
-    allocation_starts: list[int] = []
-    standard_table = standard_fee_allocation_table(ws)
-    if standard_table is not None:
-        allocation_starts.append(standard_table[0])
-    for row in range(1, ws.max_row + 1):
-        for col in range(1, ws.max_column - 3):
-            labels = [norm(ws.cell(row, col + offset).value) for offset in range(4)]
-            if labels == ["项目编号", "工时合计", "工时分配率", "费用"]:
-                allocation_starts.append(row)
-    formula_rows = [
-        cell.row for row in ws.iter_rows(min_row=5) for cell in row
-        if isinstance(cell.value, str) and cell.value.startswith("=")
-    ]
-    boundaries = allocation_starts + formula_rows
-    raw_end = min(boundaries) - 1 if boundaries else ws.max_row
+    protected_cells: set[tuple[int, int]] = set()
+    if allocation_start_row is None:
+        allocation_starts: list[int] = []
+        standard_table = standard_fee_allocation_table(ws)
+        if standard_table is not None:
+            allocation_starts.append(standard_table[0])
+        formula_rows = [
+            cell.row for row in ws.iter_rows(min_row=5) for cell in row
+            if isinstance(cell.value, str) and cell.value.startswith("=")
+        ]
+        boundaries = allocation_starts + formula_rows
+        raw_end = min(boundaries) - 1 if boundaries else ws.max_row
+    else:
+        raw_end = allocation_start_row - 1
+        if ws.title == "1.运费":
+            # 运费使用 F:H 的21行可见分配表。
+            protected_cells.update(
+                (row, col)
+                for row in range(allocation_start_row, allocation_start_row + 21)
+                for col in range(6, 9)
+            )
+        else:
+            table = standard_fee_allocation_table(ws)
+            if table is None or table[0] != allocation_start_row:
+                raise RuleError(f"固定模板的{ws.title}未找到当前费用分配表")
+            protected_cells.update(
+                (row, col)
+                for row in range(table[0], table[2] + 1)
+                for col in range(1, 4)
+            )
     if raw_end < 5:
         return
-    if len(records) > raw_end - 4:
-        raise RuleError(f"{ws.title} 的原始明细行数超出固定模板预留区域，不能扩展布局")
-    clear_non_formula_cells(ws, 5, raw_end, 1, min(9, ws.max_column))
+    required_last_row = fee_source_content_last_row(records)
+    if required_last_row > raw_end - 3:
+        raise RuleError(f"{ws.title} 的项目汇总表未保留3个空白行")
+    prepare_rows(ws, 5, len(records) + (1 if records else 0), 5, min(9, ws.max_column))
+    # 这一区只承载本次上传的明细；模板历史值和历史公式都必须清除。
+    # 分配表移到新位置后，旧明细可能位于新表下方，因此不能只清理
+    # 新表上方；必须扫描整个 A:I 历史账区，同时精确保护当前分配表。
+    clear_through = ws.max_row if allocation_start_row is not None else raw_end
+    for row in range(5, clear_through + 1):
+        for col in range(1, min(9, ws.max_column) + 1):
+            if (row, col) in protected_cells:
+                continue
+            cell = ws.cell(row, col)
+            if not isinstance(cell, MergedCell):
+                cell.value = None
     for row, record in enumerate(records, start=5):
         write_values(ws, row, [
             record.posting_date, record.fiscal_year, record.period, record.voucher_word,
@@ -1533,6 +2051,14 @@ def write_template_expense_source(ws: Any, records: list[LedgerRecord], month: i
             record.project_code, record.project_name,
         ])
         ws.cell(row, 7).number_format = "#,##0.00"
+    if records:
+        total_row = 5 + len(records)
+        write_values(
+            ws,
+            total_row,
+            ["合计", None, None, None, None, None, float(money(sum((record.amount for record in records), Decimal("0"))))],
+        )
+        ws.cell(total_row, 7).number_format = "#,##0.00"
 
 
 def write_template_labor_sheet(wb: Any, projects: OrderedDict[str, Project], labor_totals: dict[str, Decimal], month: int) -> None:
@@ -1567,6 +2093,8 @@ def assert_formula_errors_cleared(wb: Any) -> None:
 
 
 def write_template_output(
+    hours_path: Path,
+    hours_layout: Any,
     hours_result: dict[str, Any],
     projects: OrderedDict[str, Project],
     master_costs: dict[str, dict[str, Decimal]],
@@ -1594,10 +2122,33 @@ def write_template_output(
         month,
     )
     write_template_detail_sheet(wb, output_year(effective_records))
-    write_template_hours_sheets(wb, hours_result, projects)
+    write_template_hours_sheets(wb, hours_path, hours_layout, hours_result, projects, month)
     detail_records_by_fee: dict[str, list[LedgerRecord]] = defaultdict(list)
     for record in expense_detail_records:
         detail_records_by_fee[record.fee_code].append(record)
+
+    # 先按本次实际明细行数定位各费用页的结果表，再写原始明细。
+    # 这样明细多少不再受模板原固定行号限制，且汇总表始终与内容间隔3行。
+    blank_rows = int(COST_RULES.get("output_layout", {}).get("other_fee_summary_blank_rows", 3))
+    allocation_header_rows: dict[str, int] = {}
+    for rule in COST_RULES["fee_items"]:
+        ws = safe_sheet(wb, rule["detail_sheet"])
+        detail_rows = detail_records_by_fee.get(rule["code"], [])
+        content_last_row = fee_source_content_last_row(detail_rows)
+        target_header_row = content_last_row + blank_rows + 1
+        if target_header_row + 20 > 1_048_576:
+            raise RuleError(f"{ws.title} 的明细行数超出Excel工作表上限")
+        if rule["code"] == code_key("FYXM02_SYS"):
+            allocation_header_rows[rule["code"]] = relocate_freight_visible_table(
+                ws, target_header_row
+            )
+        else:
+            allocation_header_rows[rule["code"]] = relocate_standard_fee_allocation_table(
+                ws, blank_rows, content_last_row
+            )
+        if allocation_header_rows[rule["code"]] != target_header_row:
+            raise RuleError(f"{ws.title} 的费用汇总表动态定位失败")
+
     write_template_expense_source(
         safe_sheet(wb, DIRECT_MATERIAL_RULE["detail_sheet"]),
         detail_records_by_fee.get(DIRECT_MATERIAL_CODE, []),
@@ -1609,7 +2160,12 @@ def write_template_output(
         detail_rows = detail_records_by_fee.get(rule["code"], [])
         # 每个费用页的上方账区都只由用户上传的费用明细账承载，避免模板中
         # 可能存在的历史交易被误认为本次输入。
-        write_template_expense_source(ws, detail_rows, month)
+        write_template_expense_source(
+            ws,
+            detail_rows,
+            month,
+            allocation_header_rows[rule["code"]],
+        )
         if not detail_rows:
             missing_detail_names.append(rule["name"])
     if missing_detail_names:
@@ -1619,13 +2175,22 @@ def write_template_output(
         )
     # 费用金额只取核算维度明细账的项目分类汇总；上传的费用明细账只保留在
     # 对应费用页上方，不能覆盖或校验计算金额。
-    write_template_other_fee_allocations(wb, projects, master_costs, month)
+    write_template_other_fee_allocations(
+        wb,
+        projects,
+        master_costs,
+        month,
+        allocation_header_rows,
+    )
     write_template_labor_sheet(wb, projects, labor_totals, month)
+    quote_internal_sheet_references(wb)
     expected = [f"项目分类明细汇总表{month or 1}月" if name == TEMPLATE_MONTH_SHEET else name for name in original_sheets]
     if wb.sheetnames != expected:
         raise RuleError("输出工作表与固定模板不一致")
     assert_formula_errors_cleared(wb)
     # 费用页分配表保留模板公式；下载后用自动计算和强制全量重算刷新其结果。
+    if wb.calculation is None:
+        wb.calculation = CalcProperties()
     wb.calculation.calcMode = "auto"
     wb.calculation.fullCalcOnLoad = True
     wb.calculation.forceFullCalc = True
@@ -1744,8 +2309,16 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
     }
     unknown: list[Path] = []
     for path in paths:
-        if locate_summary_source([path]) is not None or locate_combination_summary_sheet(path) is not None:
+        is_dimension_ledger = (
+            locate_summary_source([path]) is not None
+            or locate_combination_summary_sheet(path) is not None
+        )
+        if is_dimension_ledger:
             roles["dimension_ledger"].append(path)
+            # 同一工作簿可以同时含核算维度汇总表和费用凭证明细表。
+            # 原逻辑在识别汇总表后立即continue，会漏掉同文件中的运费明细。
+            if has_ledger_layout(path):
+                roles["expense_ledgers"].append(path)
             continue
         try:
             _, hours_result, _ = calculate_hours(path, OrderedDict())
@@ -1772,17 +2345,18 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
     duplicates = [label for label, key in {
         "工时表": "hours", "工资表": "salary", "核算维度明细账": "dimension_ledger",
     }.items() if len(roles[key]) > 1]
-    if missing or duplicates or unknown or not roles["expense_ledgers"]:
+    if missing or duplicates or unknown:
         messages: list[str] = []
         if missing:
             messages.append("未识别到" + "、".join(missing))
         if duplicates:
             messages.append("识别到多份" + "、".join(duplicates))
-        if not roles["expense_ledgers"]:
-            messages.append("未识别到费用明细账")
         if unknown:
             messages.append("无法归类：" + "、".join(path.name for path in unknown))
-        raise RuleError("；".join(messages) + "。请上传表结构完整且各类别唯一的工作簿")
+        raise RuleError(
+            "；".join(messages)
+            + "。请上传表结构完整且核心类别唯一的工作簿；费用明细账可不上传"
+        )
     return {
         "hours": roles["hours"][0],
         "salary": roles["salary"][0],
@@ -1821,17 +2395,31 @@ def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[li
     raise RuleError("未找到项目分类汇总表或核算维度与科目组合表，无法测算费用")
 
 
-def read_expense_detail_workbooks(paths: list[Path], warnings: list[str]) -> list[LedgerRecord]:
-    """读取用户上传的费用明细账，仅供复制至对应费用模板页。"""
+def read_expense_detail_workbooks(
+    paths: list[Path],
+    warnings: list[str],
+) -> tuple[list[LedgerRecord], int]:
+    """读取用户上传的费用明细账，仅供复制至对应费用模板页。
+
+    明细金额不参与费用计算；但“期间:YYYY年MM月”是已整理组合表删除
+    前置报表信息后唯一可追溯的输出期间。因此单独返回明确期间，只用于
+    命名和标注固定模板，不改变金额来源。
+    """
     records: list[LedgerRecord] = []
+    explicit_months: set[int] = set()
     for path in paths:
-        parsed, _, _ = parse_ledger_file(path, warnings)
+        parsed, inferred_month, _ = parse_ledger_file(path, warnings)
+        if inferred_month:
+            explicit_months.add(inferred_month)
         detail_rows = [record for record in parsed if record.source_kind == "ledger"]
         if not detail_rows:
             warnings.append(f"{path.name} 未识别到可写入费用页的凭证明细")
             continue
         records.extend(detail_rows)
-    return records
+    if len(explicit_months) > 1:
+        labels = "、".join(f"{month}月" for month in sorted(explicit_months))
+        raise RuleError(f"费用明细账包含多个明确期间：{labels}；请每次上传同一期间的资料")
+    return records, next(iter(explicit_months), 0)
 
 
 def build_output(
@@ -1889,8 +2477,15 @@ def build_output(
     for code in projects:
         labor_totals.setdefault(code, Decimal("0"))
 
-    expense_detail_records = read_expense_detail_workbooks(expense_detail_paths, warnings)
-    month = ledger_month or salary_month or 1
+    expense_detail_records, expense_detail_month = read_expense_detail_workbooks(
+        expense_detail_paths, warnings
+    )
+    month = ledger_month or expense_detail_month or salary_month or 1
+    if salary_month and salary_month != month:
+        warnings.append(
+            f"费用明细账明确为{month}月，工资表表头显示{salary_month}月；"
+            f"固定模板期间按{month}月输出，工资金额仍按上传内容分配"
+        )
     effective_records = parsed_records
 
     records_by_fee: dict[str, list[LedgerRecord]] = defaultdict(list)
@@ -1945,6 +2540,8 @@ def build_output(
         "ledger_records": len(expense_detail_records),
     }
     output_sheets = write_template_output(
+        hours_path,
+        layout,
         hours_result,
         projects,
         master_costs,

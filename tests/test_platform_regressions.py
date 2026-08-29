@@ -1,0 +1,310 @@
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from collections import OrderedDict
+from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace
+
+from openpyxl import Workbook, load_workbook
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "public" / "py"))
+
+from rd_cost_workflow_v1.engine import (  # noqa: E402
+    LedgerRecord,
+    OUTPUT_TEMPLATE,
+    Project,
+    fee_source_content_last_row,
+    locate_combination_summary_sheet,
+    normalize_combination_workbook,
+    parse_combination_summary_sheet,
+    quote_internal_sheet_references,
+    read_expense_detail_workbooks,
+    parse_ledger_file,
+    relocate_freight_visible_table,
+    relocate_standard_fee_allocation_table,
+    standard_fee_allocation_table,
+    write_template_expense_source,
+    write_template_hours_sheets,
+    write_visible_freight_allocation_table,
+)
+
+
+def records(fee_code: str, fee_name: str, count: int) -> list[LedgerRecord]:
+    return [
+        LedgerRecord(
+            source_path=Path("input.xlsx"),
+            sheet="Sheet1",
+            fee_code=fee_code,
+            fee_name=fee_name,
+            project_code="RD141232",
+            project_name="80V低压驱动器研发",
+            posting_date="2026-01-01",
+            fiscal_year=2026,
+            period=1,
+            voucher_word="记",
+            voucher_no=index + 1,
+            summary=f"测试明细{index + 1}",
+            debit=Decimal("1.00"),
+            credit=Decimal("0"),
+            source_row=index + 2,
+        )
+        for index in range(count)
+    ]
+
+
+class PlatformRegressionTests(unittest.TestCase):
+    def test_explicit_detail_period_drives_output_month_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "freight_detail.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.title = "FYXM02_SYS_运费_RD9999_研发公摊"
+            sheet["A1"] = "期间:2026年07月01日 至 2026年07月31日"
+            sheet.append(["日期", "会计年度", "期间", "凭证字", "凭证号", "摘要", "借方"])
+            sheet.append(["2026/7/1", 2026, 7, "记", 1, "运费测试", 100])
+            source_book.save(source_path)
+
+            detail_rows, month = read_expense_detail_workbooks([source_path], [])
+
+        self.assertEqual(month, 7)
+        self.assertEqual(len(detail_rows), 1)
+
+    def test_internal_sheet_references_are_always_quoted(self) -> None:
+        workbook = Workbook()
+        source = workbook.active
+        source.title = "研发项目主表"
+        target = workbook.create_sheet("研发明细表")
+        target["A1"] = "=研发项目主表!C21"
+        target["A2"] = "='研发项目主表'!C21"
+
+        quote_internal_sheet_references(workbook)
+
+        self.assertEqual(target["A1"].value, "='研发项目主表'!C21")
+        self.assertEqual(target["A2"].value, "='研发项目主表'!C21")
+
+    def test_normalized_combination_workbook_is_valid_dimension_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "normalized_combination.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.title = "Sheet"
+            sheet.append(["费用项目", None, None, "研发项目", "费用金额（元）"])
+            sheet.append(["FYXM02_SYS  运费", None, None, "RD9999  研发公摊", 2115.77])
+            sheet.append(["FYXM02_SYS  运费 小计", None, None, None, 2115.77])
+            source_book.save(source_path)
+
+            located = locate_combination_summary_sheet(source_path)
+            self.assertEqual(located, (source_path, "Sheet", 1))
+            workbook = load_workbook(source_path, data_only=True)
+            records, month = parse_combination_summary_sheet(
+                source_path, workbook["Sheet"], located[2], []
+            )
+
+        self.assertEqual(month, 0)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].fee_code, "FYXM02-SYS")
+        self.assertEqual(records[0].project_code, "RD9999")
+        self.assertEqual(records[0].amount, Decimal("2115.77"))
+
+    def test_normalizing_an_already_normalized_combination_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "normalized_combination.xlsx"
+            output_path = Path(temp_dir) / "normalized_combination_copy.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.append(["费用项目", None, None, "研发项目", "费用金额（元）"])
+            sheet.append(["FYXM02_SYS  运费", None, None, "RD9999  研发公摊", 100])
+            source_book.save(source_path)
+
+            result = normalize_combination_workbook(source_path, output_path)
+            normalized = load_workbook(output_path, data_only=False)
+
+        self.assertEqual(result["primary_amount_column"], "E")
+        self.assertEqual(result["cleared_amount_columns"], [])
+        self.assertEqual(normalized.active["E1"].value, "费用金额（元）")
+        self.assertEqual(normalized.active["E2"].value, 100)
+
+    def test_embedded_freight_allocation_table_is_not_parsed_as_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "mixed_freight.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.title = "运费"
+            headers = ["日期", "会计年度", "期间", "凭证字", "凭证号", "摘要", "借方", "研发项目", "研发名称"]
+            for col, value in enumerate(headers, start=1):
+                sheet.cell(1, col).value = value
+            values = ["2026-01-01", 2026, 1, "记", 1, "运输费", 100, "RD141232", "80V低压驱动器研发"]
+            for col, value in enumerate(values, start=1):
+                sheet.cell(2, col).value = value
+            for col, value in enumerate(["项目编号", "工时合计", "工时分配率", "费用"], start=6):
+                sheet.cell(3, col).value = value
+            for col, value in enumerate(["RD141232", 100, 1, 100], start=6):
+                sheet.cell(4, col).value = value
+            source_book.save(source_path)
+
+            parsed, _, _ = parse_ledger_file(source_path, [])
+
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].summary, "运输费")
+        self.assertEqual(parsed[0].amount, Decimal("100"))
+
+    def test_hours_tables_include_rd_and_shared_rd_columns(self) -> None:
+        workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+        projects = OrderedDict(
+            [("RD141232", Project("RD141232", "80V低压驱动器研发", Decimal("100"), Decimal("1")))]
+        )
+        hours_result = {
+            "projects": [
+                {
+                    "project_code": "RD141232",
+                    "project_name": "80V低压驱动器研发",
+                    "final_hours": Decimal("100"),
+                }
+            ],
+            "people": [
+                {
+                    "row": 2,
+                    "employee_id": "001",
+                    "employee_name": "测试员工",
+                    "final_hours": Decimal("100"),
+                    "actual_hours": Decimal("60"),
+                    "allocated_hours": Decimal("40"),
+                    "final_by_project": {"RD141232": Decimal("100")},
+                }
+            ],
+            "totals": {
+                "final_hours": Decimal("100"),
+                "actual_hours": Decimal("60"),
+                "allocated_hours": Decimal("40"),
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "hours.xlsx"
+            source_book = Workbook()
+            source_sheet = source_book.active
+            source_sheet.title = "Hours"
+            source_sheet.cell(1, 1).value = "序号"
+            source_sheet.cell(1, 2).value = "姓名"
+            source_sheet.cell(2, 1).value = "001"
+            source_sheet.cell(2, 2).value = "测试员工"
+            source_book.save(source_path)
+
+            write_template_hours_sheets(
+                workbook,
+                source_path,
+                SimpleNamespace(sheet="Hours"),
+                hours_result,
+                projects,
+                month=1,
+            )
+
+        for sheet_name in ("研发人员工时统计", "研发人员工时统计合计"):
+            sheet = workbook[sheet_name]
+            self.assertEqual([sheet.cell(1, col).value for col in (30, 31, 32)], ["工时汇总", "RD工时", "公摊RD工时"])
+        raw_sheet = workbook["研发人员工时统计"]
+        self.assertEqual([raw_sheet.cell(2, col).value for col in (30, 31, 32)], [100.0, 60.0, 40.0])
+        summary_sheet = workbook["研发人员工时统计合计"]
+        self.assertEqual([summary_sheet.cell(3, col).value for col in (30, 31, 32)], [100.0, 60.0, 40.0])
+
+    def test_standard_fee_table_follows_arbitrary_detail_rows(self) -> None:
+        workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+        sheet = workbook["7.办公费"]
+        detail_rows = records("FYXM14-SYS", "办公费", 75)
+        content_last_row = fee_source_content_last_row(detail_rows)
+        expected_header_row = content_last_row + 4
+
+        actual_header_row = relocate_standard_fee_allocation_table(
+            sheet,
+            blank_rows=3,
+            content_last_row=content_last_row,
+        )
+        write_template_expense_source(
+            sheet,
+            detail_rows,
+            month=1,
+            allocation_start_row=actual_header_row,
+        )
+
+        self.assertEqual(actual_header_row, expected_header_row)
+        self.assertEqual(standard_fee_allocation_table(sheet)[0], expected_header_row)
+        self.assertEqual(sheet.cell(content_last_row, 1).value, "合计")
+        for row in range(content_last_row + 1, expected_header_row):
+            self.assertTrue(all(sheet.cell(row, col).value in (None, "") for col in range(1, 10)))
+
+    def test_freight_table_is_visible_and_amounts_balance(self) -> None:
+        workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+        sheet = workbook["1.运费"]
+        detail_rows = records("FYXM02-SYS", "运费", 75)
+        content_last_row = fee_source_content_last_row(detail_rows)
+        expected_header_row = content_last_row + 4
+        projects = OrderedDict(
+            [
+                ("RD141232", Project("RD141232", "80V低压驱动器研发")),
+                ("RD140928", Project("RD140928", "230kW一体化电控")),
+            ]
+        )
+        totals = {"RD141232": Decimal("50.01"), "RD140928": Decimal("49.99")}
+
+        actual_header_row = relocate_freight_visible_table(sheet, expected_header_row)
+        write_template_expense_source(
+            sheet,
+            detail_rows,
+            month=1,
+            allocation_start_row=actual_header_row,
+        )
+        written = write_visible_freight_allocation_table(
+            sheet,
+            month=1,
+            projects=projects,
+            project_totals=totals,
+            header_row=actual_header_row,
+        )
+
+        self.assertTrue(written)
+        self.assertEqual(sheet.cell(expected_header_row, 6).value, "项目编码")
+        self.assertFalse(sheet.row_dimensions[expected_header_row].hidden)
+        self.assertEqual(Decimal(str(sheet.cell(expected_header_row + 20, 8).value)), Decimal("100.0"))
+        self.assertEqual(
+            sum(Decimal(str(sheet.cell(row, 8).value or 0)) for row in range(expected_header_row + 2, expected_header_row + 20)),
+            Decimal("100.00"),
+        )
+        for row in range(content_last_row + 1, expected_header_row):
+            self.assertTrue(all(sheet.cell(row, col).value in (None, "") for col in range(1, 10)))
+
+    def test_relocated_freight_clears_all_historical_rows_outside_active_table(self) -> None:
+        workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+        sheet = workbook["1.运费"]
+        detail_rows = records("FYXM02-SYS", "运费", 3)
+        expected_header_row = fee_source_content_last_row(detail_rows) + 4
+
+        actual_header_row = relocate_freight_visible_table(sheet, expected_header_row)
+        write_template_expense_source(
+            sheet,
+            detail_rows,
+            month=7,
+            allocation_start_row=actual_header_row,
+        )
+        projects = OrderedDict(
+            [("RD141232", Project("RD141232", "80V低压驱动器研发"))]
+        )
+        write_visible_freight_allocation_table(
+            sheet,
+            month=7,
+            projects=projects,
+            project_totals={"RD141232": Decimal("100")},
+            header_row=actual_header_row,
+        )
+
+        self.assertEqual(actual_header_row, expected_header_row)
+        self.assertEqual(sheet.cell(expected_header_row, 6).value, "项目编码")
+        self.assertIsNone(sheet["A12"].value)
+        self.assertIsNone(sheet["G56"].value)
+
+
+if __name__ == "__main__":
+    unittest.main()
