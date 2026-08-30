@@ -32,8 +32,9 @@ from rd_hours_v1 import engine as hours_engine
 import yaml
 
 
-PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋其他费用）", "version": "2.1"}
+PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时＋直接人工＋其他费用）", "version": "2.2"}
 MONEY = Decimal("0.01")
+DISPLAY_RATE = Decimal("0.0001")
 TOLERANCE = Decimal("0.000001")
 PROJECT_RE = re.compile(r"^RD[0-9A-Z]+(?:-[0-9A-Z]+)*$", re.I)
 MONTH_RE = re.compile(r"(?:1[0-2]|[1-9]|一|二|三|四|五|六|七|八|九|十|十一|十二)月")
@@ -209,6 +210,27 @@ def decimal_value(value: Any, location: str, *, blank_zero: bool = False, signed
 
 def money(value: Decimal) -> Decimal:
     return value.quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def displayed_rate(value: Decimal) -> Decimal:
+    """Return the exact rate represented by a percentage shown with two decimals."""
+    return value.quantize(DISPLAY_RATE, rounding=ROUND_HALF_UP)
+
+
+def allocate_by_displayed_rates(
+    total: Decimal,
+    keys: list[str],
+    rates: dict[str, Decimal],
+) -> dict[str, Decimal]:
+    """Allocate from displayed 2-decimal percentages; put the money residual last."""
+    positive = [key for key in keys if displayed_rate(rates.get(key, Decimal("0"))) > 0]
+    if not positive:
+        return {}
+    output: dict[str, Decimal] = {}
+    for key in positive[:-1]:
+        output[key] = money(total * displayed_rate(rates[key]))
+    output[positive[-1]] = money(total) - sum(output.values(), Decimal("0"))
+    return output
 
 
 def allocate_amount(total: Decimal, keys: list[str], weights: dict[str, Decimal]) -> dict[str, Decimal]:
@@ -987,6 +1009,8 @@ def allocate_expense_records(
     projects: OrderedDict[str, Project],
     warnings: list[str],
     expense_name: str,
+    *,
+    use_displayed_rates: bool = False,
 ) -> tuple[dict[str, Decimal], Decimal, Decimal, Decimal, dict[str, Decimal]]:
     """按明细账内的具体项目/RD9999标签生成一张项目分配表。
 
@@ -1016,7 +1040,12 @@ def allocate_expense_records(
             "不能新建项目行或按名称猜测归属"
         )
     rate_codes = [code for code, project in projects.items() if project.rate > 0]
-    pool_allocated = allocate_amount(pool, rate_codes, {code: projects[code].rate for code in rate_codes})
+    pool_rates = {code: projects[code].rate for code in rate_codes}
+    pool_allocated = (
+        allocate_by_displayed_rates(pool, rate_codes, pool_rates)
+        if use_displayed_rates
+        else allocate_amount(pool, rate_codes, pool_rates)
+    )
     for code, amount in pool_allocated.items():
         totals[code] += amount
     result_total = sum(totals.values(), Decimal("0"))
@@ -1032,7 +1061,13 @@ def allocate_freight(
     warnings: list[str],
 ) -> tuple[dict[str, Decimal], Decimal, Decimal, Decimal, dict[str, Decimal]]:
     freight = [record for record in records if category_sheet(record) == "1.运费"]
-    return allocate_expense_records(freight, projects, warnings, "运费")
+    return allocate_expense_records(
+        freight,
+        projects,
+        warnings,
+        "运费",
+        use_displayed_rates=True,
+    )
 
 
 def style_header(ws: Any, row: int, start: int, end: int) -> None:
@@ -1582,10 +1617,12 @@ def write_template_hours_sheets(
     raw_ws.cell(43, 3).value = "科目名称"
     raw_ws.cell(43, 4).value = "工时分配率"
     for row, project in zip(range(45, 63), projects.values()):
-        write_values(raw_ws, row, [project.code, project.name, float(project.rate)], start_col=2)
+        write_values(raw_ws, row, [project.code, project.name, float(displayed_rate(project.rate))], start_col=2)
         raw_ws.cell(row, 4).number_format = "0.00%"
     raw_ws.cell(63, 2).value = "合计"
-    raw_ws.cell(63, 4).value = float(sum((project.rate for project in projects.values()), Decimal("0")))
+    raw_ws.cell(63, 4).value = float(
+        sum((displayed_rate(project.rate) for project in projects.values()), Decimal("0"))
+    )
     raw_ws.cell(63, 4).number_format = "0.00%"
 
     ws = safe_sheet(wb, "研发人员工时统计合计")
@@ -1619,11 +1656,22 @@ def write_template_hours_sheets(
             cell = ws.cell(row, col)
             if not isinstance(cell, MergedCell):
                 cell.value = None
-    write_values(ws, 42, ["项目编码", "科目名称", "工时分配率"], start_col=8)
+    # 模板把 H:I:J 的 41-42 行合并为表头区；表头必须写到合并左上角 41 行，
+    # 否则会因 42 行是 MergedCell 而静默丢失，导致分配率表没有表头。
+    write_values(ws, 41, ["项目编码", "科目名称", "工时分配率"], start_col=8)
     for row, project in zip(range(43, 61), projects.values()):
-        write_values(ws, row, [project.code, project.name, float(project.rate)], start_col=8)
+        write_values(ws, row, [project.code, project.name, float(displayed_rate(project.rate))], start_col=8)
         ws.cell(row, 10).number_format = "0.00%"
-    write_values(ws, 61, ["合计", None, float(sum((project.rate for project in projects.values()), Decimal("0")))], start_col=8)
+    write_values(
+        ws,
+        61,
+        [
+            "合计",
+            None,
+            float(sum((displayed_rate(project.rate) for project in projects.values()), Decimal("0"))),
+        ],
+        start_col=8,
+    )
     ws.cell(61, 10).number_format = "0.00%"
 
 
@@ -1763,6 +1811,181 @@ def relocate_standard_fee_allocation_table(
     return target_header_row
 
 
+def relocate_material_allocation_tables(
+    ws: Any,
+    blank_rows: int = 3,
+    content_last_row: int | None = None,
+) -> int:
+    """Move the three parallel material allocation blocks as one template section."""
+    header_row = 0
+    total_row = 0
+    for candidate in range(1, ws.max_row + 1):
+        if (
+            norm(ws.cell(candidate, 1).value) == "项目编码"
+            and norm(ws.cell(candidate, 2).value) == "科目名称"
+            and "材料合计" in norm(ws.cell(candidate, 3).value)
+        ):
+            header_row = candidate
+            break
+    if not header_row:
+        return 0
+    for candidate in range(header_row + 1, ws.max_row + 1):
+        if norm(ws.cell(candidate, 1).value) == "合计":
+            total_row = candidate
+            break
+    if not total_row:
+        return 0
+    last_content_row = content_last_row
+    if last_content_row is None:
+        last_content_row = max(
+            (
+                row
+                for row in range(1, header_row)
+                if any(
+                    ws.cell(row, col).value not in (None, "")
+                    and not (isinstance(ws.cell(row, col).value, str) and ws.cell(row, col).value.startswith("="))
+                    for col in range(1, 12)
+                )
+            ),
+            default=4,
+        )
+    target_header_row = last_content_row + max(int(blank_rows), 0) + 1
+    if target_header_row == header_row:
+        return header_row
+
+    side_snapshots: dict[int, list[list[dict[str, Any]]]] = {}
+    side_merges: dict[int, list[tuple[int, int, int, int]]] = {}
+    for start_col in (5, 9):
+        side_snapshots[start_col] = []
+        for row in range(header_row, total_row + 1):
+            snapshot_row: list[dict[str, Any]] = []
+            for col in range(start_col, start_col + 3):
+                cell = ws.cell(row, col)
+                snapshot_row.append({
+                    "value": cell.value,
+                    "style": copy(cell._style),
+                    "number_format": cell.number_format,
+                    "protection": copy(cell.protection),
+                    "alignment": copy(cell.alignment),
+                })
+            side_snapshots[start_col].append(snapshot_row)
+        side_merges[start_col] = []
+        for merged in list(ws.merged_cells.ranges):
+            if (
+                merged.min_row >= header_row
+                and merged.max_row <= total_row
+                and merged.min_col >= start_col
+                and merged.max_col <= start_col + 2
+            ):
+                side_merges[start_col].append(
+                    (merged.min_row, merged.max_row, merged.min_col, merged.max_col)
+                )
+                ws.unmerge_cells(str(merged))
+
+    # A:C follows the same 21-row visual structure as a standard allocation table,
+    # but its third header says “材料合计”, so move it here explicitly.
+    primary_snapshots: list[list[dict[str, Any]]] = []
+    primary_merges: list[tuple[int, int, int, int]] = []
+    for row in range(header_row, total_row + 1):
+        snapshot_row: list[dict[str, Any]] = []
+        for col in range(1, 4):
+            cell = ws.cell(row, col)
+            snapshot_row.append({
+                "value": cell.value,
+                "style": copy(cell._style),
+                "number_format": cell.number_format,
+                "protection": copy(cell.protection),
+                "alignment": copy(cell.alignment),
+            })
+        primary_snapshots.append(snapshot_row)
+    for merged in list(ws.merged_cells.ranges):
+        if (
+            merged.min_row >= header_row
+            and merged.max_row <= total_row
+            and merged.min_col >= 1
+            and merged.max_col <= 3
+        ):
+            primary_merges.append((merged.min_row, merged.max_row, merged.min_col, merged.max_col))
+            ws.unmerge_cells(str(merged))
+
+    raw_style_row = 5 if ws.max_row >= 5 else 1
+    raw_height = ws.row_dimensions[raw_style_row].height
+    block_height = total_row - header_row + 1
+    for merged in list(ws.merged_cells.ranges):
+        intersects_target = not (
+            merged.max_row < target_header_row
+            or merged.min_row > target_header_row + block_height - 1
+            or merged.max_col < 1
+            or merged.min_col > 3
+        )
+        if intersects_target:
+            ws.unmerge_cells(str(merged))
+    for row in range(header_row, total_row + 1):
+        ws.row_dimensions[row].height = raw_height
+        for col in range(1, 4):
+            cell = ws.cell(row, col)
+            cell.value = None
+            cell._style = copy(ws.cell(raw_style_row, col)._style)
+    for row_offset, snapshot_row in enumerate(primary_snapshots):
+        target_row = target_header_row + row_offset
+        for col_offset, snapshot in enumerate(snapshot_row, start=1):
+            cell = ws.cell(target_row, col_offset)
+            cell.value = snapshot["value"]
+            cell._style = copy(snapshot["style"])
+            cell.number_format = snapshot["number_format"]
+            cell.protection = copy(snapshot["protection"])
+            cell.alignment = copy(snapshot["alignment"])
+    row_shift = target_header_row - header_row
+    for min_row, max_row, min_col, max_col in primary_merges:
+        ws.merge_cells(
+            start_row=min_row + row_shift,
+            end_row=max_row + row_shift,
+            start_column=min_col,
+            end_column=max_col,
+        )
+    ws.cell(target_header_row + block_height - 1, 3).value = (
+        f"=SUM(C{target_header_row + 2}:C{target_header_row + 19})"
+    )
+    for start_col in (5, 9):
+        for merged in list(ws.merged_cells.ranges):
+            intersects_target = not (
+                merged.max_row < target_header_row
+                or merged.min_row > target_header_row + block_height - 1
+                or merged.max_col < start_col
+                or merged.min_col > start_col + 2
+            )
+            if intersects_target:
+                ws.unmerge_cells(str(merged))
+        for row in range(header_row, total_row + 1):
+            ws.row_dimensions[row].height = raw_height
+            for col in range(start_col, start_col + 3):
+                cell = ws.cell(row, col)
+                cell.value = None
+                cell._style = copy(ws.cell(raw_style_row, col)._style)
+        for row_offset, snapshot_row in enumerate(side_snapshots[start_col]):
+            target_row = target_header_row + row_offset
+            for col_offset, snapshot in enumerate(snapshot_row, start=start_col):
+                cell = ws.cell(target_row, col_offset)
+                cell.value = snapshot["value"]
+                cell._style = copy(snapshot["style"])
+                cell.number_format = snapshot["number_format"]
+                cell.protection = copy(snapshot["protection"])
+                cell.alignment = copy(snapshot["alignment"])
+        row_shift = target_header_row - header_row
+        for min_row, max_row, min_col, max_col in side_merges[start_col]:
+            ws.merge_cells(
+                start_row=min_row + row_shift,
+                end_row=max_row + row_shift,
+                start_column=min_col,
+                end_column=max_col,
+            )
+        ws.cell(target_header_row + block_height - 1, start_col + 2).value = (
+            f"=SUM({get_column_letter(start_col + 2)}{target_header_row + 2}:"
+            f"{get_column_letter(start_col + 2)}{target_header_row + 19})"
+        )
+    return target_header_row
+
+
 def write_static_fee_allocation_table(
     ws: Any,
     fee_name: str,
@@ -1830,9 +2053,14 @@ def write_freight_allocation_table(
         for col in range(start_col, start_col + 4):
             ws.cell(row, col).value = None
         if project is not None:
-            write_values(ws, row, [project.code, float(project.final_hours), float(project.rate), float(total)], start_col=start_col)
+            write_values(
+                ws,
+                row,
+                [project.code, float(project.final_hours), float(displayed_rate(project.rate)), float(total)],
+                start_col=start_col,
+            )
             ws.cell(row, start_col + 1).number_format = "0.00"
-            ws.cell(row, start_col + 2).number_format = "0.0000%"
+            ws.cell(row, start_col + 2).number_format = "0.00%"
             ws.cell(row, start_col + 3).number_format = "#,##0.00"
         ws.cell(row, formula_col).number_format = "#,##0.00"
     return True
@@ -2188,26 +2416,28 @@ def assert_formula_errors_cleared(wb: Any) -> None:
         raise RuleError("输出模板仍存在公式错误：" + "、".join(errors[:10]))
 
 
+def sheet_layout_signature(ws: Any) -> dict[str, Any]:
+    """单个工作表的布局签名：合并单元格、行高、列宽。"""
+    row_dimensions = {
+        index: (dimension.height, bool(dimension.hidden), dimension.outlineLevel, bool(dimension.collapsed))
+        for index, dimension in ws.row_dimensions.items()
+        if dimension.height is not None or dimension.hidden or dimension.outlineLevel or dimension.collapsed
+    }
+    column_dimensions = {
+        key: (dimension.width, bool(dimension.hidden), dimension.outlineLevel, bool(dimension.collapsed))
+        for key, dimension in ws.column_dimensions.items()
+        if dimension.width is not None or dimension.hidden or dimension.outlineLevel or dimension.collapsed
+    }
+    return {
+        "merges": tuple(sorted(str(item) for item in ws.merged_cells.ranges)),
+        "rows": row_dimensions,
+        "columns": column_dimensions,
+    }
+
+
 def template_layout_signature(wb: Any) -> dict[str, dict[str, Any]]:
     """记录不应因回填而变化的模板布局属性。"""
-    result: dict[str, dict[str, Any]] = {}
-    for ws in wb.worksheets:
-        row_dimensions = {
-            index: (dimension.height, bool(dimension.hidden), dimension.outlineLevel, bool(dimension.collapsed))
-            for index, dimension in ws.row_dimensions.items()
-            if dimension.height is not None or dimension.hidden or dimension.outlineLevel or dimension.collapsed
-        }
-        column_dimensions = {
-            key: (dimension.width, bool(dimension.hidden), dimension.outlineLevel, bool(dimension.collapsed))
-            for key, dimension in ws.column_dimensions.items()
-            if dimension.width is not None or dimension.hidden or dimension.outlineLevel or dimension.collapsed
-        }
-        result[ws.title] = {
-            "merges": tuple(sorted(str(item) for item in ws.merged_cells.ranges)),
-            "rows": row_dimensions,
-            "columns": column_dimensions,
-        }
-    return result
+    return {ws.title: sheet_layout_signature(ws) for ws in wb.worksheets}
 
 
 def assert_template_layout_preserved(
@@ -2220,19 +2450,7 @@ def assert_template_layout_preserved(
         if output_name not in wb.sheetnames:
             raise RuleError(f"输出模板缺少固定工作表：{output_name}")
         worksheet = wb[output_name]
-        actual_signature = {
-            "merges": tuple(sorted(str(item) for item in worksheet.merged_cells.ranges)),
-            "rows": {
-                index: (dimension.height, bool(dimension.hidden), dimension.outlineLevel, bool(dimension.collapsed))
-                for index, dimension in worksheet.row_dimensions.items()
-                if dimension.height is not None or dimension.hidden or dimension.outlineLevel or dimension.collapsed
-            },
-            "columns": {
-                key: (dimension.width, bool(dimension.hidden), dimension.outlineLevel, bool(dimension.collapsed))
-                for key, dimension in worksheet.column_dimensions.items()
-                if dimension.width is not None or dimension.hidden or dimension.outlineLevel or dimension.collapsed
-            },
-        }
+        actual_signature = sheet_layout_signature(worksheet)
         if actual_signature != expected_signature:
             raise RuleError(f"{output_name} 的合并单元格、行高或列宽偏离固定模板")
 
@@ -2275,14 +2493,14 @@ def write_template_output(
     for record in expense_detail_records:
         detail_records_by_fee[record.fee_code].append(record)
 
-    # 固定模板是输出契约：费用分配表只能使用原预留区，不能迁移表块或
-    # 改变合并单元格。原始明细超过既有容量时应停止并报告，而不是扩展布局。
+    # 固定模板是输出契约：只迁移模板已预留的费用分配表块，不新增工作表或
+    # 自定义表格；迁移后的表头统一位于实际明细内容后的第4行。
     allocation_header_rows: dict[str, int] = {}
     for rule in COST_RULES["fee_items"]:
         ws = safe_sheet(wb, rule["detail_sheet"])
         if rule["code"] == code_key("FYXM02_SYS"):
-            # F82:H102 是模板锁定的可见运费结果区；原模板只预留样式，
-            # 表头和值由本次结果回填，但行号和合并关系不允许改变。
+            # F82:H102 是模板中的可见运费结果样式源，生成时会把整个表块
+            # 原样迁移到实际明细内容之后，保留3个空白行。
             header_row = 82
             if ws.max_row < 102 or ws.max_column < 8:
                 raise RuleError("固定模板的1.运费缺少可见费用分配预留区")
@@ -2306,17 +2524,41 @@ def write_template_output(
         master_costs[norm("直接材料")],
         month,
     )
+    material_ws = safe_sheet(wb, "14.材料明细账")
+    material_header = relocate_material_allocation_tables(
+        material_ws,
+        blank_rows=3,
+        content_last_row=fee_source_content_last_row(
+            detail_records_by_fee.get(DIRECT_MATERIAL_CODE, [])
+        ),
+    )
+    if not material_header:
+        raise RuleError("固定模板的14.材料明细账缺少三组材料分配结果预留区域")
+    original_layout_signature["14.材料明细账"] = sheet_layout_signature(material_ws)
     missing_detail_names: list[str] = []
     for rule in COST_RULES["fee_items"]:
         ws = safe_sheet(wb, rule["detail_sheet"])
         detail_rows = detail_records_by_fee.get(rule["code"], [])
         # 每个费用页的上方账区都只由用户上传的费用明细账承载，避免模板中
         # 可能存在的历史交易被误认为本次输入。
+        content_last_row = fee_source_content_last_row(detail_rows)
+        if rule["code"] == code_key("FYXM02_SYS"):
+            relocated_header = relocate_freight_visible_table(ws, content_last_row + 4)
+        else:
+            relocated_header = relocate_standard_fee_allocation_table(
+                ws,
+                blank_rows=3,
+                content_last_row=content_last_row,
+            )
+        if not relocated_header:
+            raise RuleError(f"固定模板的{ws.title}缺少可迁移的费用分配结果预留区域")
+        allocation_header_rows[rule["code"]] = relocated_header
+        original_layout_signature[rule["detail_sheet"]] = sheet_layout_signature(ws)
         write_template_expense_source(
             ws,
             detail_rows,
             month,
-            allocation_header_rows[rule["code"]],
+            relocated_header,
         )
         if not detail_rows:
             missing_detail_names.append(rule["name"])
@@ -2335,6 +2577,12 @@ def write_template_output(
         allocation_header_rows,
     )
     write_template_labor_sheet(wb, projects, labor_totals, month)
+    for special_sheet_name in ("2.直接人工", "11.社保明细账", "12.公积金", "13.工资明细账"):
+        special_ws = safe_sheet(wb, special_sheet_name)
+        relocated_header = relocate_standard_fee_allocation_table(special_ws, blank_rows=3)
+        if not relocated_header:
+            raise RuleError(f"固定模板的{special_sheet_name}缺少费用分配结果预留区域")
+        original_layout_signature[special_sheet_name] = sheet_layout_signature(special_ws)
     quote_internal_sheet_references(wb)
     expected = [f"项目分类明细汇总表{month or 1}月" if name == TEMPLATE_MONTH_SHEET else name for name in original_sheets]
     if wb.sheetnames != expected:
@@ -2682,7 +2930,11 @@ def build_output(
         if not source_records:
             continue
         allocations, pool, direct, result_total, _ = allocate_expense_records(
-            source_records, projects, warnings, rule["name"]
+            source_records,
+            projects,
+            warnings,
+            rule["name"],
+            use_displayed_rates=(rule["code"] == code_key("FYXM02_SYS")),
         )
         target_costs = master_costs[norm(rule["master_header"])]
         for code, amount in allocations.items():

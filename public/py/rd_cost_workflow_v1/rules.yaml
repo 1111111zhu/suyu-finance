@@ -1,7 +1,7 @@
 rule_set:
   id: rd_cost_workflow_v2
   title: 研发成本综合测算（工时、直接人工与其他费用）
-  version: "2.1"
+  version: "2.2"
   status: confirmed
 
 # 本文件是网页端实际加载的规则包。费用明细账必须按项目直接归集；RD9999
@@ -40,8 +40,11 @@ input_recognition:
     - [科目组合, 组合]
 
 output_layout:
-  # 固定模板结构锁定；费用结果表不得迁移，明细必须适配既有预留区。
+  # 固定模板结构锁定；费用分配结果表使用模板既有表块，统一迁移至
+  # 当前明细内容结束后空三行的位置，不新增或扩展自定义表格。
   preserve_template_regions: true
+  allocation_table_blank_rows_after_content: 3
+  hours_rate_headers: [项目编码, 科目名称, 工时分配率]
 
 calculation:
   public_project_code: RD9999
@@ -49,6 +52,9 @@ calculation:
   decimal_places: 2
   rounding: half_up
   residual_target: largest_unrounded_amount_then_project_code
+  freight:
+    rate_source: displayed_two_decimal_percentage
+    residual_target: last_project
 
 fee_items:
   # “其他”规则 v2.1：网页运行时使用此清单，而不是仅在本地规则目录留存。

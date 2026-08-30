@@ -18,6 +18,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     LedgerRecord,
     OUTPUT_TEMPLATE,
     Project,
+    allocate_by_displayed_rates,
     combination_filename_matches,
     copy_summary_to_template,
     fee_source_content_last_row,
@@ -29,6 +30,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     read_expense_detail_workbooks,
     parse_ledger_file,
     relocate_freight_visible_table,
+    relocate_material_allocation_tables,
     relocate_standard_fee_allocation_table,
     standard_fee_allocation_table,
     write_template_expense_source,
@@ -62,6 +64,40 @@ def records(fee_code: str, fee_name: str, count: int) -> list[LedgerRecord]:
 
 
 class PlatformRegressionTests(unittest.TestCase):
+    def test_freight_uses_displayed_rates_and_puts_residual_in_last_project(self) -> None:
+        allocations = allocate_by_displayed_rates(
+            Decimal("1433.02"),
+            ["RD-A", "RD-B", "RD-C"],
+            {
+                "RD-A": Decimal("0.0733058939"),
+                "RD-B": Decimal("0.0688091299"),
+                "RD-C": Decimal("0.8578849762"),
+            },
+        )
+
+        self.assertEqual(allocations["RD-A"], Decimal("105.04"))
+        self.assertEqual(allocations["RD-B"], Decimal("98.59"))
+        self.assertEqual(allocations["RD-C"], Decimal("1229.39"))
+        self.assertEqual(sum(allocations.values()), Decimal("1433.02"))
+
+        residual_allocations = allocate_by_displayed_rates(
+            Decimal("1.00"),
+            ["RD-A", "RD-B", "RD-C"],
+            {
+                "RD-A": Decimal("0.3333"),
+                "RD-B": Decimal("0.3333"),
+                "RD-C": Decimal("0.3334"),
+            },
+        )
+        self.assertEqual(
+            residual_allocations,
+            {
+                "RD-A": Decimal("0.33"),
+                "RD-B": Decimal("0.33"),
+                "RD-C": Decimal("0.34"),
+            },
+        )
+
     def test_combination_filename_recognition_uses_keywords_not_full_name(self) -> None:
         self.assertTrue(combination_filename_matches(Path("2026核算维度_费用科目组合表_最终版.xlsx")))
         self.assertTrue(combination_filename_matches(Path("客户A核算收入与组合数据.xlsx")))
@@ -303,6 +339,36 @@ class PlatformRegressionTests(unittest.TestCase):
         self.assertEqual([raw_sheet.cell(2, col).value for col in (30, 31, 32)], [100.0, 60.0, 40.0])
         summary_sheet = workbook["研发人员工时统计合计"]
         self.assertEqual([summary_sheet.cell(3, col).value for col in (30, 31, 32)], [100.0, 60.0, 40.0])
+        self.assertEqual(
+            [summary_sheet.cell(41, col).value for col in (8, 9, 10)],
+            ["项目编码", "科目名称", "工时分配率"],
+        )
+        self.assertEqual(summary_sheet.cell(43, 10).number_format, "0.00%")
+
+    def test_material_allocation_tables_move_together_after_content(self) -> None:
+        workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+        sheet = workbook["14.材料明细账"]
+        write_template_expense_source(
+            sheet,
+            records("FYXM28-SYS", "直接材料", 11),
+            month=1,
+        )
+
+        header_row = relocate_material_allocation_tables(
+            sheet,
+            blank_rows=3,
+            content_last_row=16,
+        )
+
+        self.assertEqual(header_row, 20)
+        self.assertEqual(
+            [sheet.cell(header_row, col).value for col in (1, 2, 3, 5, 6, 7, 9, 10, 11)],
+            [
+                "项目编码", "科目名称", "1月直接材料合计",
+                "项目编码", "科目名称", "1月公摊材料合计",
+                "项目编码", "科目名称", "1月材料合计",
+            ],
+        )
 
     def test_standard_fee_table_follows_arbitrary_detail_rows(self) -> None:
         workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
