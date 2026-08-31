@@ -348,6 +348,14 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
         locations = "、".join(f"{ws.title}!{header_row}" for ws, header_row, *_ in candidates)
         raise RuleError(f"发现多个简版工时矩阵候选（{locations}），不能依靠上下文猜测，请保留唯一源表")
     ws, header_row, id_col, name_col, total_col, project_cols, total_basis = candidates[0]
+    # 简版工时模板在项目编码表头的下一行放置项目名称。该行不是人员数据，
+    # 但应作为研发项目主表“科目名称”的首选来源；不能在没有工资/组合表名称时
+    # 退回把 RD 编码写成名称。
+    source_project_names = {
+        code: norm(ws.cell(header_row + 1, col).value)
+        for col, code in project_cols
+        if norm(ws.cell(header_row + 1, col).value)
+    }
     project_actual = {code: Decimal("0") for _, code in project_cols}
     project_allocated = {code: Decimal("0") for _, code in project_cols}
     people: list[dict[str, Any]] = []
@@ -412,7 +420,10 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
     projects: OrderedDict[str, Project] = OrderedDict()
     for _, code in project_cols:
         final_hours = project_actual[code] + project_allocated[code]
-        project_name = project_names.get(code, Project(code, code)).name
+        project_name = source_project_names.get(
+            code,
+            project_names.get(code, Project(code, code)).name,
+        )
         project_items.append({
             "project_code": code,
             "project_name": project_name,

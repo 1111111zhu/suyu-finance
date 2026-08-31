@@ -269,6 +269,7 @@ class PlatformRegressionTests(unittest.TestCase):
             source_book = Workbook()
             sheet = source_book.active
             sheet.append(["序号", "姓名", "1月", "RD141232", "RD140928", "工时合计"])
+            sheet.append([None, None, None, "低压驱动器", "一体化电控", None])
             # 项目工时超过标准月工时，但与显式的工时合计相等，属于有效加班数据。
             sheet.append([1, "测试员工", 176, 120, 84, 204])
             source_book.save(source_path)
@@ -276,6 +277,7 @@ class PlatformRegressionTests(unittest.TestCase):
             _, result, _ = calculate_legacy_hours(source_path, OrderedDict())
 
         self.assertEqual(result["people"][0]["final_hours"], Decimal("204"))
+        self.assertEqual(result["projects"][0]["project_name"], "低压驱动器")
 
     def test_salary_without_hours_is_shared_by_global_hours_rate(self) -> None:
         """工资表有、工时表无的人员工资应按全员工时分配率进入各项目。"""
