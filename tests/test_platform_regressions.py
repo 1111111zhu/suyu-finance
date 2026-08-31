@@ -20,6 +20,8 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     LedgerRecord,
     OUTPUT_TEMPLATE,
     Project,
+    SalaryRow,
+    allocate_salary,
     allocate_by_displayed_rates,
     calculate_legacy_hours,
     classify_input_workbooks,
@@ -274,6 +276,27 @@ class PlatformRegressionTests(unittest.TestCase):
             _, result, _ = calculate_legacy_hours(source_path, OrderedDict())
 
         self.assertEqual(result["people"][0]["final_hours"], Decimal("204"))
+
+    def test_salary_without_hours_is_shared_by_global_hours_rate(self) -> None:
+        """工资表有、工时表无的人员工资应按全员工时分配率进入各项目。"""
+        hours_result = {
+            "people": [],
+            "projects": [
+                {"project_code": "RD141232", "final_hours": Decimal("60")},
+                {"project_code": "RD140928", "final_hours": Decimal("40")},
+            ],
+        }
+        salary_rows = [SalaryRow(2, "034", "沈佳诚", Decimal("1272.66"))]
+        warnings: list[str] = []
+
+        _, totals, salary_total, matched_salary, unmatched_salary = allocate_salary(
+            salary_rows, hours_result, ["RD141232", "RD140928"], warnings
+        )
+
+        self.assertEqual(totals, {"RD141232": Decimal("763.60"), "RD140928": Decimal("509.06")})
+        self.assertEqual(salary_total, matched_salary)
+        self.assertEqual(unmatched_salary, Decimal("0"))
+        self.assertIn("沈佳诚", warnings[0])
 
     def test_categorized_dimension_detail_ledger_uses_preface_fee(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

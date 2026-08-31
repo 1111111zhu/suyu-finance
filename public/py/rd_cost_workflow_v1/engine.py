@@ -375,8 +375,8 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
             )
             continue
         if rd_hours == 0 and public_hours != 0:
-            # 无任何 RD 项目工时的人员无法按项目比例分配。保留为工资未分配
-            # 人员，而不是把其标准月工时误判成工时表错误，更不能臆造项目归属。
+            # 无任何 RD 项目工时的人员不参与个人项目比例计算；其工资会在
+            # allocate_salary 中按全员工时分配率公摊，不能把标准月工时误判为错误。
             excluded_non_rd_people.append(name)
             continue
         ratio = public_hours / rd_hours if rd_hours else Decimal("0")
@@ -580,19 +580,29 @@ def allocate_salary(
     salary_total = sum((row.salary for row in salary_rows), Decimal("0"))
     matched_salary = Decimal("0")
     allocated_total = Decimal("0")
-    unmatched_people: list[str] = []
+    shared_people: list[str] = []
+    global_weights = {
+        item["project_code"]: item["final_hours"]
+        for item in hours_result["projects"]
+        if item["project_code"] in project_codes
+    }
+    global_hours = sum(global_weights.values(), Decimal("0"))
+    if global_hours <= 0:
+        raise RuleError("工时分配率无有效项目工时，无法公摊无工时人员的工资")
     for salary_row in salary_rows:
         matched = by_name.get(name_key(salary_row.name))
         match_type = "姓名" if matched is not None else ""
         row_result = {"salary": salary_row, "matched": matched, "match_type": match_type, "amounts": {}}
         if matched is None:
-            unmatched_people.append(salary_row.name)
-            output.append(row_result)
-            continue
-        denominator = matched["final_hours"]
-        weights = {code: matched["final_by_project"].get(code, Decimal("0")) for code in project_codes}
-        if denominator <= 0 or abs(sum(weights.values(), Decimal("0")) - denominator) > TOLERANCE:
-            raise RuleError(f"{salary_row.name} 的项目最终工时与工时汇总不一致")
+            # 工资表有人员、工时表无人员：按全员工时分配率公摊。
+            weights = global_weights
+            match_type = "工时分配率公摊"
+            shared_people.append(salary_row.name)
+        else:
+            denominator = matched["final_hours"]
+            weights = {code: matched["final_by_project"].get(code, Decimal("0")) for code in project_codes}
+            if denominator <= 0 or abs(sum(weights.values(), Decimal("0")) - denominator) > TOLERANCE:
+                raise RuleError(f"{salary_row.name} 的项目最终工时与工时汇总不一致")
         amounts = allocate_amount(salary_row.salary, project_codes, weights)
         matched_salary += salary_row.salary
         for code, amount in amounts.items():
@@ -602,8 +612,8 @@ def allocate_salary(
         output.append(row_result)
     if matched_salary != allocated_total:
         raise RuleError(f"直接人工未勾稽：可分配工资={matched_salary}，已分配={allocated_total}")
-    if unmatched_people:
-        warnings.append("按姓名未匹配人员（工资保留未分配）：" + "、".join(unmatched_people))
+    if shared_people:
+        warnings.append("以下工资表人员无可用项目工时，已按工时分配率公摊：" + "、".join(shared_people))
     return output, project_totals, salary_total, matched_salary, salary_total - matched_salary
 
 
