@@ -27,6 +27,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     classify_input_workbooks,
     combination_filename_matches,
     copy_summary_to_template,
+    displayed_rates_with_residual,
     fee_source_content_last_row,
     hours_workbook_month,
     locate_combination_summary_sheet,
@@ -141,6 +142,15 @@ class PlatformRegressionTests(unittest.TestCase):
                 "RD-C": Decimal("0.34"),
             },
         )
+
+    def test_displayed_rates_put_percentage_residual_in_last_project(self) -> None:
+        rates = displayed_rates_with_residual(
+            ["RD-A", "RD-B", "RD-C"],
+            {"RD-A": Decimal("0.02031"), "RD-B": Decimal("0.01369"), "RD-C": Decimal("0.96599")},
+        )
+
+        self.assertEqual(rates, {"RD-A": Decimal("0.0203"), "RD-B": Decimal("0.0137"), "RD-C": Decimal("0.9660")})
+        self.assertEqual(sum(rates.values()), Decimal("1"))
 
     def test_combination_filename_recognition_uses_keywords_not_full_name(self) -> None:
         self.assertTrue(combination_filename_matches(Path("2026核算维度_费用科目组合表_最终版.xlsx")))

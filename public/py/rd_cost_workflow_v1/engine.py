@@ -217,18 +217,31 @@ def displayed_rate(value: Decimal) -> Decimal:
     return value.quantize(DISPLAY_RATE, rounding=ROUND_HALF_UP)
 
 
+def displayed_rates_with_residual(keys: list[str], rates: dict[str, Decimal]) -> dict[str, Decimal]:
+    """按 0.01% 显示，最后一个有工时项目补足显示尾差至 100.00%。"""
+    output = {key: Decimal("0") for key in keys}
+    active = [key for key in keys if rates.get(key, Decimal("0")) > 0]
+    if not active:
+        return output
+    for key in active[:-1]:
+        output[key] = displayed_rate(rates[key])
+    output[active[-1]] = Decimal("1") - sum(output.values(), Decimal("0"))
+    return output
+
+
 def allocate_by_displayed_rates(
     total: Decimal,
     keys: list[str],
     rates: dict[str, Decimal],
 ) -> dict[str, Decimal]:
     """Allocate from displayed 2-decimal percentages; put the money residual last."""
-    positive = [key for key in keys if displayed_rate(rates.get(key, Decimal("0"))) > 0]
+    displayed_rates = displayed_rates_with_residual(keys, rates)
+    positive = [key for key in keys if displayed_rates[key] > 0]
     if not positive:
         return {}
     output: dict[str, Decimal] = {}
     for key in positive[:-1]:
-        output[key] = money(total * displayed_rate(rates[key]))
+        output[key] = money(total * displayed_rates[key])
     output[positive[-1]] = money(total) - sum(output.values(), Decimal("0"))
     return output
 
@@ -1144,6 +1157,9 @@ def write_hours_sheet(wb: Any, hours_result: dict[str, Any], projects: OrderedDi
     ws = wb.create_sheet("RD工时加公摊")
     project_codes = [item["project_code"] for item in hours_result["projects"]]
     project_map = {item["project_code"]: item for item in hours_result["projects"]}
+    displayed_rates = displayed_rates_with_residual(
+        project_codes, {code: projects[code].rate for code in project_codes}
+    )
     headers = ["序号", "姓名", "工时汇总"] + project_codes
     ws.append(headers)
     ws.append(["", ""] + [""] + [project_map[code]["project_name"] for code in project_codes])
@@ -1157,12 +1173,12 @@ def write_hours_sheet(wb: Any, hours_result: dict[str, Any], projects: OrderedDi
     for index, code in enumerate(project_codes, start=2):
         ws.cell(index, summary_col, code)
         ws.cell(index, summary_col + 1, float(projects[code].final_hours))
-        ws.cell(index, summary_col + 2, float(projects[code].rate))
+        ws.cell(index, summary_col + 2, float(displayed_rates[code]))
         ws.cell(index, summary_col + 2).number_format = "0.00%"
     summary_total = 2 + len(project_codes)
     ws.cell(summary_total, summary_col, "合计")
     ws.cell(summary_total, summary_col + 1, float(sum((projects[code].final_hours for code in project_codes), Decimal("0"))))
-    ws.cell(summary_total, summary_col + 2, float(sum((projects[code].rate for code in project_codes), Decimal("0"))))
+    ws.cell(summary_total, summary_col + 2, float(sum(displayed_rates.values(), Decimal("0"))))
     ws.cell(summary_total, summary_col + 2).number_format = "0.00%"
     style_header(ws, 1, 1, len(headers))
     style_header(ws, 1, summary_col, summary_col + 2)
@@ -1734,12 +1750,15 @@ def write_template_hours_sheets(
     raw_ws.cell(43, 2).value = "项目编码"
     raw_ws.cell(43, 3).value = "科目名称"
     raw_ws.cell(43, 4).value = "工时分配率"
+    displayed_rates = displayed_rates_with_residual(
+        list(projects), {code: projects[code].rate for code in projects}
+    )
     for row, project in zip(range(45, 63), projects.values()):
-        write_values(raw_ws, row, [project.code, project.name, float(displayed_rate(project.rate))], start_col=2)
+        write_values(raw_ws, row, [project.code, project.name, float(displayed_rates[project.code])], start_col=2)
         raw_ws.cell(row, 4).number_format = "0.00%"
     raw_ws.cell(63, 2).value = "合计"
     raw_ws.cell(63, 4).value = float(
-        sum((displayed_rate(project.rate) for project in projects.values()), Decimal("0"))
+        sum(displayed_rates.values(), Decimal("0"))
     )
     raw_ws.cell(63, 4).number_format = "0.00%"
 
@@ -1778,7 +1797,7 @@ def write_template_hours_sheets(
     # 否则会因 42 行是 MergedCell 而静默丢失，导致分配率表没有表头。
     write_values(ws, 41, ["项目编码", "科目名称", "工时分配率"], start_col=8)
     for row, project in zip(range(43, 61), projects.values()):
-        write_values(ws, row, [project.code, project.name, float(displayed_rate(project.rate))], start_col=8)
+        write_values(ws, row, [project.code, project.name, float(displayed_rates[project.code])], start_col=8)
         ws.cell(row, 10).number_format = "0.00%"
     write_values(
         ws,
@@ -1786,7 +1805,7 @@ def write_template_hours_sheets(
         [
             "合计",
             None,
-            float(sum((displayed_rate(project.rate) for project in projects.values()), Decimal("0"))),
+            float(sum(displayed_rates.values(), Decimal("0"))),
         ],
         start_col=8,
     )
@@ -2166,6 +2185,10 @@ def write_freight_allocation_table(
         return False
     total = money(sum(project_totals.values(), Decimal("0")))
     ordered_projects = list(projects.values())
+    displayed_rates = displayed_rates_with_residual(
+        [project.code for project in ordered_projects],
+        {project.code: project.rate for project in ordered_projects},
+    )
     for index, row in enumerate(rows):
         project = ordered_projects[index] if index < len(ordered_projects) else None
         for col in range(start_col, start_col + 4):
@@ -2174,7 +2197,7 @@ def write_freight_allocation_table(
             write_values(
                 ws,
                 row,
-                [project.code, float(project.final_hours), float(displayed_rate(project.rate)), float(total)],
+                [project.code, float(project.final_hours), float(displayed_rates[project.code]), float(total)],
                 start_col=start_col,
             )
             ws.cell(row, start_col + 1).number_format = "0.00"
