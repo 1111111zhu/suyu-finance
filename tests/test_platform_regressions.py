@@ -29,6 +29,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     parse_combination_summary_sheet,
     quote_internal_sheet_references,
     read_expense_detail_workbooks,
+    read_dimension_summary_workbook,
     parse_ledger_file,
     relocate_freight_visible_table,
     relocate_material_allocation_tables,
@@ -62,6 +63,20 @@ def records(fee_code: str, fee_name: str, count: int) -> list[LedgerRecord]:
         )
         for index in range(count)
     ]
+
+
+def make_categorized_detail_ledger(path: Path, fee_code: str, fee_name: str, amount: int | float) -> None:
+    source_book = Workbook()
+    sheet = source_book.active
+    sheet.title = "Sheet1"
+    sheet.append(["账簿:苏州溯驭", "币别:人民币", "期间:2026年01月01日 至 2026年01月31日"])
+    sheet.append([
+        "科目范围:[5301] 研发支出",
+        f"核算维度:[费用项目]-[{fee_code}]{fee_name}/[研发项目]-[RD9999]研发公摊",
+    ])
+    sheet.append(["日期", "会计年度", "期间", "科目编码", "科目名称", "凭证字", "凭证号", "摘要", "借方", "贷方"])
+    sheet.append(["2026/1/31", 2026, 1, "5301", "研发支出", "记", 1, f"{fee_name}测试", amount, None])
+    source_book.save(path)
 
 
 class PlatformRegressionTests(unittest.TestCase):
@@ -204,14 +219,7 @@ class PlatformRegressionTests(unittest.TestCase):
     def test_categorized_dimension_detail_ledger_uses_preface_fee(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             source_path = Path(temp_dir) / "核算维度明细账_运费.xlsx"
-            source_book = Workbook()
-            sheet = source_book.active
-            sheet.title = "Sheet1"
-            sheet.append(["账簿:苏州溯驭", "币别:人民币", "期间:2026年01月01日 至 2026年01月31日"])
-            sheet.append(["科目范围:[5301] 研发支出", "核算维度:[费用项目]-[FYXM02_SYS]运费/[研发项目]-[RD9999]研发公摊"])
-            sheet.append(["日期", "会计年度", "期间", "科目编码", "科目名称", "凭证字", "凭证号", "摘要", "借方", "贷方"])
-            sheet.append(["2026/1/31", 2026, 1, "5301", "研发支出", "记", 1, "运费测试", 3284.9, None])
-            source_book.save(source_path)
+            make_categorized_detail_ledger(source_path, "FYXM02_SYS", "运费", 3284.9)
 
             parsed, month, source_sheets = parse_ledger_file(source_path, [])
 
@@ -221,6 +229,42 @@ class PlatformRegressionTests(unittest.TestCase):
         self.assertEqual(parsed[0].fee_code, "FYXM02-SYS")
         self.assertEqual(parsed[0].project_code, "RD9999")
         self.assertEqual(parsed[0].amount, Decimal("3284.9"))
+
+    def test_categorized_detail_ledgers_can_supply_dimension_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            hours_path = temp_path / "工时.xlsx"
+            hours_book = Workbook()
+            hours = hours_book.active
+            hours.title = "工时"
+            hours.append(["姓名", "1月", "RD141232", "RD140928"])
+            hours.append(["测试员工", 100, 60, 40])
+            hours_book.save(hours_path)
+
+            salary_path = temp_path / "工资.xlsx"
+            salary_book = Workbook()
+            salary = salary_book.active
+            salary.append(["序号", "人员名称", "1月", "1月工资费用"])
+            salary.append(["001", "测试员工", 100, 1000])
+            salary_book.save(salary_path)
+
+            freight_path = temp_path / "核算维度明细账_运费.xlsx"
+            depreciation_path = temp_path / "核算维度明细账_折旧.xlsx"
+            make_categorized_detail_ledger(freight_path, "FYXM02_SYS", "运费", 100)
+            make_categorized_detail_ledger(depreciation_path, "FYXM08_SYS", "折旧费用", 200)
+
+            classified = classify_input_workbooks([hours_path, salary_path, freight_path, depreciation_path])
+            warnings: list[str] = []
+            records, month, source = read_dimension_summary_workbook(classified["dimension_ledger"], warnings)
+
+        self.assertEqual(classified["dimension_ledger"], [freight_path, depreciation_path])
+        self.assertEqual(month, 1)
+        self.assertEqual(source[2], "generated")
+        self.assertEqual(
+            [(record.fee_code, record.project_code, record.amount) for record in records],
+            [("FYXM02-SYS", "RD9999", Decimal("100.00")), ("FYXM08-SYS", "RD9999", Decimal("200.00"))],
+        )
+        self.assertTrue(any("费用明细账" in warning and "测算金额来源" in warning for warning in warnings))
 
     def test_normalizing_an_already_normalized_combination_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -19,7 +19,7 @@ type RunSummary = {
   classified_paths: {
     hours: string;
     salary: string;
-    dimension_ledger: string;
+    dimension_ledger: string | string[];
     expense_ledgers: string[];
   };
 };
@@ -48,7 +48,7 @@ const PYODIDE_INDEXES = [
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
-const RULE_PACKAGE_REVISION = "20260831-cost-rules-v18";
+const RULE_PACKAGE_REVISION = "20260831-cost-rules-v19";
 const initialInputs: InputSet = { files: [] };
 
 function money(value: string | number | undefined) {
@@ -61,6 +61,15 @@ function restoreInputNames(message: string, files: File[]) {
     const original = files[Number(number) - 1]?.name;
     return original || `input_${number}.xlsx`;
   });
+}
+
+function inputNameFromPath(path: string, files: File[]) {
+  return files[Number(path.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name || path;
+}
+
+function classifiedNames(paths: string | string[], files: File[]) {
+  const values = Array.isArray(paths) ? paths : [paths];
+  return values.map((path) => inputNameFromPath(path, files)).join("、");
 }
 
 function userFacingError(error: unknown, files: File[] = []) {
@@ -250,22 +259,23 @@ import json
 from pathlib import Path
 from rd_cost_workflow_v1.engine import build_output, classify_input_workbooks
 
-classified = classify_input_workbooks([
-    ${inputPaths}
-])
-result = build_output(
-    classified["hours"],
-    classified["salary"],
-    classified["dimension_ledger"],
-    classified["expense_ledgers"],
-    Path("/work/研发成本测算结果.xlsx"),
-)
-result["classified_paths"] = {
-    "hours": str(classified["hours"]),
-    "salary": str(classified["salary"]),
-    "dimension_ledger": str(classified["dimension_ledger"]),
-    "expense_ledgers": [str(path) for path in classified["expense_ledgers"]],
-}
+	classified = classify_input_workbooks([
+	    ${inputPaths}
+	])
+	dimension_source = classified["dimension_ledger"]
+	result = build_output(
+	    classified["hours"],
+	    classified["salary"],
+	    dimension_source,
+	    classified["expense_ledgers"],
+	    Path("/work/研发成本测算结果.xlsx"),
+	)
+	result["classified_paths"] = {
+	    "hours": str(classified["hours"]),
+	    "salary": str(classified["salary"]),
+	    "dimension_ledger": [str(path) for path in dimension_source] if isinstance(dimension_source, list) else str(dimension_source),
+	    "expense_ledgers": [str(path) for path in classified["expense_ledgers"]],
+	}
 json.dumps(result, ensure_ascii=False, default=str)
 `);
       const result = JSON.parse(String(resultText)) as RunSummary;
@@ -320,7 +330,7 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
         <p className="privacy">文件仅进入当前浏览器的临时计算区；刷新、关闭页面或下载完成后不会保留在网站。</p>
       </section>
 
-      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="classified"><strong>已自动归类</strong><span>工时：{selectedFiles[Number(summary.classified_paths.hours.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　工资：{selectedFiles[Number(summary.classified_paths.salary.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　核算维度：{selectedFiles[Number(summary.classified_paths.dimension_ledger.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name}　费用明细：{summary.classified_paths.expense_ledgers.length ? summary.classified_paths.expense_ledgers.map((path) => selectedFiles[Number(path.match(/input_(\d+)/)?.[1] ?? 0) - 1]?.name).join("、") : "未上传（不影响费用分配）"}</span></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>运费</small><strong>¥ {money(summary.freight_total)}</strong></div><div><small>其他费用合计</small><strong>¥ {money(summary.other_total)}</strong></div><div><small>分类记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{restoreInputNames(warning, selectedFiles)}</li>)}</ul></div>}</section>}
+      {summary && <section className="results"><div className="step-heading"><span>02</span><div><h3>本次测算结果</h3><p>导出前已完成工作表顺序复核。</p></div></div><div className="classified"><strong>已自动归类</strong><span>工时：{inputNameFromPath(summary.classified_paths.hours, selectedFiles)}　工资：{inputNameFromPath(summary.classified_paths.salary, selectedFiles)}　核算维度：{classifiedNames(summary.classified_paths.dimension_ledger, selectedFiles)}　费用明细：{summary.classified_paths.expense_ledgers.length ? summary.classified_paths.expense_ledgers.map((path) => inputNameFromPath(path, selectedFiles)).join("、") : "未上传（不影响费用分配）"}</span></div><div className="metrics"><div><small>研发项目</small><strong>{summary.master_projects}</strong></div><div><small>直接人工</small><strong>¥ {money(summary.labor_total)}</strong></div><div><small>运费</small><strong>¥ {money(summary.freight_total)}</strong></div><div><small>其他费用合计</small><strong>¥ {money(summary.other_total)}</strong></div><div><small>分类记录</small><strong>{summary.ledger_records}</strong></div></div>{summary.warnings?.length > 0 && <div className="warnings"><strong>需要关注</strong><ul>{summary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{restoreInputNames(warning, selectedFiles)}</li>)}</ul></div>}</section>}
 
       <footer>临时本地测算操作台 · 浏览器端运行 · 不安装程序、不执行本地 EXE</footer>
     </main>

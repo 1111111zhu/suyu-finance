@@ -1386,6 +1386,32 @@ def copy_summary_to_template(
                     if isinstance(cell.value, str) and cell.value.startswith("=") and old_name in cell.value:
                         cell.value = cell.value.replace(old_name, new_name)
     source_path, source_sheet, source_kind = summary_source
+    if source_kind == "generated":
+        source_rows = [
+            [
+                f"{record.fee_code.replace('-', '_')}  {record.fee_name}",
+                f"{record.project_code}  {record.project_name}".strip(),
+                record.amount,
+            ]
+            for record in records
+        ]
+        if len(source_rows) > ws.max_row - 1:
+            raise RuleError(
+                f"费用明细账汇总后有{len(source_rows)}行，"
+                f"超出固定模板项目分类明细汇总表的{ws.max_row - 1}行预留区域"
+            )
+        for row in range(1, ws.max_row + 1):
+            for col in range(1, 5):
+                cell = ws.cell(row, col)
+                if not isinstance(cell, MergedCell):
+                    cell.value = None
+        write_values(ws, 1, ["序号", "费用项目", "研发项目", COMBINATION_CLEANUP_RULES["amount_header"]])
+        for sequence, (fee_value, project_value, amount_value) in enumerate(source_rows, start=1):
+            target_row = sequence + 1
+            write_values(ws, target_row, [sequence, fee_value, project_value, amount_value])
+            ws.cell(target_row, 4).number_format = "#,##0.00"
+        return new_name
+
     if source_kind == "combination":
         source_book = load_workbook(source_path, data_only=True, read_only=False)
         source = source_book[source_sheet]
@@ -2838,9 +2864,11 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
         "工资表": "salary",
         "核算维度汇总/组合表": "dimension_ledger",
     }
-    missing = [label for label, key in core_labels.items() if not roles[
-        key
-    ]]
+    missing = [
+        label
+        for label, key in core_labels.items()
+        if not roles[key] and (key != "dimension_ledger" or not roles["expense_ledgers"])
+    ]
     duplicates = [label for label, key in core_labels.items() if len(roles[key]) > 1]
     if missing or duplicates or unknown:
         messages: list[str] = []
@@ -2857,18 +2885,73 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
     return {
         "hours": roles["hours"][0],
         "salary": roles["salary"][0],
-        "dimension_ledger": roles["dimension_ledger"][0],
+        "dimension_ledger": roles["dimension_ledger"][0] if roles["dimension_ledger"] else roles["expense_ledgers"],
         "expense_ledgers": roles["expense_ledgers"],
     }
 
 
-def read_dimension_summary_workbook(path: Path, warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str, str]]:
-    """只读取核算维度明细账中的项目分类汇总表。
+def aggregate_dimension_detail_records(records: list[LedgerRecord]) -> list[LedgerRecord]:
+    grouped: OrderedDict[tuple[str, str, str, str], Decimal] = OrderedDict()
+    first_records: dict[tuple[str, str, str, str], LedgerRecord] = {}
+    for record in records:
+        key = (record.fee_code, record.fee_name, record.project_code, record.project_name)
+        grouped[key] = grouped.get(key, Decimal("0")) + record.amount
+        first_records.setdefault(key, record)
+    aggregated: list[LedgerRecord] = []
+    for key, amount in grouped.items():
+        first = first_records[key]
+        fee_code, fee_name, project_code, project_name = key
+        aggregated.append(LedgerRecord(
+            source_path=first.source_path,
+            sheet=first.sheet,
+            fee_code=fee_code,
+            fee_name=fee_name,
+            project_code=project_code,
+            project_name=project_name,
+            posting_date=first.posting_date,
+            fiscal_year=first.fiscal_year,
+            period=record_month(first),
+            voucher_word="",
+            voucher_no=None,
+            summary=f"{fee_name}明细账汇总",
+            debit=money(amount),
+            credit=Decimal("0"),
+            source_kind="summary",
+            source_row=0,
+        ))
+    return aggregated
 
-    “其他”费用的金额来源固定为这张汇总表。运费、折旧等费用明细账会被
-    写入各自模板页的上方账区；它们不参与金额计算、不做期间勾稽，也不覆盖
-    汇总表的金额。
+
+def read_dimension_detail_workbooks(paths: list[Path], warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str, str]]:
+    records: list[LedgerRecord] = []
+    explicit_months: set[int] = set()
+    for path in paths:
+        parsed, inferred_month, _ = parse_ledger_file(path, warnings)
+        if inferred_month:
+            explicit_months.add(inferred_month)
+        records.extend(record for record in parsed if record.source_kind == "ledger")
+    if not records:
+        raise RuleError("未上传核算维度汇总/组合表，且费用明细账未识别到可测算的费用项目")
+    row_months = {record_month(record) for record in records if record_month(record)}
+    months = explicit_months or row_months
+    if len(months) > 1:
+        labels = "、".join(f"{month}月" for month in sorted(months))
+        raise RuleError(f"费用明细账包含多个明确期间：{labels}；请每次上传同一期间的资料")
+    month = next(iter(months), 0)
+    warnings.append("未上传核算维度汇总/组合表，已按费用明细账的费用项目和研发项目汇总作为测算金额来源")
+    return aggregate_dimension_detail_records(records), month, (paths[0], "", "generated")
+
+
+def read_dimension_summary_workbook(path: Path | list[Path], warnings: list[str]) -> tuple[list[LedgerRecord], int, tuple[Path, str, str]]:
+    """读取核算维度金额来源。
+
+    优先使用项目分类汇总表或“核算维度与科目组合”汇总表；若用户只上传
+    带费用项目分类的核算维度明细账，则按费用项目+研发项目汇总后作为
+    金额来源，同时仍把原始凭证明细写入各费用页上方账区。
     """
+    if isinstance(path, list):
+        return read_dimension_detail_workbooks(path, warnings)
+
     summary_source = locate_summary_source([path])
     if summary_source is not None:
         source_book = load_workbook(path, data_only=True, read_only=False)
@@ -2924,11 +3007,12 @@ def read_expense_detail_workbooks(
 def build_output(
     hours_path: Path,
     salary_path: Path,
-    dimension_ledger_path: Path,
+    dimension_ledger_path: Path | list[Path],
     expense_detail_paths: list[Path],
     output_path: Path,
 ) -> dict[str, Any]:
-    source_paths = [hours_path, salary_path, dimension_ledger_path, *expense_detail_paths]
+    dimension_paths = dimension_ledger_path if isinstance(dimension_ledger_path, list) else [dimension_ledger_path]
+    source_paths = [hours_path, salary_path, *dimension_paths, *expense_detail_paths]
     if any(output_path.resolve() == source_path.resolve() for source_path in source_paths):
         raise RuleError("输入文件只读保留，结果必须保存为新的工作簿")
     warnings: list[str] = []
