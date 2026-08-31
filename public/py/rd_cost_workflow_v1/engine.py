@@ -343,6 +343,7 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
     project_actual = {code: Decimal("0") for _, code in project_cols}
     project_allocated = {code: Decimal("0") for _, code in project_cols}
     people: list[dict[str, Any]] = []
+    reconciliation_issues: list[str] = []
     blanks = 0
     for row in range(header_row + 1, min(ws.max_row, header_row + 2000) + 1):
         name = norm(ws.cell(row, name_col).value)
@@ -360,9 +361,15 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
         hours_total = decimal_value(ws.cell(row, total_col).value, f"{ws.title}!{get_column_letter(total_col)}{row}", signed=False)
         public_hours = hours_total - rd_hours
         if public_hours < 0:
-            raise RuleError(f"{name} 的工时汇总小于RD项目工时合计")
+            reconciliation_issues.append(
+                f"{name}（项目工时合计 {rd_hours} > 工时汇总 {hours_total}）"
+            )
+            continue
         if rd_hours == 0 and public_hours != 0:
-            raise RuleError(f"{name} 的RD工时为0但公摊RD工时为{public_hours}，不能猜测分配")
+            reconciliation_issues.append(
+                f"{name}（项目工时合计为 0，但工时汇总为 {hours_total}）"
+            )
+            continue
         ratio = public_hours / rd_hours if rd_hours else Decimal("0")
         allocated = {code: value * ratio for code, value in by_project.items()}
         final = {code: by_project[code] + allocated[code] for code in by_project}
@@ -382,6 +389,13 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
             "final_hours": hours_total,
             "allocation_ratio": ratio,
         })
+    if reconciliation_issues:
+        raise RuleError(
+            "工时数据勾稽未通过："
+            + "、".join(reconciliation_issues)
+            + "。系统规则要求：项目工时合计 ≤ 工时汇总；"
+            "若项目工时合计为 0，则工时汇总也必须为 0。"
+        )
     if not people:
         raise RuleError("工时表未找到人员明细")
     total_final = sum((person["final_hours"] for person in people), Decimal("0"))
@@ -2832,6 +2846,7 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
         "expense_ledgers": [],
     }
     unknown: list[Path] = []
+    hours_validation_errors: list[str] = []
     for path in paths:
         summary_candidate = locate_summary_source([path])
         combination_candidate = locate_combination_summary_sheet(path)
@@ -2848,8 +2863,11 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
             if hours_result.get("people"):
                 roles["hours"].append(path)
                 continue
-        except RuleError:
-            pass
+        except RuleError as exc:
+            message = str(exc)
+            if message.startswith("工时数据勾稽未通过："):
+                hours_validation_errors.append(message)
+                continue
         try:
             salary_rows, _, _ = read_salary(path)
             if salary_rows:
@@ -2871,11 +2889,15 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
     missing = [
         label
         for label, key in core_labels.items()
-        if not roles[key] and (key != "dimension_ledger" or not roles["expense_ledgers"])
+        if not roles[key]
+        and not (key == "hours" and hours_validation_errors)
+        and (key != "dimension_ledger" or not roles["expense_ledgers"])
     ]
     duplicates = [label for label, key in core_labels.items() if len(roles[key]) > 1]
     if missing or duplicates or unknown:
         messages: list[str] = []
+        if hours_validation_errors:
+            messages.extend(hours_validation_errors)
         if missing:
             messages.append("未识别到" + "、".join(missing))
         if duplicates:
