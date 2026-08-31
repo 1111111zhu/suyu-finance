@@ -305,6 +305,11 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
         <div className="rule-card"><strong>已锁定的口径</strong><span>所有人员按已有项目工时比例分配公摊工时，同时回填工时汇总、RD工时和公摊RD工时</span><span>核算维度与科目组合表在总测算中自动整理，并逐行写入项目分类明细汇总表</span><span>费用明细账是可选的，仅用于保留各费用页的原始明细，不替代核算维度金额</span><span>所有费用分配表只回填固定模板原预留区，不移动表块、工作表或合并单元格</span></div>
       </section>
 
+      <section className="module-switcher" aria-label="独立验证模块">
+        <div><p className="eyebrow">INDEPENDENT VALIDATION MODULE</p><h3>自动算薪系统</h3><p>独立验证 9 张源表、字段映射、工资计算与工资条输出流程；不读取或修改研发成本测算数据。</p></div>
+        <a href="/salary/" className="module-link">进入自动算薪验证 <span>↗</span></a>
+      </section>
+
       <section className="workspace">
         <div className="step-heading"><span>01</span><div><h3>选择测算文件</h3><p>请使用 `.xlsx` 文件；每个文件不超过 20 MB。</p></div><b>{selectedCount} 份文件已选择</b></div>
         <div className="upload-grid">
