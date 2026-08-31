@@ -21,6 +21,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     OUTPUT_TEMPLATE,
     Project,
     allocate_by_displayed_rates,
+    calculate_legacy_hours,
     classify_input_workbooks,
     combination_filename_matches,
     copy_summary_to_template,
@@ -240,6 +241,39 @@ class PlatformRegressionTests(unittest.TestCase):
 
         self.assertEqual(classified["dimension_ledger"], combo_paths[0])
         self.assertEqual(classified["expense_ledgers"], [])
+
+    def test_invalid_hours_are_reported_as_a_rule_error_not_an_index_error(self) -> None:
+        """A rejected hours workbook must never fall through to roles["hours"][0]."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "工时.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.append(["姓名", "1月", "RD141232", "RD140928"])
+            sheet.append(["测试员工", 100, 60, 60])
+            source_book.save(source_path)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "工时数据勾稽未通过",
+            ) as raised:
+                classify_input_workbooks([source_path])
+
+        self.assertNotIn("IndexError", str(raised.exception))
+
+    def test_legacy_hours_prefers_right_side_hours_total_over_month_capacity(self) -> None:
+        """有“1月”标准工时和右侧“工时合计”时，必须使用后者作项目汇总。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "工时.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.append(["序号", "姓名", "1月", "RD141232", "RD140928", "工时合计"])
+            # 项目工时超过标准月工时，但与显式的工时合计相等，属于有效加班数据。
+            sheet.append([1, "测试员工", 176, 120, 84, 204])
+            source_book.save(source_path)
+
+            _, result, _ = calculate_legacy_hours(source_path, OrderedDict())
+
+        self.assertEqual(result["people"][0]["final_hours"], Decimal("204"))
 
     def test_categorized_dimension_detail_ledger_uses_preface_fee(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

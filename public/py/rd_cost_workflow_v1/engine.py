@@ -317,13 +317,21 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
                 if len(project_cols) < 2:
                     continue
                 first_project_col = project_cols[0][0]
+                # 部分工时模板把“1月”放在 RD 项目块左侧作为标准工时，
+                # 而把实际项目工时之和放在项目块右侧，表头为“工时合计”。
+                # 不能仅因汇总列位于项目块右侧就忽略它，否则有加班工时的
+                # 人员会被错误地判定为“项目工时合计 > 工时汇总”。
                 explicit_total_col = next(
-                    (headers[item] for item in ("工时汇总", "总工时", "工时总计") if item in headers),
+                    (
+                        headers[item]
+                        for item in ("工时汇总", "工时合计", "总工时", "工时总计")
+                        if item in headers
+                    ),
                     0,
                 )
                 month_total_col = first_project_col - 1
                 month_label = norm(ws.cell(header_row, month_total_col).value) if month_total_col > 0 else ""
-                if explicit_total_col and explicit_total_col < first_project_col:
+                if explicit_total_col:
                     total_col, total_basis = explicit_total_col, "明确的工时汇总列"
                 elif MONTH_RE.fullmatch(month_label):
                     total_col, total_basis = month_total_col, f"紧邻项目块的{month_label}总工时列"
@@ -344,6 +352,7 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
     project_allocated = {code: Decimal("0") for _, code in project_cols}
     people: list[dict[str, Any]] = []
     reconciliation_issues: list[str] = []
+    excluded_non_rd_people: list[str] = []
     blanks = 0
     for row in range(header_row + 1, min(ws.max_row, header_row + 2000) + 1):
         name = norm(ws.cell(row, name_col).value)
@@ -366,9 +375,9 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
             )
             continue
         if rd_hours == 0 and public_hours != 0:
-            reconciliation_issues.append(
-                f"{name}（项目工时合计为 0，但工时汇总为 {hours_total}）"
-            )
+            # 无任何 RD 项目工时的人员无法按项目比例分配。保留为工资未分配
+            # 人员，而不是把其标准月工时误判成工时表错误，更不能臆造项目归属。
+            excluded_non_rd_people.append(name)
             continue
         ratio = public_hours / rd_hours if rd_hours else Decimal("0")
         allocated = {code: value * ratio for code, value in by_project.items()}
@@ -420,7 +429,10 @@ def calculate_legacy_hours(path: Path, project_names: dict[str, Project]) -> tup
             f"个人工时汇总取自{total_basis}；"
             "所有人员统一按 项目源工时 × (工时汇总 - 项目源工时合计) ÷ 项目源工时合计 计算，"
             "不为任何人员设置例外"
-        ],
+        ] + (
+            ["工时表中无 RD 项目工时，未进入研发分配的人员：" + "、".join(excluded_non_rd_people)]
+            if excluded_non_rd_people else []
+        ),
         "totals": {
             "actual_hours": sum(project_actual.values(), Decimal("0")),
             "allocated_hours": sum(project_allocated.values(), Decimal("0")),
@@ -2894,7 +2906,7 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
         and (key != "dimension_ledger" or not roles["expense_ledgers"])
     ]
     duplicates = [label for label, key in core_labels.items() if len(roles[key]) > 1]
-    if missing or duplicates or unknown:
+    if hours_validation_errors or missing or duplicates or unknown:
         messages: list[str] = []
         if hours_validation_errors:
             messages.extend(hours_validation_errors)
