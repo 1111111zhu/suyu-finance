@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useRef, useState } from "react";
 
 type InputSet = {
   files: File[];
@@ -41,7 +41,10 @@ declare global {
   }
 }
 
-const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/";
+const PYODIDE_INDEXES = [
+  "https://unpkg.com/pyodide@0.28.2/",
+  "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/",
+];
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
@@ -78,10 +81,12 @@ function downloadWorkbook(bytes: Uint8Array, fileName: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Safari may start the download after the click handler returns. Keep the
+  // object URL alive briefly so the download is not cancelled prematurely.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function ensurePyodideScript() {
+function ensurePyodideScript(indexUrl: string) {
   return new Promise<void>((resolve, reject) => {
     if (window.loadPyodide) {
       resolve();
@@ -94,44 +99,65 @@ function ensurePyodideScript() {
       return;
     }
     const script = document.createElement("script");
-    script.src = `${PYODIDE_INDEX}pyodide.js`;
+    script.src = `${indexUrl}pyodide.js`;
     script.async = true;
     script.dataset.pyodideLoader = "true";
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Python runtime download failed."));
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("Python runtime download failed."));
+    };
     document.head.appendChild(script);
   });
 }
 
 async function copyAsset(pyodide: PyodideLike, url: string, destination: string) {
-  const response = await fetch(url);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30_000);
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
   if (!response.ok) throw new Error(`Unable to load required rule asset: ${url}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   pyodide.FS.writeFile(destination, bytes);
 }
 
 async function initializeEngine(): Promise<PyodideLike> {
-  await ensurePyodideScript();
-  if (!window.loadPyodide) throw new Error("Python runtime loader is unavailable.");
-  const pyodide = await window.loadPyodide({ indexURL: PYODIDE_INDEX });
-  pyodide.FS.mkdirTree("/app/rule_packages/rd_cost_workflow_v1/templates");
-  pyodide.FS.mkdirTree("/app/rule_packages/rd_hours_v1");
-  pyodide.FS.mkdirTree("/work");
+  let lastError: unknown;
+  for (const indexUrl of PYODIDE_INDEXES) {
+    try {
+      await ensurePyodideScript(indexUrl);
+      if (!window.loadPyodide) throw new Error("Python runtime loader is unavailable.");
+      const pyodide = await window.loadPyodide({ indexURL: indexUrl });
+      pyodide.FS.mkdirTree("/app/rule_packages/rd_cost_workflow_v1/templates");
+      pyodide.FS.mkdirTree("/app/rule_packages/rd_hours_v1");
+      pyodide.FS.mkdirTree("/work");
 
-  await copyAsset(pyodide, `/py/rd_cost_workflow_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/engine.py");
-  await copyAsset(pyodide, `/py/rd_cost_workflow_v1/rules.yaml?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/rules.yaml");
-  await copyAsset(pyodide, `/py/rd_hours_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/engine.py");
-  await copyAsset(pyodide, `/py/rd_hours_v1/rules.yaml?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/rules.yaml");
-  await copyAsset(pyodide, `/py/output_template.xlsx?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/templates/研发成本输出模板.xlsx");
-  await copyAsset(pyodide, `/py/vendor.zip?rev=${RULE_PACKAGE_REVISION}`, "/app/vendor.zip");
-  await pyodide.runPythonAsync(`
+      await copyAsset(pyodide, `/py/rd_cost_workflow_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/engine.py");
+      await copyAsset(pyodide, `/py/rd_cost_workflow_v1/rules.yaml?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/rules.yaml");
+      await copyAsset(pyodide, `/py/rd_hours_v1/engine.py?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/engine.py");
+      await copyAsset(pyodide, `/py/rd_hours_v1/rules.yaml?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_hours_v1/rules.yaml");
+      await copyAsset(pyodide, `/py/output_template.xlsx?rev=${RULE_PACKAGE_REVISION}`, "/app/rule_packages/rd_cost_workflow_v1/templates/研发成本输出模板.xlsx");
+      await copyAsset(pyodide, `/py/vendor.zip?rev=${RULE_PACKAGE_REVISION}`, "/app/vendor.zip");
+      await pyodide.runPythonAsync(`
 import sys
 sys.path.insert(0, "/app/vendor.zip")
 sys.path.insert(0, "/app/rule_packages")
 import openpyxl
 import yaml
 `);
-  return pyodide;
+      return pyodide;
+    } catch (error) {
+      lastError = error;
+      // If a CDN was blocked, allow the next candidate to install its loader.
+      delete window.loadPyodide;
+      document.querySelector("script[data-pyodide-loader]")?.remove();
+    }
+  }
+  throw new Error(`浏览器运行环境下载失败：${lastError instanceof Error ? lastError.message : "请检查网络连接"}`);
 }
 
 async function writeInput(pyodide: PyodideLike, file: File, destination: string) {
@@ -145,27 +171,26 @@ function FileChips({ files }: { files: File[] }) {
 
 export default function Home() {
   const [inputs, setInputs] = useState<InputSet>(initialInputs);
-  const [phase, setPhase] = useState<"loading" | "ready" | "running" | "error">("loading");
-  const [message, setMessage] = useState("正在准备本地测算环境…首次使用约需下载浏览器运行环境。");
+  const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "running" | "error">("idle");
+  const [message, setMessage] = useState("请选择需要测算的 .xlsx 文件；页面会在选择后准备本地运行环境。");
   const [summary, setSummary] = useState<RunSummary | null>(null);
   const engine = useRef<PyodideLike | null>(null);
+  const enginePromise = useRef<Promise<PyodideLike> | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    initializeEngine()
-      .then((runtime) => {
-        if (cancelled) return;
-        engine.current = runtime;
-        setPhase("ready");
-        setMessage("本地测算环境已就绪。文件只在当前浏览器中处理，不会上传到服务器。");
-      })
-      .catch((error: Error) => {
-        if (cancelled) return;
-        setPhase("error");
-        setMessage(`无法加载本地测算环境：${error.message}`);
-      });
-    return () => { cancelled = true; };
-  }, []);
+  function prepareEngine() {
+    if (!enginePromise.current) {
+      enginePromise.current = initializeEngine()
+        .then((runtime) => {
+          engine.current = runtime;
+          return runtime;
+        })
+        .catch((error) => {
+          enginePromise.current = null;
+          throw error;
+        });
+    }
+    return enginePromise.current;
+  }
 
   const selectedFiles = inputs.files ?? [];
   const buttonDisabled = phase === "loading" || phase === "running" || !selectedFiles.length;
@@ -180,25 +205,47 @@ export default function Home() {
     }
     setInputs({ files });
     setSummary(null);
-    if (engine.current) setPhase("ready");
-    setMessage(files.length ? `已选择 ${files.length} 份文件；开始测算时将按工作簿结构自动归类。` : "请至少选择一份 .xlsx 文件。");
+    if (!files.length) {
+      setPhase("idle");
+      setMessage("请至少选择一份 .xlsx 文件。");
+      return;
+    }
+    if (engine.current) {
+      setPhase("ready");
+      setMessage(`已选择 ${files.length} 份文件；本地测算环境已就绪。`);
+      return;
+    }
+    setPhase("loading");
+    setMessage(`已选择 ${files.length} 份文件；正在准备本地测算环境，首次使用约需下载浏览器运行环境…`);
+    prepareEngine()
+      .then(() => {
+        setPhase("ready");
+        setMessage("本地测算环境已就绪。文件只在当前浏览器中处理，不会上传到服务器。");
+      })
+      .catch((error: Error) => {
+        setPhase("error");
+        setMessage(`无法加载本地测算环境：${error.message}。请检查网络后重试。`);
+      });
   }
 
   async function runCalculation() {
-    if (!engine.current || !selectedFiles.length) return;
+    if (!selectedFiles.length) return;
     setPhase("running");
     setSummary(null);
     setMessage("正在浏览器本地读取 Excel、计算工时、直接人工和费用分配…");
     try {
+      const runtime = engine.current ?? await prepareEngine();
       const inputDestinations: string[] = [];
       for (const [index, file] of selectedFiles.entries()) {
-        const safeName = file.name.replace(/\.xlsx$/i, "").replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 80) || "workbook";
+        // Avoid Unicode property escapes so older Safari versions can parse
+        // the bundle before the page renders.
+        const safeName = file.name.replace(/\.xlsx$/i, "").replace(/[^a-zA-Z0-9_.\-\u4e00-\u9fff]+/g, "_").slice(0, 80) || "workbook";
         const destination = `/work/input_${index + 1}__${safeName}.xlsx`;
         inputDestinations.push(destination);
-        await writeInput(engine.current, file, destination);
+        await writeInput(runtime, file, destination);
       }
       const inputPaths = inputDestinations.map((path) => `Path(${JSON.stringify(path)})`).join(",\n    ");
-      const resultText = await engine.current.runPythonAsync(`
+      const resultText = await runtime.runPythonAsync(`
 import json
 from pathlib import Path
 from rd_cost_workflow_v1.engine import build_output, classify_input_workbooks
@@ -222,8 +269,8 @@ result["classified_paths"] = {
 json.dumps(result, ensure_ascii=False, default=str)
 `);
       const result = JSON.parse(String(resultText)) as RunSummary;
-      const output = engine.current.FS.readFile("/work/研发成本测算结果.xlsx");
-      const verificationText = await engine.current.runPythonAsync(`
+      const output = runtime.FS.readFile("/work/研发成本测算结果.xlsx");
+      const verificationText = await runtime.runPythonAsync(`
 import json
 from openpyxl import load_workbook
 verification_book = load_workbook("/work/研发成本测算结果.xlsx", read_only=True, data_only=False)
@@ -250,7 +297,7 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
       <header className="topbar">
         <div className="brand-mark">研</div>
         <div><p className="eyebrow">TEMPORARY LOCAL WORKBENCH</p><h1>研发成本测算操作台</h1></div>
-        <div className={`runtime-state ${phase}`}><span />{phase === "ready" ? "本地引擎已就绪" : phase === "running" ? "正在计算" : phase === "error" ? "需要处理" : "正在加载"}</div>
+        <div className={`runtime-state ${phase}`}><span />{phase === "idle" ? "等待选择文件" : phase === "ready" ? "本地引擎已就绪" : phase === "running" ? "正在计算" : phase === "error" ? "需要处理" : "正在加载"}</div>
       </header>
 
       <section className="hero">
