@@ -917,7 +917,10 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
         if rule is not None:
             fee_code, fee_name = rule["code"], rule["name"]
         if (not fee_name or rule is None) and not fee_col:
-            warnings.append(f"{ws.title} 未识别费用项目，已跳过")
+            if fee_name:
+                warnings.append(f"{ws.title} 的{fee_name}不属于固定其他费用明细页，已跳过")
+            else:
+                warnings.append(f"{ws.title} 未识别费用项目，已跳过")
             continue
         if rule is not None:
             source_sheets.append(LedgerSourceSheet(path, ws.title, fee_code, fee_name))
@@ -1369,6 +1372,7 @@ def copy_summary_to_template(
     summary_source: tuple[Path, str, str],
     records: list[LedgerRecord],
     month: int,
+    warnings: list[str] | None = None,
 ) -> str:
     old_name = TEMPLATE_MONTH_SHEET
     new_name = f"项目分类明细汇总表{month or 1}月"
@@ -1418,10 +1422,49 @@ def copy_summary_to_template(
             ]
             for row in range(header_row + 1, last_content_row + 1)
         ]
-        if len(source_rows) > ws.max_row - 1:
+        capacity = ws.max_row - 1
+        if len(source_rows) > capacity:
+            filtered_rows: list[list[Any]] = []
+            skipped_fees: list[str] = []
+            current_fee_supported = False
+            for fee_value, project_value, amount_value in source_rows:
+                fee_text = norm(fee_value)
+                if fee_text in {"总计", "合计"}:
+                    continue
+                if fee_text and not fee_text.endswith("小计"):
+                    match = re.search(r"(FYXM\d+[_-]SYS)", fee_text, re.I)
+                    fee_code = code_key(match.group(1)) if match else ""
+                    current_fee_supported = fee_code in FEE_RULES_BY_CODE
+                    if fee_code and not current_fee_supported:
+                        skipped_fees.append(fee_text)
+                if current_fee_supported:
+                    filtered_rows.append([fee_value, project_value, amount_value])
+            if len(filtered_rows) <= capacity:
+                source_rows = filtered_rows
+                if warnings is not None and skipped_fees:
+                    labels = "、".join(dict.fromkeys(skipped_fees))
+                    warnings.append(
+                        "核算维度与科目组合表包含未进入固定费用页的分类，"
+                        f"已从项目分类明细汇总表中剔除：{labels}；直接人工仍按工资表计算"
+                    )
+        if len(source_rows) > capacity:
+            allocatable_rows = [
+                [
+                    f"{record.fee_code.replace('-', '_')}  {record.fee_name}",
+                    f"{record.project_code}  {record.project_name}".strip(),
+                    record.amount,
+                ]
+                for record in records
+                if record.fee_code in FEE_RULES_BY_CODE
+            ]
+            if len(allocatable_rows) <= capacity:
+                source_rows = allocatable_rows
+                if warnings is not None:
+                    warnings.append("项目分类明细汇总表预留区不足，已改按可测算费用明细行整理，不复制小计行")
+        if len(source_rows) > capacity:
             raise RuleError(
                 f"核算维度与科目组合整理后有{len(source_rows)}行，"
-                f"超出固定模板项目分类明细汇总表的{ws.max_row - 1}行预留区域"
+                f"超出固定模板项目分类明细汇总表的{capacity}行预留区域"
             )
         for row in range(1, ws.max_row + 1):
             for col in range(1, 5):
@@ -2481,7 +2524,7 @@ def write_template_output(
     clear_broken_formula_cells(wb, warnings)
     write_template_main_sheet(wb, projects, master_costs)
     if summary_source is not None:
-        copy_summary_to_template(wb, summary_source, effective_records, month)
+        copy_summary_to_template(wb, summary_source, effective_records, month, warnings)
     write_template_material_sheet(
         wb,
         [record for record in effective_records if record.fee_code == DIRECT_MATERIAL_CODE],
@@ -2553,13 +2596,13 @@ def write_template_output(
         if not relocated_header:
             raise RuleError(f"固定模板的{ws.title}缺少可迁移的费用分配结果预留区域")
         allocation_header_rows[rule["code"]] = relocated_header
-        original_layout_signature[rule["detail_sheet"]] = sheet_layout_signature(ws)
         write_template_expense_source(
             ws,
             detail_rows,
             month,
             relocated_header,
         )
+        original_layout_signature[rule["detail_sheet"]] = sheet_layout_signature(ws)
         if not detail_rows:
             missing_detail_names.append(rule["name"])
     if missing_detail_names:
@@ -2700,6 +2743,56 @@ def has_ledger_layout(path: Path) -> bool:
     return False
 
 
+def dimension_source_signature(path: Path) -> tuple[Any, ...]:
+    """为核算维度汇总/组合表生成内容指纹，用于去掉重复上传的同源副本。"""
+    warnings: list[str] = []
+    summary_source = locate_summary_source([path])
+    if summary_source is not None:
+        source_book = load_workbook(path, data_only=True, read_only=False)
+        records, month = parse_summary_sheet(path, source_book[summary_source[1]], warnings)
+    else:
+        combination_source = locate_combination_summary_sheet(path)
+        if combination_source is None:
+            return ("not_dimension_source", str(path.resolve()))
+        source_book = load_workbook(path, data_only=True, read_only=False)
+        records, month = parse_combination_summary_sheet(
+            path,
+            source_book[combination_source[1]],
+            combination_source[2],
+            warnings,
+        )
+    if not records:
+        return ("empty_dimension_source", str(path.resolve()))
+    return (
+        month,
+        tuple(
+            (
+                record.fee_code,
+                record.fee_name,
+                record.project_code,
+                record.project_name,
+                str(record.amount),
+            )
+            for record in records
+        ),
+    )
+
+
+def deduplicate_equivalent_dimension_ledgers(paths: list[Path]) -> list[Path]:
+    unique: list[Path] = []
+    seen: set[tuple[Any, ...]] = set()
+    for path in paths:
+        try:
+            signature = dimension_source_signature(path)
+        except (RuleError, OSError, ValueError):
+            signature = ("unreadable_dimension_source", str(path.resolve()))
+        if signature in seen:
+            continue
+        seen.add(signature)
+        unique.append(path)
+    return unique
+
+
 def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
     """根据表结构归类；文件名只用于组合表提示，不是完整名称硬门槛。"""
     roles: dict[str, list[Path]] = {
@@ -2739,12 +2832,16 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
             continue
         unknown.append(path)
 
-    missing = [label for label in ("工时表", "工资表", "核算维度明细账") if not roles[
-        {"工时表": "hours", "工资表": "salary", "核算维度明细账": "dimension_ledger"}[label]
+    roles["dimension_ledger"] = deduplicate_equivalent_dimension_ledgers(roles["dimension_ledger"])
+    core_labels = {
+        "工时表": "hours",
+        "工资表": "salary",
+        "核算维度汇总/组合表": "dimension_ledger",
+    }
+    missing = [label for label, key in core_labels.items() if not roles[
+        key
     ]]
-    duplicates = [label for label, key in {
-        "工时表": "hours", "工资表": "salary", "核算维度明细账": "dimension_ledger",
-    }.items() if len(roles[key]) > 1]
+    duplicates = [label for label, key in core_labels.items() if len(roles[key]) > 1]
     if missing or duplicates or unknown:
         messages: list[str] = []
         if missing:
@@ -2755,7 +2852,7 @@ def classify_input_workbooks(paths: list[Path]) -> dict[str, Any]:
             messages.append("无法归类：" + "、".join(path.name for path in unknown))
         raise RuleError(
             "；".join(messages)
-            + "。请上传表结构完整且核心类别唯一的工作簿；费用明细账可不上传"
+            + "。请保留一份核心工时、工资和核算维度汇总/组合工作簿；费用明细账可多份上传，表内带费用分类会自动识别"
         )
     return {
         "hours": roles["hours"][0],
@@ -2808,12 +2905,14 @@ def read_expense_detail_workbooks(
     records: list[LedgerRecord] = []
     explicit_months: set[int] = set()
     for path in paths:
+        warning_count = len(warnings)
         parsed, inferred_month, _ = parse_ledger_file(path, warnings)
         if inferred_month:
             explicit_months.add(inferred_month)
         detail_rows = [record for record in parsed if record.source_kind == "ledger"]
         if not detail_rows:
-            warnings.append(f"{path.name} 未识别到可写入费用页的凭证明细")
+            if len(warnings) == warning_count:
+                warnings.append(f"{path.name} 未识别到可写入费用页的凭证明细")
             continue
         records.extend(detail_rows)
     if len(explicit_months) > 1:

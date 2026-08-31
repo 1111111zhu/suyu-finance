@@ -48,7 +48,7 @@ const PYODIDE_INDEXES = [
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // 规则文件在浏览器启动时从静态目录加载。版本参数保证规则更新后不会继续
 // 使用浏览器已缓存的旧 engine.py / rules.yaml。
-const RULE_PACKAGE_REVISION = "20260830-cost-rules-v17";
+const RULE_PACKAGE_REVISION = "20260831-cost-rules-v18";
 const initialInputs: InputSet = { files: [] };
 
 function money(value: string | number | undefined) {

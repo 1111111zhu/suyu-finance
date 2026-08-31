@@ -19,6 +19,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     OUTPUT_TEMPLATE,
     Project,
     allocate_by_displayed_rates,
+    classify_input_workbooks,
     combination_filename_matches,
     copy_summary_to_template,
     fee_source_content_last_row,
@@ -169,6 +170,58 @@ class PlatformRegressionTests(unittest.TestCase):
         self.assertEqual(records[0].project_code, "RD9999")
         self.assertEqual(records[0].amount, Decimal("2115.77"))
 
+    def test_classification_deduplicates_equivalent_combination_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            hours_path = temp_path / "工时.xlsx"
+            hours_book = Workbook()
+            hours = hours_book.active
+            hours.title = "工时"
+            hours.append(["姓名", "1月", "RD141232", "RD140928"])
+            hours.append(["测试员工", 100, 60, 40])
+            hours_book.save(hours_path)
+
+            salary_path = temp_path / "工资.xlsx"
+            salary_book = Workbook()
+            salary = salary_book.active
+            salary.append(["序号", "人员名称", "1月", "1月工资费用"])
+            salary.append(["001", "测试员工", 100, 1000])
+            salary_book.save(salary_path)
+
+            combo_paths = [temp_path / "核算维度与科目组合表1月.xlsx", temp_path / "核算维度与科目组合表_副本.xlsx"]
+            for combo_path in combo_paths:
+                combo_book = Workbook()
+                combo = combo_book.active
+                combo.append(["费用项目", None, None, "研发项目", "借方发生(原币)"])
+                combo.append(["FYXM02_SYS  运费", None, None, "RD9999  研发公摊", 100])
+                combo_book.save(combo_path)
+
+            classified = classify_input_workbooks([hours_path, salary_path, *combo_paths])
+
+        self.assertEqual(classified["dimension_ledger"], combo_paths[0])
+        self.assertEqual(classified["expense_ledgers"], [])
+
+    def test_categorized_dimension_detail_ledger_uses_preface_fee(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "核算维度明细账_运费.xlsx"
+            source_book = Workbook()
+            sheet = source_book.active
+            sheet.title = "Sheet1"
+            sheet.append(["账簿:苏州溯驭", "币别:人民币", "期间:2026年01月01日 至 2026年01月31日"])
+            sheet.append(["科目范围:[5301] 研发支出", "核算维度:[费用项目]-[FYXM02_SYS]运费/[研发项目]-[RD9999]研发公摊"])
+            sheet.append(["日期", "会计年度", "期间", "科目编码", "科目名称", "凭证字", "凭证号", "摘要", "借方", "贷方"])
+            sheet.append(["2026/1/31", 2026, 1, "5301", "研发支出", "记", 1, "运费测试", 3284.9, None])
+            source_book.save(source_path)
+
+            parsed, month, source_sheets = parse_ledger_file(source_path, [])
+
+        self.assertEqual(month, 1)
+        self.assertEqual([(source.fee_code, source.fee_name) for source in source_sheets], [("FYXM02-SYS", "运费")])
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].fee_code, "FYXM02-SYS")
+        self.assertEqual(parsed[0].project_code, "RD9999")
+        self.assertEqual(parsed[0].amount, Decimal("3284.9"))
+
     def test_normalizing_an_already_normalized_combination_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             source_path = Path(temp_dir) / "normalized_combination.xlsx"
@@ -226,6 +279,42 @@ class PlatformRegressionTests(unittest.TestCase):
             [summary.cell(4, col).value for col in range(1, 5)],
             [2, "FYXM28_SYS  直接投入(材料、燃料)", "RD1260301  生产自研工装", 50],
         )
+
+    def test_oversized_combination_copy_filters_non_template_fee_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "核算维度与科目组合表.xlsx"
+            source_book = Workbook()
+            source = source_book.active
+            source.append(["费用项目", None, None, "研发项目", "借方发生(原币)"])
+            source.append(["FYXM02_SYS  运费", None, None, "RD9999  研发公摊", 100])
+            source.append(["FYXM02_SYS  运费 小计", None, None, None, 100])
+            for index in range(24):
+                source.append([f"FYXM21_SYS  企业基本养老保险{index}", None, None, "RD9999  研发公摊", 10])
+                source.append([f"FYXM21_SYS  企业基本养老保险{index} 小计", None, None, None, 10])
+            source.append(["FYXM08_SYS  折旧费用", None, None, "RD9999  研发公摊", 200])
+            source.append(["FYXM08_SYS  折旧费用 小计", None, None, None, 200])
+            source_book.save(source_path)
+
+            workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
+            warnings: list[str] = []
+            copy_summary_to_template(
+                workbook,
+                (source_path, "Sheet", "combination"),
+                [],
+                month=1,
+                warnings=warnings,
+            )
+            summary = workbook["项目分类明细汇总表1月"]
+            copied_values = [
+                summary.cell(row, 2).value
+                for row in range(2, summary.max_row + 1)
+                if summary.cell(row, 2).value
+            ]
+
+        self.assertIn("FYXM02_SYS  运费", copied_values)
+        self.assertIn("FYXM08_SYS  折旧费用", copied_values)
+        self.assertTrue(all("企业基本养老保险" not in str(value) for value in copied_values))
+        self.assertTrue(any("未进入固定费用页" in warning for warning in warnings))
 
     def test_material_allocation_overwrites_old_helper_addition(self) -> None:
         workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
