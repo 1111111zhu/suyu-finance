@@ -261,23 +261,23 @@ import json
 from pathlib import Path
 from rd_cost_workflow_v1.engine import build_output, classify_input_workbooks
 
-	classified = classify_input_workbooks([
-	    ${inputPaths}
-	])
-	dimension_source = classified["dimension_ledger"]
-	result = build_output(
-	    classified["hours"],
-	    classified["salary"],
-	    dimension_source,
-	    classified["expense_ledgers"],
-	    Path("/work/研发成本测算结果.xlsx"),
-	)
-	result["classified_paths"] = {
-	    "hours": str(classified["hours"]),
-	    "salary": str(classified["salary"]),
-	    "dimension_ledger": [str(path) for path in dimension_source] if isinstance(dimension_source, list) else str(dimension_source),
-	    "expense_ledgers": [str(path) for path in classified["expense_ledgers"]],
-	}
+classified = classify_input_workbooks([
+    ${inputPaths}
+])
+dimension_source = classified["dimension_ledger"]
+result = build_output(
+    classified["hours"],
+    classified["salary"],
+    dimension_source,
+    classified["expense_ledgers"],
+    Path("/work/研发成本测算结果.xlsx"),
+)
+result["classified_paths"] = {
+    "hours": str(classified["hours"]),
+    "salary": str(classified["salary"]),
+    "dimension_ledger": [str(path) for path in dimension_source] if isinstance(dimension_source, list) else str(dimension_source),
+    "expense_ledgers": [str(path) for path in classified["expense_ledgers"]],
+}
 json.dumps(result, ensure_ascii=False, default=str)
 `);
       const result = JSON.parse(String(resultText)) as RunSummary;

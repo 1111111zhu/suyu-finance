@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 import py_compile
+import re
 from collections import OrderedDict
 from decimal import Decimal
 from pathlib import Path
@@ -81,6 +82,20 @@ def make_categorized_detail_ledger(path: Path, fee_code: str, fee_name: str, amo
 
 
 class PlatformRegressionTests(unittest.TestCase):
+    def test_browser_generated_calculation_script_compiles(self) -> None:
+        """Prevent indentation regressions inside the Python template embedded in the page."""
+        page_source = (PROJECT_ROOT / "app" / "page.tsx").read_text(encoding="utf-8")
+        match = re.search(
+            r"const resultText = await runtime\.runPythonAsync\(`\n(.*?)\n`\);",
+            page_source,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(match, "未找到浏览器端测算 Python 模板")
+        calculation_source = match.group(1).replace(
+            "${inputPaths}", 'Path("/work/input_1.xlsx")'
+        )
+        compile(calculation_source, "browser_calculation_template.py", "exec")
+
     def test_browser_rule_python_sources_compile(self) -> None:
         """网页端会直接加载这些源码；发布前必须拦截任何 Python 语法错误。"""
         for source in (
