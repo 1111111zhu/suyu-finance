@@ -1450,6 +1450,8 @@ def copy_summary_to_template(
         ]
         capacity = ws.max_row - 1
         if len(source_rows) > capacity:
+            # 固定模板不可扩展。优先剔除未映射至固定费用页的分类；若仍
+            # 超限，只保留实际参与本次测算的费用行，金额计算不受影响。
             filtered_rows: list[list[Any]] = []
             skipped_fees: list[str] = []
             current_fee_supported = False
@@ -2425,7 +2427,8 @@ def write_template_expense_source(
     required_last_row = fee_source_content_last_row(records)
     if required_last_row > raw_end - 3:
         raise RuleError(f"{ws.title} 的项目汇总表未保留3个空白行")
-    prepare_rows(ws, 5, len(records) + (1 if records else 0), 5, min(9, ws.max_column))
+    # 明细区本身是固定模板的既有预留区域。不得用第 5 行样式扩展
+    # 到后续行，否则会改变模板预设的行高；容量检查已在上方完成。
     # 这一区只承载本次上传的明细；模板历史值和历史公式都必须清除。
     # 扫描整个 A:I 历史账区，同时精确保护固定位置的分配表。
     clear_through = ws.max_row if allocation_start_row is not None else raw_end
@@ -2805,6 +2808,7 @@ def dimension_source_signature(path: Path) -> tuple[Any, ...]:
 
 
 def deduplicate_equivalent_dimension_ledgers(paths: list[Path]) -> list[Path]:
+    """保留每个等价核算维度金额来源的一份代表工作簿。"""
     unique: list[Path] = []
     seen: set[tuple[Any, ...]] = set()
     for path in paths:

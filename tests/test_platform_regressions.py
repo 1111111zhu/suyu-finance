@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import py_compile
 from collections import OrderedDict
 from decimal import Decimal
 from pathlib import Path
@@ -80,6 +81,15 @@ def make_categorized_detail_ledger(path: Path, fee_code: str, fee_name: str, amo
 
 
 class PlatformRegressionTests(unittest.TestCase):
+    def test_browser_rule_python_sources_compile(self) -> None:
+        """网页端会直接加载这些源码；发布前必须拦截任何 Python 语法错误。"""
+        for source in (
+            PROJECT_ROOT / "public" / "py" / "rd_cost_workflow_v1" / "engine.py",
+            PROJECT_ROOT / "public" / "py" / "rd_hours_v1" / "engine.py",
+        ):
+            with self.subTest(source=source.name):
+                py_compile.compile(str(source), doraise=True)
+
     def test_freight_uses_displayed_rates_and_puts_residual_in_last_project(self) -> None:
         allocations = allocate_by_displayed_rates(
             Decimal("1433.02"),
