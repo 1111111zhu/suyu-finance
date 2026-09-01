@@ -13,6 +13,7 @@ const enterpriseTerms = ["企业", "科技型中小企业", "高新技术企业"
 const supportTerms = ["研发", "科技计划", "成果转化", "技术改造", "资金", "补助", "补贴", "贴息", "资助", "人才", "融资", "知识产权", "培育"];
 const negativeTerms = ["农业种植", "畜牧", "渔业", "房地产", "商品房", "物业管理", "餐饮", "旅游景区", "文艺演出", "体育赛事", "医疗机构", "药品注册", "临床试验", "教师", "学校招生", "养老", "人防工程", "政府采购中标", "结果公示", "会议通知", "工作总结"];
 const portalTerms = ["服务网", "服务专区", "申报平台", "管理办法", "实施意见", "行动方案", "工作方案"];
+const resultTerms = ["公示", "名单", "评审结果", "拟推荐", "拟认定", "拟入选", "结果公告"];
 
 const includesAny = (text, terms) => terms.filter((term) => text.includes(term.toLowerCase()));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -48,6 +49,7 @@ export function evaluatePolicy(policy, now = new Date()) {
   if (deadline && deadline.getTime() < now.getTime()) return { visible: false, filterReason: "已过申报截止时间" };
   if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return { visible: false, filterReason: "地区不适用" };
   if (!includesAny(title, applicationTerms).length) return { visible: false, filterReason: "不是明确的可申报项目" };
+  if (includesAny(title, resultTerms).length) return { visible: false, filterReason: "属于申报结果或名单公示" };
   if (includesAny(title, portalTerms).length && !title.includes("申报")) return { visible: false, filterReason: "属于政策依据或服务入口" };
   const negatives = includesAny(title, negativeTerms);
 

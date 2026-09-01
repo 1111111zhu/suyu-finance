@@ -1,33 +1,6 @@
 {
-  "updatedAt": "2026-09-01T06:15:26.378Z",
+  "updatedAt": "2026-09-01T10:11:53.691Z",
   "policies": [
-    {
-      "id": "zhejiang-enterprise-c11ad80f",
-      "title": "未来产业人才（团队）技术创新项目申报",
-      "region": "浙江省",
-      "level": "省级",
-      "department": "浙江省企业之家",
-      "publishDate": "",
-      "deadline": "",
-      "category": "政策申报",
-      "summary": "经信厅事项中心 经信厅事项中心",
-      "url": "https://szjj.jxt.zj.gov.cn:8282/declare/declareDetail?id=2089607038878457858",
-      "sourceName": "浙江省企业之家",
-      "firstSeenAt": "2026-09-01T06:15:22.105Z",
-      "content": "经信厅事项中心 经信厅事项中心",
-      "deadlineTime": "",
-      "visible": true,
-      "matchScore": 61,
-      "rankScore": 51.85,
-      "daysLeft": null,
-      "matchLevel": "可能匹配",
-      "matchReasons": [
-        "匹配科技企业培育（未来产业）",
-        "匹配创新人才与产学研（创新项目、技术创新）",
-        "浙江省政策覆盖公司相关主体",
-        "支持方向包含人才"
-      ]
-    },
     {
       "id": "zhejiang-enterprise-c07c4f5b",
       "title": "未来产业创新场景培育库（2026年下半年）",
@@ -40,7 +13,7 @@
       "summary": "经信厅事项中心 经信厅事项中心",
       "url": "https://szjj.jxt.zj.gov.cn:8282/declare/declareDetail?id=2092190290201931777",
       "sourceName": "浙江省企业之家",
-      "firstSeenAt": "2026-09-01T06:15:22.104Z",
+      "firstSeenAt": "2026-09-01T10:11:33.919Z",
       "content": "经信厅事项中心 经信厅事项中心",
       "deadlineTime": "",
       "visible": true,
@@ -56,6 +29,33 @@
       ]
     },
     {
+      "id": "zhejiang-enterprise-c11ad80f",
+      "title": "未来产业人才（团队）技术创新项目申报",
+      "region": "浙江省",
+      "level": "省级",
+      "department": "浙江省企业之家",
+      "publishDate": "",
+      "deadline": "",
+      "category": "政策申报",
+      "summary": "经信厅事项中心 经信厅事项中心",
+      "url": "https://szjj.jxt.zj.gov.cn:8282/declare/declareDetail?id=2089607038878457858",
+      "sourceName": "浙江省企业之家",
+      "firstSeenAt": "2026-09-01T10:11:33.919Z",
+      "content": "经信厅事项中心 经信厅事项中心",
+      "deadlineTime": "",
+      "visible": true,
+      "matchScore": 61,
+      "rankScore": 51.85,
+      "daysLeft": null,
+      "matchLevel": "可能匹配",
+      "matchReasons": [
+        "匹配科技企业培育（未来产业）",
+        "匹配创新人才与产学研（创新项目、技术创新）",
+        "浙江省政策覆盖公司相关主体",
+        "支持方向包含人才"
+      ]
+    },
+    {
       "id": "zhejiang-enterprise-fc6903e3",
       "title": "浙江省制造业高质量发展（数字经济发展） 领导小组办公室关于组织开展2026年 浙江省国家数字经济创新发展试验区 优秀案例征集工作的通知",
       "region": "浙江省",
@@ -67,7 +67,7 @@
       "summary": "浙江省企业综合服务 首页 百万商品 --> 详情",
       "url": "https://zj87.jxt.zj.gov.cn/zlzq/web/views/article/news/detail.html?id=312007",
       "sourceName": "浙江省企业之家",
-      "firstSeenAt": "2026-09-01T06:15:22.104Z",
+      "firstSeenAt": "2026-09-01T10:11:33.918Z",
       "content": "浙江省企业综合服务 首页 百万商品 --> 详情",
       "deadlineTime": "",
       "visible": true,
@@ -82,8 +82,8 @@
       ]
     }
   ],
-  "candidateCount": 23,
-  "filteredCount": 20,
+  "candidateCount": 24,
+  "filteredCount": 21,
   "sources": [
     {
       "id": "suzhou",
@@ -107,7 +107,7 @@
       "id": "zhejiang-enterprise",
       "name": "浙江省企业之家",
       "ok": true,
-      "count": 18
+      "count": 19
     },
     {
       "id": "hangzhou",
