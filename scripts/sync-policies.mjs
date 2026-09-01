@@ -1,5 +1,6 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { strFromU8, unzipSync } from "fflate";
 import { filterAndRankPolicies } from "./policy-matcher.mjs";
 
 const outputPath = path.resolve(process.cwd(), "public/policies.json");
@@ -47,11 +48,14 @@ function findDate(text) {
   return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
 
-function findDeadline(text) {
-  const compact = decode(text);
-  const matches = [...compact.matchAll(/(?:截至|截止(?:至|到)?|申报时间|受理时间|系统关闭)[^。；]{0,45}(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)/g)].map((match) => findDate(match[1])).filter(Boolean);
-  return matches.sort().at(-1) || "";
+function findDeadlineInfo(text) {
+  // Word often splits one date across multiple text runs (for example "202 6 年").
+  // Whitespace is not meaningful for deadline recognition, so remove it here.
+  const compact = decode(text).replace(/\s+/g, "");
+  const matches = [...compact.matchAll(/(?:截至|截止(?:时间)?(?:为|至|到)?|申报时间|受理时间|系统关闭)[^。；]{0,60}(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)(?:\s*(\d{1,2})[:：](\d{2}))?/g)].map((match) => ({ date: findDate(match[1]), time: match[2] ? `${match[2].padStart(2, "0")}:${match[3]}` : "" })).filter((value) => value.date);
+  return matches.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)).at(-1) || { date: "", time: "" };
 }
+const findDeadline = (text) => findDeadlineInfo(text).date;
 
 async function fetchText(url, init = {}) {
   const controller = new AbortController();
@@ -65,17 +69,64 @@ async function fetchText(url, init = {}) {
   }
 }
 
+async function fetchBytes(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { "user-agent": "PolicyRadar/1.0 (+low-frequency public policy indexer)" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function extractDocxText(url) {
+  const archive = unzipSync(await fetchBytes(url));
+  const documentXml = archive["word/document.xml"];
+  if (!documentXml) return "";
+  return decode(strFromU8(documentXml).replace(/<\/w:p>/g, "。 ").replace(/<w:tab\/>/g, " "));
+}
+
+async function enrichPolicyDetails(policies) {
+  for (const policy of policies.slice(0, 30)) {
+    try {
+      if (/\.(pdf|docx?|xlsx?|zip)(?:\?|$)/i.test(policy.url)) continue;
+      const detailHtml = await fetchText(policy.url);
+      const fullContent = decode(detailHtml.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " "));
+      let deadline = findDeadlineInfo(fullContent);
+      if (!deadline.date) {
+        const attachmentPattern = /href=["']([^"']+\.docx(?:\?[^"']*)?)["']/gi;
+        for (const match of [...detailHtml.matchAll(attachmentPattern)].slice(0, 3)) {
+          try {
+            deadline = findDeadlineInfo(await extractDocxText(normalizeUrl(match[1], policy.url)));
+            if (deadline.date) break;
+          } catch { /* another attachment may still contain the deadline */ }
+        }
+      }
+      policy.content = fullContent.slice(0, 60_000);
+      policy.deadline = deadline.date || policy.deadline;
+      policy.deadlineTime = deadline.time || policy.deadlineTime || "";
+      policy.publishDate = policy.publishDate || findDate(fullContent);
+      policy.summary = fullContent.slice(0, 220) || policy.summary;
+    } catch { /* keep index data when a detail page is unavailable */ }
+  }
+  return policies;
+}
+
 async function collectSuzhou() {
   const endpoint = "https://www.suzhou.gov.cn/szinf/interfaceZcwjkAll/page";
   const text = await fetchText(endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "page=1&size=80" });
   const payload = JSON.parse(text);
   const rows = payload?.data?.records || payload?.data?.list || payload?.records || payload?.rows || [];
-  return rows.filter((row) => keywords.test(row.title || "") && !excludedTopics.test(row.title || "")).map((row) => {
+  const policies = rows.filter((row) => keywords.test(row.title || "") && !excludedTopics.test(row.title || "")).map((row) => {
     const url = normalizeUrl(row.url || row.linkUrl || "", "https://www.suzhou.gov.cn/");
     const title = decode(row.title);
     const content = decode(row.memo || row.content || "");
-    return { id: stableId("suzhou", url, title), title, region: "苏州市", level: "市级", department: decode(row.fbjg) || "苏州市政府相关部门", publishDate: findDate(row.publishedTimeFormat || row.fwTimeFormat || ""), deadline: findDeadline(row.content || row.memo || ""), category: "政策申报", summary: content.slice(0, 180), url, sourceName: "苏州市政策文件库", firstSeenAt: new Date().toISOString() };
+    const deadline = findDeadlineInfo(row.content || row.memo || "");
+    return { id: stableId("suzhou", url, title), title, region: "苏州市", level: "市级", department: decode(row.fbjg) || "苏州市政府相关部门", publishDate: findDate(row.publishedTimeFormat || row.fwTimeFormat || ""), deadline: deadline.date, deadlineTime: deadline.time, category: "政策申报", summary: content.slice(0, 180), url, sourceName: "苏州市政策文件库", firstSeenAt: new Date().toISOString() };
   }).filter((item) => item.title && item.url);
+  return enrichPolicyDetails(policies);
 }
 
 async function collectHtmlSource(source) {
@@ -95,18 +146,7 @@ async function collectHtmlSource(source) {
     const region = /杭州市|【杭州/.test(rawTitle) ? "杭州市" : /苏州市|【苏州/.test(rawTitle) ? "苏州市" : /连云港市|【连云港/.test(rawTitle) ? "连云港市" : explicitCity || source.region;
     policies.push({ id: stableId(source.id, url, title), title, region, level: region.endsWith("市") ? "市级" : source.level, department: source.name, publishDate: findDate(decode(context)), deadline: findDeadline(context), category: "政策申报", summary: "来自政府官方公开栏目的政策信息，请点击原文查看完整申报条件与材料要求。", url, sourceName: source.name, firstSeenAt: new Date().toISOString() });
   }
-  for (const policy of policies.slice(0, 30)) {
-    try {
-      if (/\.(pdf|docx?|xlsx?|zip)(?:\?|$)/i.test(policy.url)) continue;
-      const detailHtml = await fetchText(policy.url);
-      const content = decode(detailHtml.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")).slice(0, 12_000);
-      policy.content = content;
-      policy.deadline = findDeadline(content) || policy.deadline;
-      policy.publishDate = policy.publishDate || findDate(content);
-      policy.summary = content.slice(0, 220) || policy.summary;
-    } catch { /* keep index data when a detail page is unavailable */ }
-  }
-  return policies;
+  return enrichPolicyDetails(policies);
 }
 
 function dedupe(items) {

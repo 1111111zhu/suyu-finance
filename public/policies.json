@@ -1,32 +1,6 @@
 {
-  "updatedAt": "2026-09-01T05:59:37.975Z",
+  "updatedAt": "2026-09-01T06:15:26.378Z",
   "policies": [
-    {
-      "id": "zhejiang-enterprise-c07c4f5b",
-      "title": "未来产业创新场景培育库（2026年下半年）",
-      "region": "浙江省",
-      "level": "省级",
-      "department": "浙江省企业之家",
-      "publishDate": "",
-      "deadline": "",
-      "category": "政策申报",
-      "summary": "经信厅事项中心 经信厅事项中心",
-      "url": "https://szjj.jxt.zj.gov.cn:8282/declare/declareDetail?id=2092190290201931777",
-      "sourceName": "浙江省企业之家",
-      "firstSeenAt": "2026-09-01T05:59:31.649Z",
-      "content": "经信厅事项中心 经信厅事项中心",
-      "visible": true,
-      "matchScore": 61,
-      "rankScore": 51.85,
-      "daysLeft": null,
-      "matchLevel": "可能匹配",
-      "matchReasons": [
-        "匹配科技企业培育（未来产业）",
-        "匹配创新人才与产学研（创新场景）",
-        "浙江省政策覆盖公司相关主体",
-        "支持方向包含培育"
-      ]
-    },
     {
       "id": "zhejiang-enterprise-c11ad80f",
       "title": "未来产业人才（团队）技术创新项目申报",
@@ -39,8 +13,9 @@
       "summary": "经信厅事项中心 经信厅事项中心",
       "url": "https://szjj.jxt.zj.gov.cn:8282/declare/declareDetail?id=2089607038878457858",
       "sourceName": "浙江省企业之家",
-      "firstSeenAt": "2026-09-01T05:59:31.649Z",
+      "firstSeenAt": "2026-09-01T06:15:22.105Z",
       "content": "经信厅事项中心 经信厅事项中心",
+      "deadlineTime": "",
       "visible": true,
       "matchScore": 61,
       "rankScore": 51.85,
@@ -54,27 +29,30 @@
       ]
     },
     {
-      "id": "suzhou-25e856e3",
-      "title": "关于组织申报2026年度苏州市科技攻关项目（关键核心技术攻关和重大科技成果转化）的通知",
-      "region": "苏州市",
-      "level": "市级",
-      "department": "苏州市科学技术局",
-      "publishDate": "2026-07-31",
+      "id": "zhejiang-enterprise-c07c4f5b",
+      "title": "未来产业创新场景培育库（2026年下半年）",
+      "region": "浙江省",
+      "level": "省级",
+      "department": "浙江省企业之家",
+      "publishDate": "",
       "deadline": "",
       "category": "政策申报",
-      "summary": "",
-      "url": "http://www.suzhou.gov.cn/szsrmzf/bmwj/202607/5edc391ada964c7386f53d0bdae1e322.shtml",
-      "sourceName": "苏州市政策文件库",
-      "firstSeenAt": "2026-09-01T05:59:30.745Z",
+      "summary": "经信厅事项中心 经信厅事项中心",
+      "url": "https://szjj.jxt.zj.gov.cn:8282/declare/declareDetail?id=2092190290201931777",
+      "sourceName": "浙江省企业之家",
+      "firstSeenAt": "2026-09-01T06:15:22.104Z",
+      "content": "经信厅事项中心 经信厅事项中心",
+      "deadlineTime": "",
       "visible": true,
-      "matchScore": 54,
-      "rankScore": 45.9,
+      "matchScore": 61,
+      "rankScore": 51.85,
       "daysLeft": null,
       "matchLevel": "可能匹配",
       "matchReasons": [
-        "匹配智能制造与关键技术（关键核心技术、成果转化）",
-        "苏州市项目与公司布局地区匹配",
-        "支持方向包含成果转化"
+        "匹配科技企业培育（未来产业）",
+        "匹配创新人才与产学研（创新场景）",
+        "浙江省政策覆盖公司相关主体",
+        "支持方向包含培育"
       ]
     },
     {
@@ -89,8 +67,9 @@
       "summary": "浙江省企业综合服务 首页 百万商品 --> 详情",
       "url": "https://zj87.jxt.zj.gov.cn/zlzq/web/views/article/news/detail.html?id=312007",
       "sourceName": "浙江省企业之家",
-      "firstSeenAt": "2026-09-01T05:59:31.649Z",
+      "firstSeenAt": "2026-09-01T06:15:22.104Z",
       "content": "浙江省企业综合服务 首页 百万商品 --> 详情",
+      "deadlineTime": "",
       "visible": true,
       "matchScore": 52,
       "rankScore": 44.2,
@@ -104,7 +83,7 @@
     }
   ],
   "candidateCount": 23,
-  "filteredCount": 19,
+  "filteredCount": 20,
   "sources": [
     {
       "id": "suzhou",

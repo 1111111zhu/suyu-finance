@@ -17,9 +17,9 @@ const portalTerms = ["服务网", "服务专区", "申报平台", "管理办法"
 const includesAny = (text, terms) => terms.filter((term) => text.includes(term.toLowerCase()));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-function parseDate(value) {
+function parseDate(value, time = "") {
   if (!value || !/^20\d{2}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T23:59:59+08:00`);
+  const date = new Date(`${value}T${time || "23:59"}:59+08:00`);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -43,7 +43,7 @@ function urgency(daysLeft) {
 export function evaluatePolicy(policy, now = new Date()) {
   const title = (policy.title || "").toLowerCase();
   const fullText = `${policy.title || ""} ${policy.summary || ""} ${policy.content || ""}`.toLowerCase();
-  const deadline = parseDate(policy.deadline);
+  const deadline = parseDate(policy.deadline, policy.deadlineTime);
   const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86_400_000) : null;
   if (deadline && deadline.getTime() < now.getTime()) return { visible: false, filterReason: "已过申报截止时间" };
   if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return { visible: false, filterReason: "地区不适用" };
