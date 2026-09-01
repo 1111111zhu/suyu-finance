@@ -1,0 +1,4 @@
+.sync-state.loading { background: #fff4dc; color: #9b6811; }
+.policy-card.unread { border-left: 4px solid #2764e8; }
+.policy-tags b.urgent { background: #c94b30; }
+@media (min-width: 801px) { .filter-bar { grid-template-columns: 1fr 210px 190px; } }

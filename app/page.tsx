@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-html-link-for-pages */
 
 import { ChangeEvent, useRef, useState } from "react";
 
@@ -309,6 +310,7 @@ json.dumps(verification_book.sheetnames, ensure_ascii=False)
       <header className="topbar">
         <div className="brand-mark">研</div>
         <div><p className="eyebrow">TEMPORARY LOCAL WORKBENCH</p><h1>研发成本测算操作台</h1></div>
+        <nav className="primary-nav"><a className="active" href="/">研发成本测算</a><a href="/policy">政策申报雷达</a><a href="/salary/">自动算薪</a></nav>
         <div className={`runtime-state ${phase}`}><span />{phase === "idle" ? "等待选择文件" : phase === "ready" ? "本地引擎已就绪" : phase === "running" ? "正在计算" : phase === "error" ? "需要处理" : "正在加载"}</div>
       </header>
 
