@@ -1,5 +1,6 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { filterAndRankPolicies } from "./policy-matcher.mjs";
 
 const outputPath = path.resolve(process.cwd(), "public/policies.json");
 const tempPath = `${outputPath}.tmp`;
@@ -48,8 +49,8 @@ function findDate(text) {
 
 function findDeadline(text) {
   const compact = decode(text);
-  const match = compact.match(/(?:截止|申报时间[^。；]{0,20}(?:至|到)|受理时间[^。；]{0,20}(?:至|到))[^。；]{0,30}(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)/);
-  return match ? findDate(match[1]) : "";
+  const matches = [...compact.matchAll(/(?:截至|截止(?:至|到)?|申报时间|受理时间|系统关闭)[^。；]{0,45}(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)/g)].map((match) => findDate(match[1])).filter(Boolean);
+  return matches.sort().at(-1) || "";
 }
 
 async function fetchText(url, init = {}) {
@@ -90,8 +91,20 @@ async function collectHtmlSource(source) {
     const url = normalizeUrl(match[1], source.url);
     if (!url || !/^https?:/.test(url)) continue;
     const context = html.slice(Math.max(0, match.index - 120), Math.min(html.length, anchorPattern.lastIndex + 180));
-    const region = /杭州市|【杭州/.test(rawTitle) ? "杭州市" : /苏州市|【苏州/.test(rawTitle) ? "苏州市" : /连云港市|【连云港/.test(rawTitle) ? "连云港市" : source.region;
+    const explicitCity = rawTitle.match(/([\u4e00-\u9fff]{2,6}市)/)?.[1];
+    const region = /杭州市|【杭州/.test(rawTitle) ? "杭州市" : /苏州市|【苏州/.test(rawTitle) ? "苏州市" : /连云港市|【连云港/.test(rawTitle) ? "连云港市" : explicitCity || source.region;
     policies.push({ id: stableId(source.id, url, title), title, region, level: region.endsWith("市") ? "市级" : source.level, department: source.name, publishDate: findDate(decode(context)), deadline: findDeadline(context), category: "政策申报", summary: "来自政府官方公开栏目的政策信息，请点击原文查看完整申报条件与材料要求。", url, sourceName: source.name, firstSeenAt: new Date().toISOString() });
+  }
+  for (const policy of policies.slice(0, 30)) {
+    try {
+      if (/\.(pdf|docx?|xlsx?|zip)(?:\?|$)/i.test(policy.url)) continue;
+      const detailHtml = await fetchText(policy.url);
+      const content = decode(detailHtml.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")).slice(0, 12_000);
+      policy.content = content;
+      policy.deadline = findDeadline(content) || policy.deadline;
+      policy.publishDate = policy.publishDate || findDate(content);
+      policy.summary = content.slice(0, 220) || policy.summary;
+    } catch { /* keep index data when a detail page is unavailable */ }
   }
   return policies;
 }
@@ -119,7 +132,9 @@ async function main() {
       sourceStatus.push({ id: collector.id, name: collector.name, ok: false, count: 0, error: error instanceof Error ? error.message : String(error) });
     }
   }
-  const payload = { updatedAt: new Date().toISOString(), policies: dedupe([...fixedPolicies, ...results]), sources: sourceStatus };
+  const candidates = dedupe([...fixedPolicies, ...results]);
+  const policies = filterAndRankPolicies(candidates);
+  const payload = { updatedAt: new Date().toISOString(), policies, candidateCount: candidates.length, filteredCount: candidates.length - policies.length, sources: sourceStatus };
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await rename(tempPath, outputPath);
