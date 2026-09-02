@@ -24,7 +24,7 @@
 .tabs button.active { border-color: #08794f; background: linear-gradient(90deg, #0b8154, #08794f); }
 .application-filters select { color: #244f44; border-color: #dceae4; }
 .table-head, .project-row { grid-template-columns: minmax(370px, 1.25fr) minmax(145px, .65fr) 150px minmax(190px, .75fr) 105px 80px; }
-.project-row { border-color: #e5eee9; }
+.project-row { border-color: #e5eee9; cursor: pointer; }
 .project-name h2 { color: #173d35; }
 .project-name p, .requirements { color: #4f786d; }
 .score-ribbon { color: #08794f; background: linear-gradient(135deg, #eaf8ef 0 48%, #fff 49%); }

@@ -48,6 +48,30 @@ function normalizeUrl(raw, base) {
   }
 }
 
+// The table must always open a reader-facing official document or webpage.
+// Structured API responses are useful to collect records, but are not an
+// "original document" and render as unreadable JSON in a browser.
+function isReadableOriginalUrl(raw) {
+  const url = normalizeUrl(raw, "https://www.qyfw.suzhou.com.cn/");
+  return /^https?:\/\//.test(url) && !/\/gateway\/.*\/api\//i.test(url) && !/\.json(?:$|[?#])/i.test(url);
+}
+
+function suzhouOriginalUrl(detail) {
+  const attachments = Array.isArray(detail.attachments) ? detail.attachments : [];
+  const originalAttachment = attachments.find((attachment) => /(点击正文|原文|正文|通知全文|申报指南)/.test(String(attachment.name || "")) && isReadableOriginalUrl(attachment.url));
+  if (originalAttachment) return normalizeUrl(originalAttachment.url, "https://www.qyfw.suzhou.com.cn/");
+
+  // Some notices put an official original link in the body rather than in
+  // attachments. Only accept links explicitly labelled as the original text.
+  const content = String(detail.content || "");
+  for (const match of content.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    if (/(原文|正文|通知全文|申报指南)/.test(decode(match[2])) && isReadableOriginalUrl(match[1])) {
+      return normalizeUrl(match[1], "https://www.qyfw.suzhou.com.cn/");
+    }
+  }
+  return "";
+}
+
 function stableId(sourceId, url, title) {
   let hash = 2166136261;
   for (const char of `${sourceId}|${url}|${title}`) {
@@ -203,8 +227,11 @@ async function collectSuzhouEnterpriseApi() {
     const content = decode(detail.content || row.policySystemDesc || "");
     const dateText = `${detail.declarationDate || row.declarationDate || ""} ${(detail.declarationDateList || row.declarationDateList || []).map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" ")}`;
     const deadline = findDeadlineInfo(`${content} ${dateText}`);
-    const sourceUrl = detail.url || detail.policyUrl || `https://www.qyfw.suzhou.com.cn/gateway/policy/api/ua/policy/detail?id=${encodeURIComponent(row.id)}`;
-    if (!title) return null;
+    const sourceUrl = suzhouOriginalUrl(detail);
+    // Do not expose an API JSON endpoint as "查看原文". A record without an
+    // independently verifiable original is held back until its source file is
+    // supplied by the official platform.
+    if (!title || !sourceUrl) return null;
     return { id: stableId("suzhou-enterprise-api", String(row.id), title), title, region: decode(detail.city || "苏州市").includes("苏州") ? "苏州市" : "江苏省", level: "市级", department: decode(detail.department || row.department || "苏州市企业服务平台"), publishDate: findDate(detail.publishTime || row.publishTime || ""), deadline: deadline.date, deadlineTime: deadline.time, category: decode(detail.categoryDesc || row.categoryDesc || "政策申报"), summary: content.slice(0, 220), content, url: sourceUrl, sourceName: "苏州市企业服务平台（申报中）", firstSeenAt: new Date().toISOString() };
   }));
   return policies.filter(Boolean);
