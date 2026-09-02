@@ -8,7 +8,7 @@ const trackGroups = [
   { name: "创新人才与产学研", weight: 12, terms: ["创新团队", "创新项目", "创新场景", "技术创新", "人才", "领军人才", "创业人才", "留学人员", "产学研", "知识产权", "专利", "创新创业"] },
 ];
 
-const applicationTerms = ["申报", "征集", "遴选", "评选", "推荐", "认定", "培育库", "补助", "补贴", "资助", "奖励", "揭榜挂帅", "项目计划"];
+const applicationTerms = ["申报", "征集", "遴选", "评选", "推荐", "认定", "培育库", "补助", "补贴", "资助", "奖励", "揭榜挂帅", "项目计划", "申报指南", "专项指南", "重点专项", "专项资金", "项目通知"];
 const enterpriseTerms = ["企业", "科技型中小企业", "高新技术企业", "中小微", "初创企业", "创新型企业", "研发机构", "创新团队"];
 const supportTerms = ["研发", "科技计划", "成果转化", "技术改造", "资金", "补助", "补贴", "贴息", "资助", "人才", "融资", "知识产权", "培育"];
 const negativeTerms = ["农业种植", "畜牧", "渔业", "房地产", "商品房", "物业管理", "餐饮", "旅游景区", "文艺演出", "体育赛事", "医疗机构", "药品注册", "临床试验", "教师", "学校招生", "养老", "人防工程", "政府采购中标", "结果公示", "会议通知", "工作总结"];
@@ -48,7 +48,9 @@ export function evaluatePolicy(policy, now = new Date()) {
   const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86_400_000) : null;
   if (deadline && deadline.getTime() < now.getTime()) return { visible: false, filterReason: "已过申报截止时间" };
   if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return { visible: false, filterReason: "地区不适用" };
-  if (!includesAny(title, applicationTerms).length) return { visible: false, filterReason: "不是明确的可申报项目" };
+  // 许多政府页面标题只是“关于发布…的通知”，具体申报事项和对象在正文或
+  // 附件中。这里必须使用已抓取的正文，而不能只看标题，否则会漏掉真正可报项目。
+  if (!includesAny(fullText, applicationTerms).length) return { visible: false, filterReason: "正文及附件未识别到明确申报事项" };
   if (includesAny(title, resultTerms).length) return { visible: false, filterReason: "属于申报结果或名单公示" };
   if (includesAny(title, portalTerms).length && !title.includes("申报")) return { visible: false, filterReason: "属于政策依据或服务入口" };
   const negatives = includesAny(title, negativeTerms);
@@ -82,6 +84,13 @@ export function evaluatePolicy(policy, now = new Date()) {
   return { visible: true, matchScore, rankScore, daysLeft, matchLevel: matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配", matchReasons: reasons };
 }
 
+export function auditPolicies(policies, now = new Date()) {
+  return policies.map((policy) => ({ ...policy, ...evaluatePolicy(policy, now) })).sort((a, b) => {
+    if (a.visible !== b.visible) return a.visible ? -1 : 1;
+    return (b.rankScore || 0) - (a.rankScore || 0) || (b.matchScore || 0) - (a.matchScore || 0) || (a.daysLeft ?? 99999) - (b.daysLeft ?? 99999) || (b.publishDate || "").localeCompare(a.publishDate || "");
+  });
+}
+
 export function filterAndRankPolicies(policies, now = new Date()) {
-  return policies.map((policy) => ({ ...policy, ...evaluatePolicy(policy, now) })).filter((policy) => policy.visible).sort((a, b) => b.rankScore - a.rankScore || b.matchScore - a.matchScore || (a.daysLeft ?? 99999) - (b.daysLeft ?? 99999) || (b.publishDate || "").localeCompare(a.publishDate || ""));
+  return auditPolicies(policies, now).filter((policy) => policy.visible);
 }

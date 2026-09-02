@@ -1,7 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { strFromU8, unzipSync } from "fflate";
-import { filterAndRankPolicies } from "./policy-matcher.mjs";
+import { auditPolicies } from "./policy-matcher.mjs";
 
 const outputPath = path.resolve(process.cwd(), "public/policies.json");
 const tempPath = `${outputPath}.tmp`;
@@ -10,9 +10,13 @@ const excludedTopics = /(基础教育|教学改革|卫生高级职称|失能老�
 
 const htmlSources = [
   { id: "national", name: "国务院政策文件库", region: "国家", level: "国家级", url: "https://www.gov.cn/zhengce/zhengceku/bmwj/home.htm" },
+  { id: "most", name: "科学技术部科技部工作", region: "国家", level: "国家级", url: "https://www.most.gov.cn/kjbgz/" },
+  { id: "miit", name: "工业和信息化部文件发布", region: "国家", level: "国家级", url: "https://www.miit.gov.cn/zwgk/zcwj/wjfb/" },
   { id: "zhejiang", name: "浙江省行政规范性文件数据库", region: "浙江省", level: "省级", url: "https://zjsftbascweb.zjsft.gov.cn/data/" },
+  { id: "zhejiang-scitech", name: "浙江省科学技术厅通知通告", region: "浙江省", level: "省级", url: "https://kjt.zj.gov.cn/col/col1229225203/index.html" },
   { id: "zhejiang-enterprise", name: "浙江省企业之家", region: "浙江省", level: "省级", url: "https://zj87.jxt.zj.gov.cn/" },
   { id: "hangzhou", name: "杭州市人民政府公报", region: "杭州市", level: "市级", url: "https://zfgb.hangzhou.gov.cn/" },
+  { id: "hangzhou-scitech", name: "杭州市科学技术局", region: "杭州市", level: "市级", url: "https://sti.kj.hangzhou.gov.cn/" },
   { id: "jiangsu", name: "江苏省人民政府文件", region: "江苏省", level: "省级", url: "https://www.jiangsu.gov.cn/col/col76841/index.html" },
   { id: "lianyungang", name: "连云港市政府规范性文件", region: "连云港市", level: "市级", url: "https://www.lyg.gov.cn/zglygzfmhwz/szfgfxwj1/szfgfxwj1.shtml" },
 ];
@@ -173,8 +177,11 @@ async function main() {
     }
   }
   const candidates = dedupe([...fixedPolicies, ...results]);
-  const policies = filterAndRankPolicies(candidates);
-  const payload = { updatedAt: new Date().toISOString(), policies, candidateCount: candidates.length, filteredCount: candidates.length - policies.length, sources: sourceStatus };
+  const audit = auditPolicies(candidates);
+  const policies = audit.filter((policy) => policy.visible);
+  // 不再丢弃未通过项；前端可展示逐条的排除原因，供人工复核和规则调优。
+  const filteredPolicies = audit.filter((policy) => !policy.visible).map(({ content, ...policy }) => policy);
+  const payload = { updatedAt: new Date().toISOString(), policies, filteredPolicies, candidateCount: candidates.length, filteredCount: filteredPolicies.length, sources: sourceStatus };
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await rename(tempPath, outputPath);

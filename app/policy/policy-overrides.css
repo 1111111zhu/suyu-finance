@@ -2,6 +2,7 @@
 .policy-card.unread { border-left: 4px solid #2764e8; }
 .policy-tags b.urgent { background: #c94b30; }
 .policy-tags b.match-score { background: #0d7568; font-size: 11px; }
+.policy-tags b.filter-reason { background: #fff0e6; color: #a34b17; }
 .match-reasons { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .match-reasons span { padding: 6px 8px; border-radius: 8px; color: #255850; background: #edf6f1; font-size: 11px; }
 @media (min-width: 801px) { .filter-bar { grid-template-columns: 1fr 210px 190px; } }
