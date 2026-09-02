@@ -3086,6 +3086,51 @@ def read_expense_detail_workbooks(
     return records, next(iter(explicit_months), 0)
 
 
+def build_application_candidates(
+    hour_projects: OrderedDict[str, Project],
+    salary_project_names: dict[str, str],
+    records: list[LedgerRecord],
+    ledger_projects: OrderedDict[str, Project],
+) -> list[dict[str, Any]]:
+    """Keep every traceable R&D project visible for application review.
+
+    The cost workbook is limited to 18 slots and can consolidate a parent
+    project into its children. That accounting constraint must not silently
+    remove it from the application candidate list.
+    """
+    candidates: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+    def add(code: str, name: str, source: str, hours: Decimal = Decimal("0")) -> None:
+        if not code or code == PUBLIC_PROJECT_CODE:
+            return
+        item = candidates.setdefault(code, {"project_code": code, "project_name": name or code, "sources": [], "hours": Decimal("0")})
+        if name and (not item["project_name"] or item["project_name"] == code):
+            item["project_name"] = name
+        if source not in item["sources"]:
+            item["sources"].append(source)
+        item["hours"] += hours
+
+    for code, project in hour_projects.items():
+        add(code, project.name, "工时表", project.final_hours)
+    for code, name in salary_project_names.items():
+        add(code, name, "工资表项目列")
+    for record in records:
+        add(record.project_code, record.project_name, "核算维度/费用明细")
+
+    output: list[dict[str, Any]] = []
+    for code, item in candidates.items():
+        included = code in ledger_projects
+        descendants = [child for child in ledger_projects if child.startswith(code + "-")]
+        if included:
+            status, reason = "已纳入", "已进入研发成本台账，同时列入申报候选池。"
+        elif descendants:
+            status, reason = "待确认", "该项目在成本台账中按子项目归集；已保留为申报候选，需确认申报是否按母项目或子项目提交。"
+        else:
+            status, reason = "待确认", "项目已从上传资料识别，因未占用固定模板项目槽位未进入成本台账；已保留为申报候选，需补充申报口径确认。"
+        output.append({"project_code": code, "project_name": item["project_name"], "sources": item["sources"], "hours": money(item["hours"]), "status": status, "reason": reason})
+    return output
+
+
 def build_output(
     hours_path: Path,
     salary_path: Path,
@@ -3129,6 +3174,8 @@ def build_output(
         projects[code] = Project(code, record.project_name or code)
     if len(projects) > 18:
         raise RuleError(f"工时及核算维度合计识别到{len(projects)}个末级项目，超出固定模板18个槽位")
+
+    application_candidates = build_application_candidates(hour_projects, salary_project_names, parsed_records, projects)
 
     for item in hours_result["projects"]:
         if item["project_code"] in projects:
@@ -3241,7 +3288,7 @@ def build_output(
         output_path,
         warnings,
     )
-    return {**audit_data, "month": month, "warnings": warnings, "output_sheets": output_sheets}
+    return {**audit_data, "month": month, "warnings": warnings, "output_sheets": output_sheets, "application_candidates": application_candidates}
 
 
 def main(argv: list[str] | None = None) -> int:

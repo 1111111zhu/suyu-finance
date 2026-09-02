@@ -22,6 +22,7 @@ from rd_cost_workflow_v1.engine import (  # noqa: E402
     Project,
     SalaryRow,
     allocate_salary,
+    build_application_candidates,
     allocate_by_displayed_rates,
     calculate_legacy_hours,
     classify_input_workbooks,
@@ -86,6 +87,15 @@ def make_categorized_detail_ledger(path: Path, fee_code: str, fee_name: str, amo
 
 
 class PlatformRegressionTests(unittest.TestCase):
+    def test_application_candidates_keep_parent_project_consolidated_in_ledger(self) -> None:
+        candidates = build_application_candidates(
+            OrderedDict([("RD100", Project("RD100", "母项目", Decimal("12")))]),
+            {}, [], OrderedDict([("RD100-01", Project("RD100-01", "子项目"))]),
+        )
+        self.assertEqual(candidates[0]["project_code"], "RD100")
+        self.assertEqual(candidates[0]["status"], "待确认")
+        self.assertIn("子项目归集", candidates[0]["reason"])
+
     def test_browser_generated_calculation_script_compiles(self) -> None:
         """Prevent indentation regressions inside the Python template embedded in the page."""
         page_source = (PROJECT_ROOT / "app" / "page.tsx").read_text(encoding="utf-8")

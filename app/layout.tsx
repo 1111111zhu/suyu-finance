@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "研发成本测算操作台",
-  description: "在浏览器本地完成研发成本测算，文件不上传到服务器。",
+  title: "研发台账测算 | 研发智能体",
+  description: "上传工资表、工时表、明细账和科目余额表，在浏览器本地完成研发台账测算。",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
