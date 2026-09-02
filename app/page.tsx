@@ -343,13 +343,13 @@ export default function Home() {
             </Icon>
             <span>工资表</span>
           </button>
-          <button className="nav-item" type="button" disabled>
+          <a className="nav-item" href="/policy">
             <Icon>
               <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
               <path d="M14 3v5h5" />
             </Icon>
             <span>项目申报</span>
-          </button>
+          </a>
         </nav>
       </aside>
       <section className="content">

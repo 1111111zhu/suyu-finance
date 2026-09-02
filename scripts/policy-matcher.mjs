@@ -1,0 +1,117 @@
+const trackGroups = [
+  { name: "氢能与燃料电池", weight: 35, terms: ["氢能", "氢能源", "燃料电池", "氢燃料", "氢电耦合", "氢动力", "氢储能", "氢发电", "制氢", "储氢"] },
+  { name: "新能源电控与电力电子", weight: 28, terms: ["电控", "电力电子", "能量管理", "功率控制", "控制器", "碳化硅", "sic", "电机控制", "系统集成"] },
+  { name: "低空经济与无人系统", weight: 28, terms: ["低空经济", "无人机", "无人飞行器", "航空器", "飞控", "低空物流", "智能巡检", "长航时"] },
+  { name: "新能源与零碳应用", weight: 18, terms: ["新能源", "新型储能", "新型电力系统", "微电网", "源网荷储", "多能互补", "分布式能源", "绿色低碳", "零碳", "节能降碳"] },
+  { name: "智能制造与关键技术", weight: 16, terms: ["智能制造", "工业软件", "数字经济", "技术改造", "关键核心技术", "首台套", "首版次", "中试", "成果转化", "产业化", "揭榜挂帅"] },
+  { name: "科技企业培育", weight: 15, terms: ["科技型中小企业", "高新技术企业", "专精特新", "独角兽", "孵化器", "研发中心", "技术中心", "重点实验室", "研发投入", "科技创新", "未来产业"] },
+  { name: "创新人才与产学研", weight: 12, terms: ["创新团队", "创新项目", "创新场景", "技术创新", "人才", "领军人才", "创业人才", "留学人员", "产学研", "知识产权", "专利", "创新创业"] },
+];
+
+const applicationTerms = ["申报", "征集", "遴选", "评选", "推荐", "认定", "培育库", "补助", "补贴", "资助", "奖励", "揭榜挂帅", "项目计划", "申报指南", "专项指南", "重点专项", "专项资金", "项目通知"];
+const enterpriseTerms = ["企业", "科技型中小企业", "高新技术企业", "中小微", "初创企业", "创新型企业", "研发机构", "创新团队"];
+const supportTerms = ["研发", "科技计划", "成果转化", "技术改造", "资金", "补助", "补贴", "贴息", "资助", "人才", "融资", "知识产权", "培育"];
+const negativeTerms = ["农业种植", "畜牧", "渔业", "房地产", "商品房", "物业管理", "餐饮", "旅游景区", "文艺演出", "体育赛事", "医疗机构", "药品注册", "临床试验", "教师", "学校招生", "养老", "人防工程", "政府采购中标", "结果公示", "会议通知", "工作总结"];
+const portalTerms = ["服务网", "服务专区", "申报平台", "管理办法", "实施意见", "行动方案", "工作方案"];
+const resultTerms = ["公示", "名单", "评审结果", "拟推荐", "拟认定", "拟入选", "结果公告"];
+
+// 主体所在地只适用本区及市级以上项目。区名必须出现在标题、部门、摘要或正文中才会触发，
+// 因此不会把未标注区属的全市通用通知误判为不适用。
+const companyLocations = [
+  { city: "苏州市", district: "吴江区", excluded: ["姑苏区", "虎丘区", "高新区", "苏州高新区", "吴中区", "相城区", "苏州工业园区", "工业园区", "常熟市", "张家港市", "昆山市", "太仓市"] },
+  { city: "杭州市", district: "上城区", excluded: ["拱墅区", "西湖区", "滨江区", "萧山区", "余杭区", "富阳区", "临安区", "临平区", "钱塘区", "钱塘新区", "桐庐县", "淳安县", "建德市"] },
+  { city: "连云港市", district: "赣榆区", excluded: ["海州区", "连云区", "东海县", "灌云县", "灌南县", "连云港经济技术开发区", "连云港开发区", "徐圩新区", "云台山景区"] },
+];
+
+const includesAny = (text, terms) => terms.filter((term) => text.includes(term.toLowerCase()));
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function inapplicableDistrict(policy) {
+  const location = companyLocations.find((item) => item.city === policy.region);
+  if (!location) return "";
+  const text = `${policy.title || ""} ${policy.department || ""} ${policy.summary || ""} ${policy.content || ""}`;
+  const excluded = location.excluded.find((district) => text.includes(district));
+  return excluded ? `${location.city}${excluded}定向项目，不适用于${location.district}主体` : "";
+}
+
+function parseDate(value, time = "") {
+  if (!value || !/^20\d{2}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T${time || "23:59"}:59+08:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function regionScore(region) {
+  if (region === "苏州市" || region === "杭州市" || region === "连云港市") return { score: 15, reason: `${region}项目与公司布局地区匹配` };
+  if (region === "江苏省" || region === "浙江省") return { score: 13, reason: `${region}政策覆盖公司相关主体` };
+  if (region === "国家") return { score: 12, reason: "国家级项目可覆盖公司相关主体" };
+  return { score: 0, reason: "适用地区待核实" };
+}
+
+function urgency(daysLeft) {
+  if (daysLeft === null) return 0;
+  if (daysLeft <= 3) return 100;
+  if (daysLeft <= 7) return 90;
+  if (daysLeft <= 15) return 75;
+  if (daysLeft <= 30) return 55;
+  if (daysLeft <= 60) return 30;
+  return 10;
+}
+
+export function evaluatePolicy(policy, now = new Date()) {
+  const title = (policy.title || "").toLowerCase();
+  const fullText = `${policy.title || ""} ${policy.summary || ""} ${policy.content || ""}`.toLowerCase();
+  const deadline = parseDate(policy.deadline, policy.deadlineTime);
+  const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86_400_000) : null;
+  if (deadline && deadline.getTime() < now.getTime()) return { visible: false, filterReason: "已过申报截止时间" };
+  if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return { visible: false, filterReason: "地区不适用" };
+  const districtReason = inapplicableDistrict(policy);
+  if (districtReason) return { visible: false, filterReason: districtReason };
+  if (includesAny(title, resultTerms).length) return { visible: false, filterReason: "属于申报结果或名单公示" };
+  if (includesAny(title, portalTerms).length && !title.includes("申报")) return { visible: false, filterReason: "属于政策依据或服务入口" };
+  const negatives = includesAny(title, negativeTerms);
+
+  let trackScore = 0;
+  const trackReasons = [];
+  for (const group of trackGroups) {
+    const titleHits = includesAny(title, group.terms);
+    const bodyHits = includesAny(fullText, group.terms);
+    if (!bodyHits.length) continue;
+    const contribution = Math.min(group.weight, titleHits.length ? group.weight : Math.ceil(group.weight * 0.45));
+    trackScore += contribution;
+    trackReasons.push(`匹配${group.name}${titleHits.length ? `（${titleHits.slice(0, 2).join("、")}）` : ""}`);
+  }
+  trackScore = Math.min(45, trackScore + (trackReasons.length >= 2 ? 4 : 0));
+  if (!trackReasons.length && negatives.length) return { visible: false, filterReason: "与公司赛道明显无关" };
+
+  const enterpriseHits = includesAny(fullText, enterpriseTerms);
+  const enterpriseScore = enterpriseHits.some((term) => ["科技型中小企业", "高新技术企业"].includes(term)) ? 20 : enterpriseHits.length ? 15 : 4;
+  const supportHits = includesAny(fullText, supportTerms);
+  const supportScore = supportHits.some((term) => ["研发", "科技计划", "成果转化", "技术改造"].includes(term)) ? 15 : supportHits.length ? 10 : 4;
+  const applicationHits = includesAny(fullText, applicationTerms);
+  // 不再因缺少“申报”字样直接淘汰。对赛道、企业主体或支持方向已有信号的
+  // 通知保留为待人工复核，避免详情页/附件尚未完整解析时漏报。
+  if (!applicationHits.length && !trackReasons.length && !enterpriseHits.length && !supportHits.length) {
+    return { visible: false, filterReason: "正文及附件未识别到申报或公司相关信号" };
+  }
+  const area = regionScore(policy.region);
+  const completeness = [policy.title, policy.department, policy.url, policy.publishDate, policy.deadline].filter(Boolean).length;
+  const negativePenalty = Math.min(30, negatives.length * 20);
+  const matchScore = Math.round(clamp(trackScore + enterpriseScore + supportScore + area.score + completeness - negativePenalty, 0, 100));
+  const needsReview = matchScore < 45 || !applicationHits.length;
+
+  const urgencyScore = urgency(daysLeft);
+  const rankScore = Number((matchScore * 0.85 + urgencyScore * 0.15).toFixed(2));
+  const reasons = [...trackReasons, area.reason, supportHits.length ? `支持方向包含${supportHits.slice(0, 2).join("、")}` : "属于通用科技企业项目", ...(!applicationHits.length ? ["未识别到明确申报词，建议人工复核"] : [])].slice(0, 4);
+  return { visible: true, matchScore, rankScore, daysLeft, needsReview, matchLevel: needsReview ? "待人工复核" : matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配", matchReasons: reasons };
+}
+
+export function auditPolicies(policies, now = new Date()) {
+  return policies.map((policy) => ({ ...policy, ...evaluatePolicy(policy, now) })).sort((a, b) => {
+    if (a.visible !== b.visible) return a.visible ? -1 : 1;
+    return (b.rankScore || 0) - (a.rankScore || 0) || (b.matchScore || 0) - (a.matchScore || 0) || (a.daysLeft ?? 99999) - (b.daysLeft ?? 99999) || (b.publishDate || "").localeCompare(a.publishDate || "");
+  });
+}
+
+export function filterAndRankPolicies(policies, now = new Date()) {
+  return auditPolicies(policies, now).filter((policy) => policy.visible);
+}

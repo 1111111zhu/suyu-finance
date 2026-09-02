@@ -1,0 +1,44 @@
+.sync-state.loading { background: #fff4dc; color: #9b6811; }
+.policy-card.unread { border-left: 4px solid #2764e8; }
+.policy-tags b.urgent { background: #c94b30; }
+.policy-tags b.match-score { background: #0d7568; font-size: 11px; }
+.policy-tags b.filter-reason { background: #fff0e6; color: #a34b17; }
+.match-reasons { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.match-reasons span { padding: 6px 8px; border-radius: 8px; color: #255850; background: #edf6f1; font-size: 11px; }
+@media (min-width: 801px) { .filter-bar { grid-template-columns: 1fr 210px 190px; } }
+.tabs .text-tab { display: none; }
+
+/* 墨绿色项目申报主题：用政策正文中的支持金额替代通用支持类型。 */
+.application-page { color: #173d35; }
+.app-sidebar { border-color: #e4eee9; }
+.suyu-logo { color: #163e35; }
+.side-nav a { color: #37685d; }
+.side-nav a.active { color: #08794f; background: linear-gradient(90deg, #e8f7ee, #f6fbf8); }
+.app-header { border-color: #e4eee9; }
+.menu-button, .global-search { border-color: #e2ece7; color: #286453; }
+.global-search input { color: #224f43; }
+.global-search input::placeholder { color: #659284; }
+.page-intro h1, .table-head { color: #173d35; }
+.page-intro p { color: #417769; }
+.tabs button { color: #285c50; border-color: #dceae4; }
+.tabs button.active { border-color: #08794f; background: linear-gradient(90deg, #0b8154, #08794f); }
+.application-filters select { color: #244f44; border-color: #dceae4; }
+.table-head, .project-row { grid-template-columns: minmax(370px, 1.25fr) minmax(145px, .65fr) 150px minmax(190px, .75fr) 105px 80px; }
+.project-row { border-color: #e5eee9; cursor: pointer; }
+.project-name h2 { color: #173d35; }
+.project-name p, .requirements { color: #4f786d; }
+.score-ribbon { color: #08794f; background: linear-gradient(135deg, #eaf8ef 0 48%, #fff 49%); }
+.support-cell { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; color: #166546; }
+.support-cell span { padding: 4px 7px; border-radius: 5px; background: #edf8f1; color: #08794f; font-size: 12px; white-space: nowrap; }
+.deadline-cell { border-color: #08794f; color: #08794f; }
+.source-link { justify-self: center; color: #08794f; font-size: 13px; font-weight: 700; text-decoration: none; }
+.source-link:hover { text-decoration: underline; }
+.remove-button { justify-self: center; padding: 8px 12px; border: 1px solid #08794f; border-radius: 7px; color: #08794f; background: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+.select-button { background: linear-gradient(#0c8a58, #08794f); }
+.match-badge { position: relative; display: grid; place-content: center; justify-items: center; width: 58px; height: 58px; flex: 0 0 58px; border-radius: 50%; color: #08794f; background: conic-gradient(#07804f calc(var(--score) * 1%), #dcefe5 0); }
+.match-badge::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: #fff; }
+.match-badge strong, .match-badge small { position: relative; z-index: 1; line-height: 1; }
+.match-badge strong { font-size: 18px; letter-spacing: -.05em; }
+.match-badge small { margin-top: 3px; font-size: 9px; color: #5d877a; }
+.project-name .score-ribbon { display: none; }
+@media (max-width: 1100px) { .table-head, .project-row { grid-template-columns: minmax(340px, 1.4fr) 135px 130px 85px; } .requirements, .source-link, .table-head span:nth-child(4), .table-head span:nth-child(5) { display: none; } }

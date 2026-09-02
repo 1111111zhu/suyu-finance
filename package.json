@@ -9,9 +9,11 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
+    "sync:policies": "node scripts/sync-policies.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6"
