@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./overrides.css";
 
 export const metadata: Metadata = {
   title: "研发台账测算 | 研发智能体",
