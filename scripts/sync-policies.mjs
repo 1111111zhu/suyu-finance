@@ -10,15 +10,24 @@ const excludedTopics = /(基础教育|教学改革|卫生高级职称|失能老�
 
 const htmlSources = [
   { id: "national", name: "国务院政策文件库", region: "国家", level: "国家级", url: "https://www.gov.cn/zhengce/zhengceku/bmwj/home.htm" },
-  { id: "most", name: "科学技术部科技部工作", region: "国家", level: "国家级", url: "https://www.most.gov.cn/kjbgz/" },
-  { id: "miit", name: "工业和信息化部文件发布", region: "国家", level: "国家级", url: "https://www.miit.gov.cn/zwgk/zcwj/wjfb/" },
+  { id: "ndrc-notices", name: "国家发展改革委通知公告", region: "国家", level: "国家级", url: "https://www.ndrc.gov.cn/xwdt/tzgg/" },
+  { id: "ndrc-circulars", name: "国家发展改革委通知", region: "国家", level: "国家级", url: "https://www.ndrc.gov.cn/xxgk/zcfb/tz/" },
+  { id: "nsfc", name: "国家自然科学基金委员会业务资讯", region: "国家", level: "国家级", url: "https://www.nsfc.gov.cn/p1/" },
+  { id: "miit-scitech", name: "工业和信息化部科技司", region: "国家", level: "国家级", url: "https://www.miit.gov.cn/jgsj/kjs/index.html" },
+  { id: "miit-operation", name: "工业和信息化部运行监测协调局", region: "国家", level: "国家级", url: "https://www.miit.gov.cn/jgsj/yxj/index.html" },
+  { id: "miit-energy", name: "工业和信息化部节能与综合利用司", region: "国家", level: "国家级", url: "https://www.miit.gov.cn/jgsj/jns/index.html" },
   { id: "zhejiang", name: "浙江省行政规范性文件数据库", region: "浙江省", level: "省级", url: "https://zjsftbascweb.zjsft.gov.cn/data/" },
   { id: "zhejiang-scitech", name: "浙江省科学技术厅通知通告", region: "浙江省", level: "省级", url: "https://kjt.zj.gov.cn/col/col1229225203/index.html" },
   { id: "zhejiang-enterprise", name: "浙江省企业之家", region: "浙江省", level: "省级", url: "https://zj87.jxt.zj.gov.cn/" },
   { id: "hangzhou", name: "杭州市人民政府公报", region: "杭州市", level: "市级", url: "https://zfgb.hangzhou.gov.cn/" },
   { id: "hangzhou-scitech", name: "杭州市科学技术局", region: "杭州市", level: "市级", url: "https://sti.kj.hangzhou.gov.cn/" },
+  { id: "jiangsu-scitech", name: "江苏省科学技术厅", region: "江苏省", level: "省级", url: "https://kjt.jszwfw.gov.cn/" },
+  { id: "jiangsu-miit", name: "江苏省工业和信息化厅文件通知", region: "江苏省", level: "省级", url: "https://gxt.jiangsu.gov.cn/col/col6278/index.html" },
+  { id: "suzhou-scitech", name: "苏州市科学技术局通知公告", region: "苏州市", level: "市级", url: "https://kjj.suzhou.gov.cn/szkj/tzgg/tzgg.shtml" },
   { id: "jiangsu", name: "江苏省人民政府文件", region: "江苏省", level: "省级", url: "https://www.jiangsu.gov.cn/col/col76841/index.html" },
   { id: "lianyungang", name: "连云港市政府规范性文件", region: "连云港市", level: "市级", url: "https://www.lyg.gov.cn/zglygzfmhwz/szfgfxwj1/szfgfxwj1.shtml" },
+  { id: "lianyungang-scitech", name: "连云港市科学技术局通知公告", region: "连云港市", level: "市级", url: "http://kjj.lyg.gov.cn/lygskxjsj/tzgg/tzgg.html" },
+  { id: "lianyungang-projects", name: "连云港市政府科技项目", region: "连云港市", level: "市级", url: "https://www.lyg.gov.cn/zglygzfmhwz/kjxm/kjxm.shtml" },
 ];
 
 const fixedPolicies = [{ id: "hangzhou-runmiao", title: "实施“润苗计划”陪伴式扶持科技型初创企业高质量发展", region: "杭州市", level: "市级", department: "杭州市人民政府办公厅", publishDate: "2025-10-14", deadline: "", category: "科技创新", summary: "面向科技型初创企业建立种子企业、好苗子企业梯度培育和政策支持体系。", url: "https://zfgb.hangzhou.gov.cn/10/110220253/t114220253104/529697.shtml", sourceName: "杭州市人民政府公报", firstSeenAt: new Date().toISOString() }];
@@ -65,7 +74,7 @@ async function fetchText(url, init = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal, headers: { "user-agent": "PolicyRadar/1.0 (+low-frequency public policy indexer)", ...(init.headers || {}) } });
+    const response = await fetch(url, { ...init, signal: controller.signal, headers: { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/138 Safari/537.36", "accept-language": "zh-CN,zh;q=0.9", ...(init.headers || {}) } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.text();
   } finally {
@@ -153,6 +162,40 @@ async function collectHtmlSource(source) {
   return enrichPolicyDetails(policies);
 }
 
+function timestampToDate(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : "";
+}
+
+async function collectZhejiangEnterpriseApi() {
+  const policies = [];
+  for (const [areaCode, region] of [["33", "浙江省"], ["330100", "杭州市"]]) {
+    const url = new URL("https://hqpt.jxt.zj.gov.cn/gateway/provider-zcgj-ent/elastic/policy/search/query");
+    Object.entries({ requestData: "true", pageNo: "1", pageSize: "100", sortColumn: "publishDate", declare: "true", showState: "2", areaCode }).forEach(([key, value]) => url.searchParams.set(key, value));
+    const payload = JSON.parse(await fetchText(url.href));
+    for (const row of payload?.result?.records || []) {
+      const title = decode(row.policyTitle || row.title || "");
+      const content = decode(row.interContent || row.content || "");
+      const declaration = row.declareList?.find((item) => item.showState === 2) || {};
+      const deadline = findDeadlineInfo(`${content} ${declaration.declareEndTime || ""}`);
+      const original = row.policyOriginalFilePath || declaration.pcLink || "";
+      if (!title || !original) continue;
+      policies.push({ id: stableId(`zhejiang-enterprise-api-${areaCode}`, original, title), title, region, level: region === "杭州市" ? "市级" : "省级", department: decode(row.department || row.publishDept || "浙江省企业之家"), publishDate: row.publishDate || "", deadline: deadline.date, deadlineTime: deadline.time, category: decode(row.policyCategoryText || "政策申报"), summary: content.slice(0, 220), content, url: original, sourceName: "浙江省企业之家（申报中）", firstSeenAt: new Date().toISOString() });
+    }
+  }
+  return policies;
+}
+
+async function collectHangzhouTechApi() {
+  const payload = JSON.parse(await fetchText("https://sti.kj.hangzhou.gov.cn/technology-brain-web/tech/policyLaw/listPage", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "dataType=2&pageNum=1&numPerPage=80&order=2" }));
+  return (payload?.data?.recordList || []).map((row) => {
+    const title = decode(row.title || "");
+    const content = decode(row.context || "");
+    const deadline = findDeadlineInfo(content);
+    return { id: stableId("hangzhou-tech-api", row.detailUrl || String(row.id), title), title, region: row.levelType === 1 ? "国家" : row.levelType === 2 ? "浙江省" : "杭州市", level: decode(row.levelTypeName || "市级"), department: decode(row.publishDepart || "杭州市科学技术局"), publishDate: timestampToDate(row.publishDate), deadline: deadline.date, deadlineTime: deadline.time, category: "科技项目通知", summary: content.slice(0, 220), content, url: row.detailUrl || "https://sti.kj.hangzhou.gov.cn/technology-brain-web/searchList/newPolicy?dataType=2", sourceName: "杭州市科技创新服务平台", firstSeenAt: new Date().toISOString() };
+  }).filter((item) => item.title && item.url);
+}
+
 function dedupe(items) {
   const seen = new Map();
   for (const item of items) {
@@ -166,7 +209,12 @@ function dedupe(items) {
 async function main() {
   const results = [];
   const sourceStatus = [];
-  const collectors = [{ id: "suzhou", name: "苏州市政策文件库", run: collectSuzhou }, ...htmlSources.map((source) => ({ id: source.id, name: source.name, run: () => collectHtmlSource(source) }))];
+  const collectors = [
+    { id: "suzhou", name: "苏州市政策文件库", run: collectSuzhou },
+    { id: "zhejiang-enterprise-api", name: "浙江省企业之家申报事项", run: collectZhejiangEnterpriseApi },
+    { id: "hangzhou-tech-api", name: "杭州市科技创新服务平台", run: collectHangzhouTechApi },
+    ...htmlSources.map((source) => ({ id: source.id, name: source.name, run: () => collectHtmlSource(source) })),
+  ];
   for (const collector of collectors) {
     try {
       const policies = await collector.run();

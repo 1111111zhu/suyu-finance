@@ -48,9 +48,6 @@ export function evaluatePolicy(policy, now = new Date()) {
   const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86_400_000) : null;
   if (deadline && deadline.getTime() < now.getTime()) return { visible: false, filterReason: "已过申报截止时间" };
   if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return { visible: false, filterReason: "地区不适用" };
-  // 许多政府页面标题只是“关于发布…的通知”，具体申报事项和对象在正文或
-  // 附件中。这里必须使用已抓取的正文，而不能只看标题，否则会漏掉真正可报项目。
-  if (!includesAny(fullText, applicationTerms).length) return { visible: false, filterReason: "正文及附件未识别到明确申报事项" };
   if (includesAny(title, resultTerms).length) return { visible: false, filterReason: "属于申报结果或名单公示" };
   if (includesAny(title, portalTerms).length && !title.includes("申报")) return { visible: false, filterReason: "属于政策依据或服务入口" };
   const negatives = includesAny(title, negativeTerms);
@@ -72,16 +69,22 @@ export function evaluatePolicy(policy, now = new Date()) {
   const enterpriseScore = enterpriseHits.some((term) => ["科技型中小企业", "高新技术企业"].includes(term)) ? 20 : enterpriseHits.length ? 15 : 4;
   const supportHits = includesAny(fullText, supportTerms);
   const supportScore = supportHits.some((term) => ["研发", "科技计划", "成果转化", "技术改造"].includes(term)) ? 15 : supportHits.length ? 10 : 4;
+  const applicationHits = includesAny(fullText, applicationTerms);
+  // 不再因缺少“申报”字样直接淘汰。对赛道、企业主体或支持方向已有信号的
+  // 通知保留为待人工复核，避免详情页/附件尚未完整解析时漏报。
+  if (!applicationHits.length && !trackReasons.length && !enterpriseHits.length && !supportHits.length) {
+    return { visible: false, filterReason: "正文及附件未识别到申报或公司相关信号" };
+  }
   const area = regionScore(policy.region);
   const completeness = [policy.title, policy.department, policy.url, policy.publishDate, policy.deadline].filter(Boolean).length;
   const negativePenalty = Math.min(30, negatives.length * 20);
   const matchScore = Math.round(clamp(trackScore + enterpriseScore + supportScore + area.score + completeness - negativePenalty, 0, 100));
-  if (matchScore < 45) return { visible: false, filterReason: "匹配度低于展示阈值" };
+  const needsReview = matchScore < 45 || !applicationHits.length;
 
   const urgencyScore = urgency(daysLeft);
   const rankScore = Number((matchScore * 0.85 + urgencyScore * 0.15).toFixed(2));
-  const reasons = [...trackReasons, area.reason, supportHits.length ? `支持方向包含${supportHits.slice(0, 2).join("、")}` : "属于通用科技企业项目"].slice(0, 4);
-  return { visible: true, matchScore, rankScore, daysLeft, matchLevel: matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配", matchReasons: reasons };
+  const reasons = [...trackReasons, area.reason, supportHits.length ? `支持方向包含${supportHits.slice(0, 2).join("、")}` : "属于通用科技企业项目", ...(!applicationHits.length ? ["未识别到明确申报词，建议人工复核"] : [])].slice(0, 4);
+  return { visible: true, matchScore, rankScore, daysLeft, needsReview, matchLevel: needsReview ? "待人工复核" : matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配", matchReasons: reasons };
 }
 
 export function auditPolicies(policies, now = new Date()) {

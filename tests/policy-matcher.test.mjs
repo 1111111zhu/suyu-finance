@@ -10,8 +10,14 @@ test("正文中明确的申报事项不能因标题缺少申报词而被过滤",
   assert.equal(result.visible, true);
 });
 
-test("审计结果保留每条被过滤政策及原因", () => {
+test("无申报或公司相关信号的会议通知仍会被过滤并保留原因", () => {
   const [item] = auditPolicies([{ ...base, title: "关于召开工作会议的通知", content: "会议安排" }], now);
   assert.equal(item.visible, false);
-  assert.equal(item.filterReason, "正文及附件未识别到明确申报事项");
+  assert.equal(item.filterReason, "正文及附件未识别到申报或公司相关信号");
+});
+
+test("赛道相关但申报信息不完整的通知进入待人工复核", () => {
+  const result = evaluatePolicy({ ...base, title: "关于推进氢能产业发展的通知", content: "支持企业开展燃料电池关键技术研发和成果转化。" }, now);
+  assert.equal(result.visible, true);
+  assert.equal(result.matchLevel, "待人工复核");
 });
