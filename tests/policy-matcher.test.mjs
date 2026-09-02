@@ -21,3 +21,16 @@ test("赛道相关但申报信息不完整的通知进入待人工复核", () =>
   assert.equal(result.visible, true);
   assert.equal(result.matchLevel, "待人工复核");
 });
+
+test("同市其他区的定向项目会被筛掉", () => {
+  const result = evaluatePolicy({ ...base, region: "苏州市", title: "苏州工业园区科技领军人才项目申报通知", content: "面向园区企业开展新能源技术项目申报" });
+  assert.equal(result.visible, false);
+  assert.match(result.filterReason, /苏州工业园区/);
+});
+
+test("本区及未标注区属的市级项目不会因区规则被筛掉", () => {
+  const wujiang = evaluatePolicy({ ...base, region: "苏州市", title: "吴江区氢能产业项目申报通知", content: "面向吴江区企业开展氢能技术项目申报" });
+  const citywide = evaluatePolicy({ ...base, region: "杭州市", title: "杭州市科技项目申报通知", content: "面向全市科技企业开展新能源项目申报" });
+  assert.equal(wujiang.visible, true);
+  assert.equal(citywide.visible, true);
+});

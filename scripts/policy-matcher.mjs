@@ -15,8 +15,24 @@ const negativeTerms = ["农业种植", "畜牧", "渔业", "房地产", "商品�
 const portalTerms = ["服务网", "服务专区", "申报平台", "管理办法", "实施意见", "行动方案", "工作方案"];
 const resultTerms = ["公示", "名单", "评审结果", "拟推荐", "拟认定", "拟入选", "结果公告"];
 
+// 主体所在地只适用本区及市级以上项目。区名必须出现在标题、部门、摘要或正文中才会触发，
+// 因此不会把未标注区属的全市通用通知误判为不适用。
+const companyLocations = [
+  { city: "苏州市", district: "吴江区", excluded: ["姑苏区", "虎丘区", "高新区", "苏州高新区", "吴中区", "相城区", "苏州工业园区", "工业园区", "常熟市", "张家港市", "昆山市", "太仓市"] },
+  { city: "杭州市", district: "上城区", excluded: ["拱墅区", "西湖区", "滨江区", "萧山区", "余杭区", "富阳区", "临安区", "临平区", "钱塘区", "钱塘新区", "桐庐县", "淳安县", "建德市"] },
+  { city: "连云港市", district: "赣榆区", excluded: ["海州区", "连云区", "东海县", "灌云县", "灌南县", "连云港经济技术开发区", "连云港开发区", "徐圩新区", "云台山景区"] },
+];
+
 const includesAny = (text, terms) => terms.filter((term) => text.includes(term.toLowerCase()));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function inapplicableDistrict(policy) {
+  const location = companyLocations.find((item) => item.city === policy.region);
+  if (!location) return "";
+  const text = `${policy.title || ""} ${policy.department || ""} ${policy.summary || ""} ${policy.content || ""}`;
+  const excluded = location.excluded.find((district) => text.includes(district));
+  return excluded ? `${location.city}${excluded}定向项目，不适用于${location.district}主体` : "";
+}
 
 function parseDate(value, time = "") {
   if (!value || !/^20\d{2}-\d{2}-\d{2}$/.test(value)) return null;
@@ -48,6 +64,8 @@ export function evaluatePolicy(policy, now = new Date()) {
   const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86_400_000) : null;
   if (deadline && deadline.getTime() < now.getTime()) return { visible: false, filterReason: "已过申报截止时间" };
   if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return { visible: false, filterReason: "地区不适用" };
+  const districtReason = inapplicableDistrict(policy);
+  if (districtReason) return { visible: false, filterReason: districtReason };
   if (includesAny(title, resultTerms).length) return { visible: false, filterReason: "属于申报结果或名单公示" };
   if (includesAny(title, portalTerms).length && !title.includes("申报")) return { visible: false, filterReason: "属于政策依据或服务入口" };
   const negatives = includesAny(title, negativeTerms);
