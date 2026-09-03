@@ -1,2 +1,2 @@
-# Every day at 06:10, 12:10 and 18:10. Replace /opt/rd-workbench with the deployment directory.
-10 6,12,18 * * * cd /opt/rd-workbench && /usr/bin/npm run sync:policies >> /var/log/policy-radar.log 2>&1
+# Every day at 06:00. Replace /opt/rd-workbench with the deployment directory.
+0 6 * * * cd /opt/rd-workbench && /usr/bin/npm run sync:policies >> /var/log/policy-radar.log 2>&1

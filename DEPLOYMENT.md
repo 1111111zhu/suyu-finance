@@ -54,7 +54,7 @@ server {
 npm run sync:policies
 ```
 
-要实现每天自动推送到政策页面，请把 `ops/policy-radar.cron` 中的部署目录改成服务器实际目录，再加入服务器的 `crontab`。默认每天 06:10、12:10、18:10 读取一次免费政府公开来源。政策数据写入 `public/policies.json`，不包含企业 Excel、人员或财务数据。
+要实现每天自动推送到政策页面，请把 `ops/policy-radar.cron` 中的部署目录改成服务器实际目录，再加入服务器的 `crontab`。默认每天早上 06:00 读取一次免费政府公开来源。政策数据写入 `public/policies.json`，不包含企业 Excel、人员或财务数据。
 
 ## 说明
 
