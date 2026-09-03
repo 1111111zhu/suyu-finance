@@ -9,11 +9,35 @@ const trackGroups = [
 ];
 
 const applicationTerms = ["申报", "征集", "遴选", "评选", "推荐", "认定", "培育库", "补助", "补贴", "资助", "奖励", "揭榜挂帅", "项目计划", "申报指南", "专项指南", "重点专项", "专项资金", "项目通知"];
+const formalApplicationTerms = ["申报", "申请", "认定", "项目计划", "申报指南", "专项指南", "重点专项", "专项资金", "项目通知"];
 const enterpriseTerms = ["企业", "科技型中小企业", "高新技术企业", "中小微", "初创企业", "创新型企业", "研发机构", "创新团队"];
 const supportTerms = ["研发", "科技计划", "成果转化", "技术改造", "资金", "补助", "补贴", "贴息", "资助", "人才", "融资", "知识产权", "培育"];
-const negativeTerms = ["农业种植", "畜牧", "渔业", "房地产", "商品房", "物业管理", "餐饮", "旅游景区", "文艺演出", "体育赛事", "医疗机构", "药品注册", "临床试验", "教师", "学校招生", "养老", "人防工程", "政府采购中标", "结果公示", "会议通知", "工作总结"];
+const directSupportTerms = ["资金", "专项资金", "补助", "补贴", "奖励", "资助", "贷款贴息", "贴息", "服务券", "场地", "用房", "用地", "场租", "租金补贴", "资源配额", "配额", "资质", "资格认定", "认定", "贷款", "融资支持"];
+const benefitCategories = [
+  { code: "funding", label: "资金", terms: ["资金", "补助", "补贴", "奖励", "资助"] },
+  { code: "qualification", label: "资质", terms: ["资质", "资格认定", "认定"] },
+  { code: "space", label: "场地", terms: ["场地", "用房", "用地", "场租", "租金补贴"] },
+  { code: "loan_interest", label: "贷款贴息", terms: ["贷款贴息", "贴息"] },
+  { code: "resource_quota", label: "资源配额", terms: ["资源配额", "配额"] },
+  { code: "service_voucher", label: "服务券", terms: ["服务券"] },
+];
+const applicantTerms = ["申报主体", "申请主体", "企业申报", "企业可申报", "企业可申请", "由企业申报", "由企业申请", "面向企业申报", "面向企业征集", "参评企业"];
+const eligibilityConditionTerms = ["申报条件", "申请条件", "申报要求", "申请要求", "申报资格", "申请资格", "基本条件", "符合条件", "满足条件", "需具备", "应当具备", "须具备"];
+const organizerRoleTerms = ["主办方", "主办单位", "承办方", "承办单位", "协办方", "协办单位", "举办单位", "组织单位", "组织实施单位", "活动组织", "会务", "会务执行", "会务服务"];
+const organizerActionTerms = ["主办", "承办", "协办", "举办", "组织"];
+const eventTerms = ["大讲堂", "讲座", "论坛", "峰会", "路演", "沙龙", "推介会", "对接会", "交流会", "发布会", "培训会", "大赛", "展会"];
+const opportunityTerms = ["受邀", "演讲", "讲话", "分享", "嘉宾", "参会", "报名参加", "报名参会", "路演", "展示", "推介"];
+const invitationTerms = ["邀请制", "定向邀请", "受邀", "邀请参加", "邀请函", "获邀"];
+const priorFilingTerms = ["事前备案", "提前备案", "预先备案"];
+const negativeTerms = ["农业种植", "畜牧", "渔业", "房地产", "商品房", "物业管理", "餐饮", "旅游景区", "文艺演出", "体育赛事", "生物医药", "医药产业", "创新药", "医疗器械", "医疗机构", "药品注册", "临床试验", "教师", "学校招生", "养老", "人防工程", "政府采购中标", "结果公示", "会议通知", "工作总结"];
+// These industries are not adjacent to 溯驭的氢能电控、低空与新型电力系统
+// 业务。它们不能因为正文顺带出现“创新”“新能源”等泛词被重新放回队列。
+const excludedIndustryTerms = ["生物医药", "医药产业", "创新药", "医疗器械", "药品注册", "临床试验", "农业种植", "畜牧", "渔业", "房地产", "商品房", "物业管理", "餐饮", "旅游景区", "文艺演出", "体育赛事", "教师", "学校招生", "养老"];
+const publicSectorApplicantTerms = ["县（市、区）试点", "县市区试点", "区县试点", "市、区试点", "政府申报", "人民政府申报"];
 const portalTerms = ["服务网", "服务专区", "申报平台", "管理办法", "实施意见", "行动方案", "工作方案"];
 const resultTerms = ["公示", "名单", "评审结果", "拟推荐", "拟认定", "拟入选", "结果公告"];
+const completedActivityTerms = ["成功举办", "圆满举办", "顺利举办", "活动回顾", "工作动态", "经验交流", "会议纪要"];
+const coreIndustryTerms = ["氢能", "氢能源", "燃料电池", "氢燃料", "氢电耦合", "氢动力", "制氢", "储氢", "电控", "电力电子", "能量管理", "功率控制", "控制器", "碳化硅", "低空经济", "无人机", "无人飞行器", "飞控", "新型储能", "新型电力系统", "微电网", "源网荷储", "多能互补", "绿色氢"];
 
 // 主体所在地只适用本区及市级以上项目。区名必须出现在标题、部门、摘要或正文中才会触发，
 // 因此不会把未标注区属的全市通用通知误判为不适用。
@@ -26,6 +50,135 @@ const companyLocations = [
 const includesAny = (text, terms) => terms.filter((term) => text.includes(term.toLowerCase()));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+function textFields(policy) {
+  return [
+    ["title", String(policy.title || "")],
+    ["summary", String(policy.summary || "")],
+    ["content", String(policy.content || "")],
+  ];
+}
+
+function excerpt(value, start, term) {
+  const from = Math.max(0, start - 40);
+  const to = Math.min(value.length, start + term.length + 80);
+  return `${from ? "…" : ""}${value.slice(from, to).replace(/\s+/g, " ").trim()}${to < value.length ? "…" : ""}`;
+}
+
+// Each hit records where it came from and a short original-text excerpt. This lets
+// a reviewer verify the decision without treating keyword matching as evidence.
+function findEvidence(policy, terms, max = 2) {
+  const citations = [];
+  for (const [source, value] of textFields(policy)) {
+    const lower = value.toLowerCase();
+    for (const term of terms) {
+      const index = lower.indexOf(term.toLowerCase());
+      if (index < 0) continue;
+      citations.push({ source, term, excerpt: excerpt(value, index, term) });
+      if (citations.length >= max) return { found: true, citations };
+    }
+  }
+  return { found: citations.length > 0, citations };
+}
+
+function benefitEvidence(policy) {
+  return benefitCategories.map((category) => ({ ...category, evidence: findEvidence(policy, category.terms, 1) })).filter((category) => category.evidence.found);
+}
+
+function firstDate(value = "") {
+  const match = String(value).match(/(20\d{2})[年.\/-](\d{1,2})[月.\/-](\d{1,2})日?/);
+  if (!match) return "";
+  return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+}
+
+function dateEvidence(policy) {
+  if (parseDate(policy.deadline, policy.deadlineTime)) {
+    return { found: true, citations: [{ source: "deadline", term: policy.deadline, excerpt: `${policy.deadline}${policy.deadlineTime ? ` ${policy.deadlineTime}` : ""}` }] };
+  }
+  return findEvidence(policy, ["截至", "截止时间", "截止", "申报时间", "受理时间", "系统关闭"]);
+}
+
+function findActivityDate(policy) {
+  const provided = firstDate(policy.activityDate || policy.eventDate || policy.activityStartDate || "");
+  if (provided) return { date: provided, evidence: { found: true, citations: [{ source: policy.activityDate ? "activityDate" : policy.eventDate ? "eventDate" : "activityStartDate", term: provided, excerpt: provided }] } };
+  for (const [source, value] of textFields(policy)) {
+    const match = value.match(/(?:活动|会议|讲堂|讲座|路演|论坛|培训|举办|召开)(?:日期|时间)?[^。；]{0,40}?(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)/);
+    if (!match) continue;
+    const date = firstDate(match[1]);
+    if (date) return { date, evidence: { found: true, citations: [{ source, term: match[1], excerpt: excerpt(value, match.index + match[0].indexOf(match[1]), match[1]) }] } };
+  }
+  return { date: "", evidence: { found: false, citations: [] } };
+}
+
+function findProjectPeriod(policy) {
+  if (policy.projectPeriod || policy.implementationPeriod) {
+    const value = String(policy.projectPeriod || policy.implementationPeriod);
+    return { value, evidence: { found: true, citations: [{ source: policy.projectPeriod ? "projectPeriod" : "implementationPeriod", term: value, excerpt: value }] } };
+  }
+  return { value: "", evidence: findEvidence(policy, ["项目周期", "实施期限", "执行期限", "项目实施期"], 1) };
+}
+
+function invitationEvidence(policy) {
+  const value = policy.invitationEvidence || policy.invitationProofUrl || policy.invitationProof;
+  if (!value) return { found: false, citations: [] };
+  const stringValue = typeof value === "string" ? value.trim() : String(value);
+  return stringValue && stringValue !== "false"
+    ? { found: true, citations: [{ source: "invitationEvidence", term: "已提供", excerpt: stringValue.slice(0, 160) }] }
+    : { found: false, citations: [] };
+}
+
+function activityAssessment(policy, now) {
+  const organizerRole = findEvidence(policy, organizerRoleTerms);
+  const event = findEvidence(policy, eventTerms);
+  const titleEvent = findEvidence({ title: policy.title }, eventTerms, 1);
+  const organizerAction = findEvidence(policy, organizerActionTerms);
+  const applicant = findEvidence(policy, applicantTerms);
+  const applicationWorkflow = findEvidence(policy, formalApplicationTerms, 1);
+  const opportunity = findEvidence(policy, opportunityTerms);
+  const invitationRequirement = findEvidence(policy, invitationTerms);
+  // “组织开展补贴活动”不等于企业要申报活动主办方。仅在正文明确主办/承办角色，
+  // 或通知标题本身是讲座、论坛、路演等活动且出现组织动作时，才进入活动角色判断。
+  const hasOrganizerEvent = (event.found && organizerRole.found) || (titleEvent.found && organizerAction.found);
+  // “组织申报”是常见的政府表述，不能因其中的“组织”把企业项目错判为活动主办方项目；
+  // 但正文明确征集承办/会务等组织角色时，仍应排除企业申报资格。
+  const isOrganizerProject = hasOrganizerEvent && !applicant.found && (organizerRole.found || (organizerAction.found && !applicationWorkflow.found));
+  const isEnterpriseOpportunity = !isOrganizerProject && !applicant.found && !applicationWorkflow.found && event.found && (opportunity.found || invitationRequirement.found);
+  const role = isOrganizerProject ? "organizer" : isEnterpriseOpportunity ? "enterprise_opportunity" : applicant.found ? "enterprise_applicant" : "unknown";
+  const activity = findActivityDate(policy);
+  const period = findProjectPeriod(policy);
+  const deadline = parseDate(policy.deadline, policy.deadlineTime);
+  const activityDeadline = parseDate(activity.date);
+  const priorFiling = findEvidence(policy, priorFilingTerms, 1);
+  const priorFilingExempt = includesAny(`${policy.title || ""} ${policy.summary || ""} ${policy.content || ""}`.toLowerCase(), ["无需事前备案", "免于事前备案"]).length > 0;
+  const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86_400_000) : null;
+  return {
+    role,
+    organizerRole,
+    organizerAction,
+    applicant,
+    applicationWorkflow,
+    opportunity,
+    invitationRequirement,
+    invitationEvidence: invitationEvidence(policy),
+    isOrganizerProject,
+    isEnterpriseOpportunity,
+    timing: {
+      applicationWindow: findEvidence(policy, ["申报时间", "受理时间", "申请时间", "申报窗口"], 1),
+      deadline: dateEvidence(policy),
+      deadlineDate: policy.deadline || "",
+      deadlineTime: policy.deadlineTime || "",
+      daysLeft,
+      applicationWindowStatus: deadline ? (deadline.getTime() < now.getTime() ? "expired" : "open") : "unknown",
+      activityDate: activity.date,
+      activityDateEvidence: activity.evidence,
+      activityStatus: activityDeadline ? (activityDeadline.getTime() < now.getTime() ? "expired" : "upcoming") : "unknown",
+      projectPeriod: period.value,
+      projectPeriodEvidence: period.evidence,
+      requiresPriorFiling: priorFiling.found && !priorFilingExempt,
+      priorFilingEvidence: priorFiling,
+    },
+  };
+}
+
 function inapplicableDistrict(policy) {
   const location = companyLocations.find((item) => item.city === policy.region);
   if (!location) return "";
@@ -36,7 +189,11 @@ function inapplicableDistrict(policy) {
 
 function parseDate(value, time = "") {
   if (!value || !/^20\d{2}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T${time || "23:59"}:59+08:00`);
+  // Official notices commonly write “24:00” for the end of that calendar day.
+  // `T24:00:59` is invalid ISO, so normalize it to the final minute instead of
+  // silently converting an expired deadline into an unknown one.
+  const normalizedTime = time === "24:00" ? "23:59" : time || "23:59";
+  const date = new Date(`${value}T${normalizedTime}:59+08:00`);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -57,19 +214,164 @@ function urgency(daysLeft) {
   return 10;
 }
 
-export function evaluatePolicy(policy, now = new Date()) {
+function nestedValue(value, path) {
+  return path.split(".").reduce((current, key) => current && typeof current === "object" ? current[key] : undefined, value);
+}
+
+function verifiedProfileField(profile, path) {
+  const field = nestedValue(profile, path);
+  return field?.status === "verified" ? field : null;
+}
+
+// Company facts are deliberately opt-in: callers that have not loaded a
+// profile retain the previous document-only behaviour. When a profile is
+// present, only leaves marked `verified` may influence a result.
+function companyEligibilityAssessment(fullText, now, companyProfile) {
+  if (!companyProfile) {
+    return {
+      profileLoaded: false,
+      profileGeneratedAt: null,
+      requirements: [],
+      met: [],
+      notMet: [],
+      unknown: [],
+    };
+  }
+
+  const profile = companyProfile.matcherProfile || companyProfile;
+  const requirements = [];
+  const qualifications = [
+    { path: "qualifications.highTechEnterprise", label: "国家高新技术企业", terms: ["高新技术企业", "国家高新技术企业"] },
+    { path: "qualifications.specializedSme", label: "专精特新中小企业", terms: ["专精特新中小企业", "专精特新"] },
+    { path: "qualifications.potentialUnicorn", label: "潜在独角兽企业", terms: ["潜在独角兽", "准独角兽"] },
+    { path: "qualifications.lowAltitudeEconomyLeader", label: "低空经济领航企业", terms: ["低空经济领航企业"] },
+  ];
+
+  for (const requirement of qualifications) {
+    if (!includesAny(fullText, requirement.terms).length) continue;
+    const field = verifiedProfileField(profile, requirement.path);
+    const status = !field ? "unknown" : field.value === true ? "met" : "not_met";
+    requirements.push({
+      type: "qualification",
+      label: requirement.label,
+      profileField: requirement.path,
+      status,
+      source: field?.source || null,
+      evidence: field?.evidence || null,
+    });
+  }
+
+  const ageMatch = fullText.match(/(?:注册成立|成立)[^。；，,]{0,12}?(\d{1,2})\s*年(?:以上|及以上|及以上)/);
+  if (ageMatch) {
+    const requiredYears = Number(ageMatch[1]);
+    const field = verifiedProfileField(profile, "foundedYear");
+    const actualYears = typeof field?.value === "number" ? Math.max(0, now.getFullYear() - field.value) : null;
+    requirements.push({
+      type: "company_age",
+      label: `成立满${requiredYears}年`,
+      profileField: "foundedYear",
+      requiredYears,
+      actualYears,
+      status: actualYears === null ? "unknown" : actualYears >= requiredYears ? "met" : "not_met",
+      source: field?.source || null,
+      evidence: field?.evidence || null,
+    });
+  }
+
+  return {
+    profileLoaded: true,
+    profileGeneratedAt: companyProfile.generatedAt || null,
+    requirements,
+    met: requirements.filter((requirement) => requirement.status === "met"),
+    notMet: requirements.filter((requirement) => requirement.status === "not_met"),
+    unknown: requirements.filter((requirement) => requirement.status === "unknown"),
+  };
+}
+
+function decisionFields(status, { visible, filterReason = "", matchScore = 0, rankScore = 0, daysLeft = null, reasons = [], assessment, evidence }) {
+  const needsReview = status === "needs_review";
+  const matchLevel = status === "eligible" ? (matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配") : status === "opportunity" ? "可争取机会" : status === "needs_review" ? "待人工复核" : "不匹配";
+  return {
+    visible,
+    ...(filterReason ? { filterReason } : {}),
+    decision: status,
+    // Keep both names so existing consumers can migrate without a breaking change.
+    eligibilityStatus: status,
+    matchStatus: status,
+    matchScore,
+    rankScore,
+    daysLeft,
+    needsReview,
+    matchLevel,
+    activityRole: assessment.role,
+    activityRoleEvidence: {
+      organizer: assessment.organizerRole,
+      organizerAction: assessment.organizerAction,
+      applicant: assessment.applicant,
+      opportunity: assessment.opportunity,
+    },
+    supportAssessment: {
+      directSupport: evidence.support.found,
+      eligibleBenefits: evidence.benefits.map((benefit) => ({ code: benefit.code, label: benefit.label, evidence: benefit.evidence })),
+      beneficiaryEvidence: evidence.beneficiary,
+    },
+    companyEligibility: evidence.companyEligibility,
+    timing: assessment.timing,
+    evidence,
+    requiresInvitationEvidence: assessment.invitationRequirement.found,
+    invitationEvidence: assessment.invitationEvidence,
+    decisionReasons: reasons,
+    matchReasons: reasons.slice(0, 4),
+  };
+}
+
+function ineligible(assessment, evidence, filterReason, reasons = [filterReason]) {
+  return decisionFields("ineligible", { visible: false, filterReason, assessment, evidence, reasons });
+}
+
+export function evaluatePolicy(policy, now = new Date(), companyProfile = null) {
   const title = (policy.title || "").toLowerCase();
   const fullText = `${policy.title || ""} ${policy.summary || ""} ${policy.content || ""}`.toLowerCase();
+  const assessment = activityAssessment(policy, now);
+  const companyEligibility = companyEligibilityAssessment(fullText, now, companyProfile);
   const deadline = parseDate(policy.deadline, policy.deadlineTime);
-  const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86_400_000) : null;
-  if (deadline && deadline.getTime() < now.getTime()) return { visible: false, filterReason: "已过申报截止时间" };
-  if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return { visible: false, filterReason: "地区不适用" };
-  const districtReason = inapplicableDistrict(policy);
-  if (districtReason) return { visible: false, filterReason: districtReason };
-  if (includesAny(title, resultTerms).length) return { visible: false, filterReason: "属于申报结果或名单公示" };
-  if (includesAny(title, portalTerms).length && !title.includes("申报")) return { visible: false, filterReason: "属于政策依据或服务入口" };
-  const negatives = includesAny(title, negativeTerms);
+  const daysLeft = assessment.timing.daysLeft;
+  const evidence = {
+    beneficiary: findEvidence(policy, enterpriseTerms),
+    applicant: assessment.applicant,
+    conditions: findEvidence(policy, eligibilityConditionTerms),
+    support: findEvidence(policy, directSupportTerms),
+    benefits: benefitEvidence(policy),
+    deadline: assessment.timing.deadline,
+    invitation: assessment.invitationEvidence,
+    companyEligibility,
+  };
+  const requiredEvidence = [
+    ["支持对象", evidence.beneficiary],
+    ["申报主体", evidence.applicant],
+    ["申报条件", evidence.conditions],
+    ["支持方式", evidence.support],
+    ["截止日期", evidence.deadline],
+  ];
+  const missingEvidence = requiredEvidence.filter(([, item]) => !item.found).map(([name]) => name);
+  evidence.completeness = { complete: missingEvidence.length === 0, required: requiredEvidence.map(([name]) => name), missing: missingEvidence };
 
+  if (deadline && deadline.getTime() < now.getTime()) return ineligible(assessment, evidence, "已过申报截止时间");
+  if (assessment.isEnterpriseOpportunity && assessment.timing.activityStatus === "expired") return ineligible(assessment, evidence, "活动日期已结束");
+  if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return ineligible(assessment, evidence, "地区不适用");
+  const districtReason = inapplicableDistrict(policy);
+  if (districtReason) return ineligible(assessment, evidence, districtReason);
+  if (includesAny(title, resultTerms).length) return ineligible(assessment, evidence, "属于申报结果或名单公示");
+  if (includesAny(title, completedActivityTerms).length) return ineligible(assessment, evidence, "属于已举办活动或工作动态，不是申报通知");
+  if (includesAny(title, portalTerms).length && !title.includes("申报")) return ineligible(assessment, evidence, "属于政策依据或服务入口");
+  if (includesAny(fullText, excludedIndustryTerms).length) return ineligible(assessment, evidence, "所属行业与溯驭核心业务无关");
+  if (policy.originalVerification && policy.originalVerification.verified !== true) {
+    return ineligible(assessment, evidence, policy.originalVerification.reason || "官方原文尚未验证，不进入项目库");
+  }
+  if (assessment.isOrganizerProject) return ineligible(assessment, evidence, "面向活动主办、承办或组织方，不是企业可申报政策", ["活动角色为主办/承办/组织方", "企业以受邀演讲或参会身份不能申报该项目"]);
+  if (includesAny(title, publicSectorApplicantTerms).length) return ineligible(assessment, evidence, "申报主体为地方政府或区县试点，不是企业申报事项");
+
+  const negatives = includesAny(title, negativeTerms);
   let trackScore = 0;
   const trackReasons = [];
   for (const group of trackGroups) {
@@ -81,7 +383,7 @@ export function evaluatePolicy(policy, now = new Date()) {
     trackReasons.push(`匹配${group.name}${titleHits.length ? `（${titleHits.slice(0, 2).join("、")}）` : ""}`);
   }
   trackScore = Math.min(45, trackScore + (trackReasons.length >= 2 ? 4 : 0));
-  if (!trackReasons.length && negatives.length) return { visible: false, filterReason: "与公司赛道明显无关" };
+  if (!trackReasons.length && negatives.length) return ineligible(assessment, evidence, "与公司赛道明显无关");
 
   const enterpriseHits = includesAny(fullText, enterpriseTerms);
   const enterpriseScore = enterpriseHits.some((term) => ["科技型中小企业", "高新技术企业"].includes(term)) ? 20 : enterpriseHits.length ? 15 : 4;
@@ -91,27 +393,71 @@ export function evaluatePolicy(policy, now = new Date()) {
   // 不再因缺少“申报”字样直接淘汰。对赛道、企业主体或支持方向已有信号的
   // 通知保留为待人工复核，避免详情页/附件尚未完整解析时漏报。
   if (!applicationHits.length && !trackReasons.length && !enterpriseHits.length && !supportHits.length) {
-    return { visible: false, filterReason: "正文及附件未识别到申报或公司相关信号" };
+    return ineligible(assessment, evidence, "正文及附件未识别到申报或公司相关信号");
   }
-  const area = regionScore(policy.region);
-  const completeness = [policy.title, policy.department, policy.url, policy.publishDate, policy.deadline].filter(Boolean).length;
-  const negativePenalty = Math.min(30, negatives.length * 20);
-  const matchScore = Math.round(clamp(trackScore + enterpriseScore + supportScore + area.score + completeness - negativePenalty, 0, 100));
-  const needsReview = matchScore < 45 || !applicationHits.length;
 
-  const urgencyScore = urgency(daysLeft);
-  const rankScore = Number((matchScore * 0.85 + urgencyScore * 0.15).toFixed(2));
-  const reasons = [...trackReasons, area.reason, supportHits.length ? `支持方向包含${supportHits.slice(0, 2).join("、")}` : "属于通用科技企业项目", ...(!applicationHits.length ? ["未识别到明确申报词，建议人工复核"] : [])].slice(0, 4);
-  return { visible: true, matchScore, rankScore, daysLeft, needsReview, matchLevel: needsReview ? "待人工复核" : matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配", matchReasons: reasons };
+  // “科技、人才、企业”属于泛词，不能把通信、医疗等其他赛道的项目
+  // 误推给溯驭。只有命中核心产业方向，或命中公司已核验资质，才保留。
+  const coreIndustryHits = includesAny(fullText, coreIndustryTerms);
+  if (!coreIndustryHits.length && !companyEligibility.met.length) {
+    return ineligible(assessment, evidence, "未命中溯驭核心赛道或已核验企业资质");
+  }
+
+  const area = regionScore(policy.region);
+  const metadataCompleteness = [policy.title, policy.department, policy.url, policy.publishDate, policy.deadline].filter(Boolean).length;
+  const negativePenalty = Math.min(30, negatives.length * 20);
+  const rawScore = Math.round(clamp(trackScore + enterpriseScore + supportScore + area.score + metadataCompleteness - negativePenalty, 0, 100));
+  const invitationMissing = assessment.invitationRequirement.found && !assessment.invitationEvidence.found;
+
+  if (assessment.isEnterpriseOpportunity) {
+    const score = Math.min(rawScore, 60);
+    return decisionFields("opportunity", {
+      visible: false,
+      filterReason: "属于企业可争取活动机会，不是可申报政策",
+      matchScore: score,
+      rankScore: Number((score * 0.85 + urgency(daysLeft) * 0.15).toFixed(2)),
+      daysLeft,
+      assessment,
+      evidence,
+      reasons: ["企业可作为受邀演讲、路演或参会对象争取机会", ...(invitationMissing ? ["邀请制尚无企业已获邀请的证据"] : []), "不作为企业可申报政策展示"],
+    });
+  }
+
+  // A verified mismatch or an unknown company fact never removes a policy.
+  // It only prevents automatic eligibility, because the user may later supply
+  // additional evidence or the profile may refresh with a new official source.
+  const companyFactNeedsReview = companyEligibility.notMet.length > 0 || companyEligibility.unknown.length > 0;
+  const eligible = assessment.role === "enterprise_applicant" && evidence.support.found && evidence.completeness.complete && !invitationMissing && !companyFactNeedsReview;
+  const status = eligible ? "eligible" : "needs_review";
+  // 信息不完整时，分数不得进入“高匹配”区间，避免把关键词命中误当成可申报结论。
+  const matchScore = eligible ? rawScore : Math.min(rawScore, 64);
+  const reviewReasons = [
+    ...trackReasons,
+    area.reason,
+    evidence.support.found ? `支持方式包含${evidence.support.citations.map((citation) => citation.term).join("、")}` : "未识别到直接支持企业的方式",
+    ...(missingEvidence.length ? [`证据待补：${missingEvidence.join("、")}`] : []),
+    ...(invitationMissing ? ["邀请制尚无企业已获邀请的证据"] : []),
+    ...companyEligibility.notMet.map((requirement) => `公司档案显示尚未满足：${requirement.label}，需人工确认`),
+    ...companyEligibility.unknown.map((requirement) => `公司档案未能核验：${requirement.label}`),
+  ];
+  return decisionFields(status, {
+    visible: true,
+    matchScore,
+    rankScore: Number((matchScore * 0.85 + urgency(daysLeft) * 0.15).toFixed(2)),
+    daysLeft,
+    assessment,
+    evidence,
+    reasons: reviewReasons,
+  });
 }
 
-export function auditPolicies(policies, now = new Date()) {
-  return policies.map((policy) => ({ ...policy, ...evaluatePolicy(policy, now) })).sort((a, b) => {
+export function auditPolicies(policies, now = new Date(), companyProfile = null) {
+  return policies.map((policy) => ({ ...policy, ...evaluatePolicy(policy, now, companyProfile) })).sort((a, b) => {
     if (a.visible !== b.visible) return a.visible ? -1 : 1;
     return (b.rankScore || 0) - (a.rankScore || 0) || (b.matchScore || 0) - (a.matchScore || 0) || (a.daysLeft ?? 99999) - (b.daysLeft ?? 99999) || (b.publishDate || "").localeCompare(a.publishDate || "");
   });
 }
 
-export function filterAndRankPolicies(policies, now = new Date()) {
-  return auditPolicies(policies, now).filter((policy) => policy.visible);
+export function filterAndRankPolicies(policies, now = new Date(), companyProfile = null) {
+  return auditPolicies(policies, now, companyProfile).filter((policy) => policy.visible);
 }

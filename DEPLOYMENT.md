@@ -56,6 +56,16 @@ npm run sync:policies
 
 要实现每天自动推送到政策页面，请把 `ops/policy-radar.cron` 中的部署目录改成服务器实际目录，再加入服务器的 `crontab`。默认每天早上 06:00 读取一次免费政府公开来源。政策数据写入 `public/policies.json`，不包含企业 Excel、人员或财务数据。
 
+## 溯驭公司档案月度刷新
+
+公司档案只写入有可追溯原文证据的公开信息，未知项目保持 `null`，不会根据演示数据、商业信息库或推测补全。首次部署和手动刷新执行：
+
+```bash
+npm run sync:company-profile
+```
+
+将 `ops/company-profile.cron` 中的部署目录改为实际目录后加入服务器 crontab，可在每月 1 日 06:15（Asia/Shanghai）刷新。数据写入 `public/company-profile.json`，其中每个字段附有来源 URL / 文件、抓取时间、证据片段和可信等级；`matcherProfile` 是规则引擎可读取的稳定入口。完整字段与来源约定见 `docs/company-profile.md`。
+
 ## 说明
 
 - 本项目无需数据库。

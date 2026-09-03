@@ -1,0 +1,3 @@
+# Monthly, at 06:15 Asia/Shanghai on the first day of each month.
+# Replace /opt/rd-workbench with the deployment directory before installing.
+15 6 1 * * cd /opt/rd-workbench && /usr/bin/npm run sync:company-profile >> /var/log/company-profile-sync.log 2>&1

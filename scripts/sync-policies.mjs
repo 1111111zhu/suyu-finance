@@ -1,12 +1,15 @@
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { strFromU8, unzipSync } from "fflate";
 import { auditPolicies } from "./policy-matcher.mjs";
 
 const outputPath = path.resolve(process.cwd(), "public/policies.json");
 const tempPath = `${outputPath}.tmp`;
+const companyProfilePath = path.resolve(process.cwd(), "public/company-profile.json");
 const keywords = /(申报|征集|补助|补贴|奖励|扶持|资助|资金|科技|研发|创新|中小企业|专精特新|高新技术)/;
 const excludedTopics = /(基础教育|教学改革|卫生高级职称|失能老年人|竞技体育|非盈利性工程建设|行政决策事项|民生实事)/;
+const completedActivityPattern = /(?:成功举办|圆满举办|顺利举办|活动回顾|工作动态|经验交流|会议纪要)/;
+const applicationDocumentPattern = /(?:项目申报|申报指南|申报主体|申报条件|申报要求|申请条件|申请主体|征集公告|申报通知|受理时间)/;
 
 const htmlSources = [
   { id: "national", name: "国务院政策文件库", region: "国家", level: "国家级", url: "https://www.gov.cn/zhengce/zhengceku/bmwj/home.htm" },
@@ -92,9 +95,49 @@ function findDeadlineInfo(text) {
   // Whitespace is not meaningful for deadline recognition, so remove it here.
   const compact = decode(text).replace(/\s+/g, "");
   const matches = [...compact.matchAll(/(?:截至|截止(?:时间)?(?:为|至|到)?|申报时间|受理时间|系统关闭)[^。；]{0,60}(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)(?:\s*(\d{1,2})[:：](\d{2}))?/g)].map((match) => ({ date: findDate(match[1]), time: match[2] ? `${match[2].padStart(2, "0")}:${match[3]}` : "" })).filter((value) => value.date);
-  return matches.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)).at(-1) || { date: "", time: "" };
+  if (matches.length) return matches.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)).at(-1);
+
+  // Formal notices often state the year once in the title and later write only
+  // “6月25日24:00 截止”.  When the same original contains exactly one usable
+  // document year, attach it to that explicit deadline rather than treating a
+  // clearly expired window as unknown.
+  const yearMatches = [...compact.matchAll(/20\d{2}/g)].map((match) => match[0]);
+  // A notice may quote older standards or policy history. Its issue date is
+  // conventionally at the end of the official text, so use the final explicit
+  // year as the document year for a deadline that omits its own year.
+  const documentYear = yearMatches.at(-1);
+  if (!documentYear) return { date: "", time: "" };
+  const partials = [...compact.matchAll(/(?:截至|截止(?:时间)?(?:为|至|到)?|申报时间|受理时间|系统关闭)[^。；]{0,60}?(\d{1,2})月(\d{1,2})日?(?:\s*(\d{1,2})[:：](\d{2}))?/g)].map((match) => ({
+    date: `${documentYear}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`,
+    time: match[3] ? `${match[3].padStart(2, "0")}:${match[4]}` : "",
+  }));
+  return partials.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)).at(-1) || { date: "", time: "" };
 }
 const findDeadline = (text) => findDeadlineInfo(text).date;
+
+function compactText(value = "") {
+  return decode(value).replace(/[\s\p{P}\p{S}]+/gu, "").toLowerCase();
+}
+
+// A URL is not enough to call something an original application document.
+// The fetched page must identify the same notice, contain an application
+// signal, and not be a completed-event/news report.
+function verifyOriginalDocument(policy, content, checkedAt) {
+  const title = compactText(policy.title);
+  const body = compactText(content);
+  const titleMatched = title.length >= 8 && body.includes(title);
+  const completedActivity = completedActivityPattern.test(`${policy.title || ""} ${content}`);
+  const hasApplicationSignal = applicationDocumentPattern.test(content);
+  const verified = titleMatched && hasApplicationSignal && !completedActivity;
+  const reason = completedActivity
+    ? "原文为活动新闻或已举办活动"
+    : !titleMatched
+      ? "原文标题与索引记录不一致"
+      : !hasApplicationSignal
+        ? "原文未识别到申报、申请或征集条件"
+        : "已核验官方申报原文";
+  return { verified, checkedAt, titleMatched, hasApplicationSignal, completedActivity, reason };
+}
 
 async function fetchText(url, init = {}) {
   const controller = new AbortController();
@@ -130,11 +173,25 @@ async function extractDocxText(url) {
 async function enrichPolicyDetails(policies) {
   // 可在本地快速验收时设为 0；生产的日常同步仍默认补抓 30 篇正文/附件。
   const detailLimit = Math.max(0, Number.parseInt(process.env.POLICY_SYNC_DETAIL_LIMIT || "30", 10) || 0);
+  for (const policy of policies) {
+    policy.originalVerification = {
+      verified: false,
+      checkedAt: null,
+      titleMatched: false,
+      hasApplicationSignal: false,
+      completedActivity: false,
+      reason: "尚未完成官方原文核验",
+    };
+  }
   for (const policy of policies.slice(0, detailLimit)) {
     try {
-      if (/\.(pdf|docx?|xlsx?|zip)(?:\?|$)/i.test(policy.url)) continue;
+      if (/\.(pdf|docx?|xlsx?|zip)(?:\?|$)/i.test(policy.url)) {
+        policy.originalVerification.reason = "当前无法读取该格式的官方原文";
+        continue;
+      }
       const detailHtml = await fetchText(policy.url);
       const fullContent = decode(detailHtml.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " "));
+      policy.originalVerification = verifyOriginalDocument(policy, fullContent, new Date().toISOString());
       let deadline = findDeadlineInfo(fullContent);
       if (!deadline.date) {
         const attachmentPattern = /href=["']([^"']+\.docx(?:\?[^"']*)?)["']/gi;
@@ -150,7 +207,9 @@ async function enrichPolicyDetails(policies) {
       policy.deadlineTime = deadline.time || policy.deadlineTime || "";
       policy.publishDate = policy.publishDate || findDate(fullContent);
       policy.summary = fullContent.slice(0, 220) || policy.summary;
-    } catch { /* keep index data when a detail page is unavailable */ }
+    } catch {
+      policy.originalVerification.reason = "官方原文无法读取或验证失败";
+    }
   }
   return policies;
 }
@@ -213,7 +272,7 @@ async function collectZhejiangEnterpriseApi() {
     }
     return policies;
   }));
-  return batches.flat();
+  return enrichPolicyDetails(batches.flat());
 }
 
 async function collectSuzhouEnterpriseApi() {
@@ -234,7 +293,7 @@ async function collectSuzhouEnterpriseApi() {
     if (!title || !sourceUrl) return null;
     return { id: stableId("suzhou-enterprise-api", String(row.id), title), title, region: decode(detail.city || "苏州市").includes("苏州") ? "苏州市" : "江苏省", level: "市级", department: decode(detail.department || row.department || "苏州市企业服务平台"), publishDate: findDate(detail.publishTime || row.publishTime || ""), deadline: deadline.date, deadlineTime: deadline.time, category: decode(detail.categoryDesc || row.categoryDesc || "政策申报"), summary: content.slice(0, 220), content, url: sourceUrl, sourceName: "苏州市企业服务平台（申报中）", firstSeenAt: new Date().toISOString() };
   }));
-  return policies.filter(Boolean);
+  return enrichPolicyDetails(policies.filter(Boolean));
 }
 
 function collectStructuredXml(xml, source) {
@@ -273,12 +332,13 @@ async function collectMostNotices() {
 
 async function collectHangzhouTechApi() {
   const payload = JSON.parse(await fetchText("https://sti.kj.hangzhou.gov.cn/technology-brain-web/tech/policyLaw/listPage", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "dataType=2&pageNum=1&numPerPage=80&order=2" }));
-  return (payload?.data?.recordList || []).map((row) => {
+  const policies = (payload?.data?.recordList || []).map((row) => {
     const title = decode(row.title || "");
     const content = decode(row.context || "");
     const deadline = findDeadlineInfo(content);
     return { id: stableId("hangzhou-tech-api", row.detailUrl || String(row.id), title), title, region: row.levelType === 1 ? "国家" : row.levelType === 2 ? "浙江省" : "杭州市", level: decode(row.levelTypeName || "市级"), department: decode(row.publishDepart || "杭州市科学技术局"), publishDate: timestampToDate(row.publishDate), deadline: deadline.date, deadlineTime: deadline.time, category: "科技项目通知", summary: content.slice(0, 220), content, url: row.detailUrl || "https://sti.kj.hangzhou.gov.cn/technology-brain-web/searchList/newPolicy?dataType=2", sourceName: "杭州市科技创新服务平台", firstSeenAt: new Date().toISOString() };
   }).filter((item) => item.title && item.url);
+  return enrichPolicyDetails(policies);
 }
 
 function dedupe(items) {
@@ -289,6 +349,17 @@ function dedupe(items) {
     if (!existing || (!existing.publishDate && item.publishDate)) seen.set(key, item);
   }
   return [...seen.values()].sort((a, b) => (b.publishDate || b.firstSeenAt).localeCompare(a.publishDate || a.firstSeenAt));
+}
+
+async function loadCompanyProfile() {
+  try {
+    const profile = JSON.parse(await readFile(companyProfilePath, "utf8"));
+    return profile?.matcherProfile ? profile : null;
+  } catch {
+    // A missing or malformed profile must not stop a policy refresh. The
+    // matcher will use document-only evidence and mark no profile conditions.
+    return null;
+  }
 }
 
 async function main() {
@@ -312,12 +383,52 @@ async function main() {
     }
   }));
   for (const item of completed) { results.push(...item.policies); sourceStatus.push(item.status); }
-  const candidates = dedupe([...fixedPolicies, ...results]);
-  const audit = auditPolicies(candidates);
+  // Every row, including hand-curated seed rows, must carry an explicit
+  // original-document verification result. The matcher treats a missing or
+  // failed verification as a holdback, never as a reason to guess that the
+  // link is a usable application notice.
+  const candidates = dedupe([...fixedPolicies, ...results]).map((policy) => ({
+    ...policy,
+    originalVerification: policy.originalVerification || {
+      verified: false,
+      checkedAt: null,
+      titleMatched: false,
+      hasApplicationSignal: false,
+      completedActivity: false,
+      reason: "尚未完成官方原文核验",
+    },
+  }));
+  const companyProfile = await loadCompanyProfile();
+  const audit = auditPolicies(candidates, new Date(), companyProfile);
   const policies = audit.filter((policy) => policy.visible);
-  // 不再丢弃未通过项；前端可展示逐条的排除原因，供人工复核和规则调优。
-  const filteredPolicies = audit.filter((policy) => !policy.visible).map(({ content, ...policy }) => policy);
-  const payload = { updatedAt: new Date().toISOString(), policies, filteredPolicies, candidateCount: candidates.length, filteredCount: filteredPolicies.length, sources: sourceStatus };
+  // 不再丢弃未通过项；保留结构化判定和原文证据摘要，供人工复核和规则调优。
+  const filteredPolicies = audit.filter((policy) => !policy.visible).map((policy) => {
+    const filteredPolicy = { ...policy };
+    delete filteredPolicy.content;
+    return filteredPolicy;
+  });
+  const decisionCounts = audit.reduce((counts, policy) => {
+    const decision = policy.decision || "needs_review";
+    counts[decision] = (counts[decision] || 0) + 1;
+    return counts;
+  }, {});
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    policySchemaVersion: 2,
+    decisionStatuses: ["eligible", "opportunity", "needs_review", "ineligible"],
+    policies,
+    filteredPolicies,
+    candidateCount: candidates.length,
+    filteredCount: filteredPolicies.length,
+    decisionCounts,
+    companyProfile: companyProfile ? {
+      profileId: companyProfile.profileId || null,
+      generatedAt: companyProfile.generatedAt || null,
+      verifiedFieldCount: companyProfile.validation?.verifiedFieldCount ?? null,
+      unknownFieldCount: companyProfile.validation?.unknownFieldCount ?? null,
+    } : null,
+    sources: sourceStatus,
+  };
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await rename(tempPath, outputPath);

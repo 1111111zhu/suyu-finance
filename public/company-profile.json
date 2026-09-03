@@ -1,0 +1,666 @@
+{
+  "schemaVersion": "1.0.0",
+  "profileId": "suyu-company-profile",
+  "generatedAt": "2026-09-03T02:30:59.328Z",
+  "refresh": {
+    "cadence": "monthly",
+    "schedule": "15 6 1 * *",
+    "timezone": "Asia/Shanghai",
+    "command": "npm run sync:company-profile",
+    "policy": "Only freshly fetched, allow-listed public sources may populate a field; unavailable or unsupported values are null/unknown."
+  },
+  "fields": {
+    "legalName": {
+      "value": "苏州溯驭技术有限公司",
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "区科技局 访问量: 【字体: 大 中 小 】 7月10日，第十八届苏州国际精英创业周暨第三届苏州国际科创大会活动开幕，活动现场公布了2026年苏州重大创新团队，苏州溯驭技术有限公司董震团队成功入选。 在今年全市获批的团队中，董震团队是全市唯一由“苏州青年科学家”带队领衔的团队！为全区重大创新团队又注入了强劲的新鲜血液！ 一起来认识一下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "foundedYear": {
+      "value": 2021,
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "队又注入了强劲的新鲜血液！ 一起来认识一下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "publishedAddress": {
+      "value": "中国江苏省苏州市吴江区亨通光通信产业园15号楼",
+      "status": "verified",
+      "source": {
+        "id": "suyu-official-terms",
+        "name": "溯驭技术网站使用条款",
+        "url": "https://www.seeextech.com/terms.html",
+        "file": null,
+        "sourceType": "company_official",
+        "trustLevel": "B",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": "2025-05-31"
+      },
+      "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+      "confidence": "medium",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "publishedProvince": {
+      "value": "江苏省",
+      "status": "verified",
+      "source": {
+        "id": "suyu-official-terms",
+        "name": "溯驭技术网站使用条款",
+        "url": "https://www.seeextech.com/terms.html",
+        "file": null,
+        "sourceType": "company_official",
+        "trustLevel": "B",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": "2025-05-31"
+      },
+      "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+      "confidence": "medium",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "publishedCity": {
+      "value": "苏州市",
+      "status": "verified",
+      "source": {
+        "id": "suyu-official-terms",
+        "name": "溯驭技术网站使用条款",
+        "url": "https://www.seeextech.com/terms.html",
+        "file": null,
+        "sourceType": "company_official",
+        "trustLevel": "B",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": "2025-05-31"
+      },
+      "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+      "confidence": "medium",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "publishedDistrict": {
+      "value": "吴江区",
+      "status": "verified",
+      "source": {
+        "id": "suyu-official-terms",
+        "name": "溯驭技术网站使用条款",
+        "url": "https://www.seeextech.com/terms.html",
+        "file": null,
+        "sourceType": "company_official",
+        "trustLevel": "B",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": "2025-05-31"
+      },
+      "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+      "confidence": "medium",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "industryFocus": {
+      "value": [
+        "氢能电控领域"
+      ],
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行精细作业的智能机器人！针对传统无人机续航短、操作",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "solutionPositioning": {
+      "value": "国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商",
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行精细作业的智能机器人！针对传统无人机续航短、操作不灵活的痛点，团队以自主研发的氢锂耦合一体化电控技术为核心，跨域联通了氢动力系",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "highTechEnterprise": {
+      "value": true,
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "血液！ 一起来认识一下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "specializedSme": {
+      "value": true,
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "potentialUnicorn": {
+      "value": true,
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "lowAltitudeEconomyLeader": {
+      "value": true,
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行精细作业的智能机器人！针",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "legalRepresentative": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "unifiedSocialCreditCode": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "registrationStatus": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "registeredCapital": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "employeeCount": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "annualRevenue": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "annualTaxPaid": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "rAndDSpend": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "rAndDIntensity": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "patentCount": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    },
+    "companyAgeYears": {
+      "value": null,
+      "status": "unknown",
+      "source": null,
+      "evidence": null,
+      "confidence": "unknown",
+      "verifiedAt": null
+    }
+  },
+  "matcherProfile": {
+    "schemaVersion": "1.0.0",
+    "legalEntity": {
+      "value": "苏州溯驭技术有限公司",
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "区科技局 访问量: 【字体: 大 中 小 】 7月10日，第十八届苏州国际精英创业周暨第三届苏州国际科创大会活动开幕，活动现场公布了2026年苏州重大创新团队，苏州溯驭技术有限公司董震团队成功入选。 在今年全市获批的团队中，董震团队是全市唯一由“苏州青年科学家”带队领衔的团队！为全区重大创新团队又注入了强劲的新鲜血液！ 一起来认识一下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "foundedYear": {
+      "value": 2021,
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "队又注入了强劲的新鲜血液！ 一起来认识一下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "publishedLocation": {
+      "address": {
+        "value": "中国江苏省苏州市吴江区亨通光通信产业园15号楼",
+        "status": "verified",
+        "source": {
+          "id": "suyu-official-terms",
+          "name": "溯驭技术网站使用条款",
+          "url": "https://www.seeextech.com/terms.html",
+          "file": null,
+          "sourceType": "company_official",
+          "trustLevel": "B",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": "2025-05-31"
+        },
+        "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+        "confidence": "medium",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      },
+      "province": {
+        "value": "江苏省",
+        "status": "verified",
+        "source": {
+          "id": "suyu-official-terms",
+          "name": "溯驭技术网站使用条款",
+          "url": "https://www.seeextech.com/terms.html",
+          "file": null,
+          "sourceType": "company_official",
+          "trustLevel": "B",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": "2025-05-31"
+        },
+        "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+        "confidence": "medium",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      },
+      "city": {
+        "value": "苏州市",
+        "status": "verified",
+        "source": {
+          "id": "suyu-official-terms",
+          "name": "溯驭技术网站使用条款",
+          "url": "https://www.seeextech.com/terms.html",
+          "file": null,
+          "sourceType": "company_official",
+          "trustLevel": "B",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": "2025-05-31"
+        },
+        "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+        "confidence": "medium",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      },
+      "district": {
+        "value": "吴江区",
+        "status": "verified",
+        "source": {
+          "id": "suyu-official-terms",
+          "name": "溯驭技术网站使用条款",
+          "url": "https://www.seeextech.com/terms.html",
+          "file": null,
+          "sourceType": "company_official",
+          "trustLevel": "B",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": "2025-05-31"
+        },
+        "evidence": "阅和接受其使用条款。此外，第三方链接并不意味溯驭对该网站任何产品或服务的认可。 版权所有 © 2021-2025 溯驭技术 保留所有权利 苏州溯驭技术有限公司，中国江苏省苏州市吴江区亨通光通信产业园15号楼 溯驭技术 法务团队 于2025年5月31日更新 关于我们 企业简介 技术研发 企业文化 对外关系 联系我们 新闻中心 溯驭动态 媒体报道 前沿学术 特别活动 参与展会 解决方案 氢动力无人机产品开发平台 氢动力两轮车产品开发平台 绿色氢发电产品开发平台 一体化电控开发解决方案 氢能科学与学科建设解决方案 生态商城 一体化电控器 氢发电 院校教育 生态产品 第一时间获取我们的服务信息和资讯 苏ICP备2022021455号 营业执照 3",
+        "confidence": "medium",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      }
+    },
+    "registeredLocation": {
+      "province": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "city": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "district": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      }
+    },
+    "industryFocus": {
+      "value": [
+        "氢能电控领域"
+      ],
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行精细作业的智能机器人！针对传统无人机续航短、操作",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "solutionPositioning": {
+      "value": "国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商",
+      "status": "verified",
+      "source": {
+        "id": "wujiang-scitech-company-profile",
+        "name": "吴江区科技局企业介绍",
+        "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+        "file": null,
+        "sourceType": "government_official",
+        "trustLevel": "A",
+        "fetchedAt": "2026-09-03T02:30:59.328Z",
+        "publishedAt": null
+      },
+      "evidence": "溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行精细作业的智能机器人！针对传统无人机续航短、操作不灵活的痛点，团队以自主研发的氢锂耦合一体化电控技术为核心，跨域联通了氢动力系",
+      "confidence": "high",
+      "verifiedAt": "2026-09-03T02:30:59.328Z"
+    },
+    "qualifications": {
+      "highTechEnterprise": {
+        "value": true,
+        "status": "verified",
+        "source": {
+          "id": "wujiang-scitech-company-profile",
+          "name": "吴江区科技局企业介绍",
+          "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+          "file": null,
+          "sourceType": "government_official",
+          "trustLevel": "A",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": null
+        },
+        "evidence": "血液！ 一起来认识一下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业",
+        "confidence": "high",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      },
+      "specializedSme": {
+        "value": true,
+        "status": "verified",
+        "source": {
+          "id": "wujiang-scitech-company-profile",
+          "name": "吴江区科技局企业介绍",
+          "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+          "file": null,
+          "sourceType": "government_official",
+          "trustLevel": "A",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": null
+        },
+        "evidence": "下这个“硬核”团队吧！ 苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机",
+        "confidence": "high",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      },
+      "potentialUnicorn": {
+        "value": true,
+        "status": "verified",
+        "source": {
+          "id": "wujiang-scitech-company-profile",
+          "name": "吴江区科技局企业介绍",
+          "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+          "file": null,
+          "sourceType": "government_official",
+          "trustLevel": "A",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": null
+        },
+        "evidence": "苏州溯驭技术有限公司董震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行",
+        "confidence": "high",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      },
+      "lowAltitudeEconomyLeader": {
+        "value": true,
+        "status": "verified",
+        "source": {
+          "id": "wujiang-scitech-company-profile",
+          "name": "吴江区科技局企业介绍",
+          "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+          "file": null,
+          "sourceType": "government_official",
+          "trustLevel": "A",
+          "fetchedAt": "2026-09-03T02:30:59.328Z",
+          "publishedAt": null
+        },
+        "evidence": "震团队 企业名片——备受资本青睐的“硬科技”准独角兽 苏州溯驭技术有限公司成立于2021年，是国家级高新技术企业、江苏省专精特新中小企业、江苏省潜在独角兽企业及苏州市低空经济领航企业。公司专注于氢能电控领域的技术革新，致力于成为国内领先的氢电耦合一体化电控系统及场景综合解决方案提供商，自研行业首创可编程一体化电控架构，打造百瓦至兆瓦全功率层级氢能电控产品矩阵，赋能低空经济、智慧交通、新型电力系统等多元场景。 硬核项目——构建氢动力飞行器的“最强大脑” 此次董震团队获评苏州重大创新团队的项目是“面向灵巧作业氢动力飞行智能体的一体化电控平台研发及产业化”。这不仅是一架无人机，更是一个能在空中进行精细作业的智能机器人！针",
+        "confidence": "high",
+        "verifiedAt": "2026-09-03T02:30:59.328Z"
+      }
+    },
+    "hardEligibility": {
+      "legalRepresentative": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "unifiedSocialCreditCode": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "registrationStatus": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "registeredCapital": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "employeeCount": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "annualRevenue": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "annualTaxPaid": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "rAndDSpend": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "rAndDIntensity": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "patentCount": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      },
+      "companyAgeYears": {
+        "value": null,
+        "status": "unknown",
+        "source": null,
+        "evidence": null,
+        "confidence": "unknown",
+        "verifiedAt": null
+      }
+    }
+  },
+  "sources": [
+    {
+      "id": "suyu-official-terms",
+      "name": "溯驭技术网站使用条款",
+      "url": "https://www.seeextech.com/terms.html",
+      "sourceType": "company_official",
+      "trustLevel": "B",
+      "ok": true,
+      "fetchedAt": "2026-09-03T02:30:59.328Z"
+    },
+    {
+      "id": "wujiang-scitech-company-profile",
+      "name": "吴江区科技局企业介绍",
+      "url": "https://www.wujiang.gov.cn/zgwj/kjcs/202607/00369793751b434c807e6d4fa1d815d5.shtml",
+      "sourceType": "government_official",
+      "trustLevel": "A",
+      "ok": true,
+      "fetchedAt": "2026-09-03T02:30:59.328Z"
+    }
+  ],
+  "validation": {
+    "verifiedFieldCount": 12,
+    "unknownFieldCount": 11,
+    "noInference": true,
+    "acceptedSourceTypes": [
+      "government_official",
+      "company_official"
+    ]
+  }
+}

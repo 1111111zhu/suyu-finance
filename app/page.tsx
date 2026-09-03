@@ -1,6 +1,9 @@
 "use client";
 
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import brandMark from "../design_mockups/brand/seeextech-symbol-user.png";
 
 type PyodideLike = {
   FS: {
@@ -323,33 +326,38 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-logo">SEEX</span>
-          <strong>湖驭财务</strong>
-        </div>
+        <Link className="brand" href="/" aria-label="溯驭财务首页">
+          <Image
+            className="brand-mark"
+            src={brandMark}
+            alt="SEEEx"
+            priority
+          />
+          <strong>溯驭财务</strong>
+        </Link>
         <nav className="main-nav" aria-label="主导航">
-          <button className="nav-item active" type="button">
+          <Link className="nav-item active" href="/" aria-current="page">
             <Icon>
               <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
               <path d="M14 3v5h5M8 13h6M8 17h4" />
             </Icon>
             <span>研发费用</span>
-          </button>
-          <button className="nav-item" type="button" disabled>
+          </Link>
+          <Link className="nav-item" href="/policy">
+            <Icon>
+              <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+              <path d="M14 3v5h5" />
+            </Icon>
+            <span>项目申报</span>
+          </Link>
+          <Link className="nav-item" href="/salary/">
             <Icon>
               <rect x="4" y="3" width="16" height="18" rx="2" />
               <circle cx="12" cy="9" r="2.2" />
               <path d="M7.5 17c.8-2 2.2-3 4.5-3s3.7 1 4.5 3" />
             </Icon>
             <span>工资表</span>
-          </button>
-          <a className="nav-item" href="/policy">
-            <Icon>
-              <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
-              <path d="M14 3v5h5" />
-            </Icon>
-            <span>项目申报</span>
-          </a>
+          </Link>
         </nav>
       </aside>
       <section className="content">
