@@ -109,7 +109,7 @@ test("栏目名掩盖原文“若干意见”主文件时仍直接丢弃", () =>
   const result = evaluatePolicy({
     ...base,
     title: "做强做大链主企业",
-    content: "2022年10月9日，中共杭州市委办公厅、杭州市人民政府办公厅印发《关于促进智能物联产业高质量发展的若干意见》的通知。支持链主企业建设数字经济产业园。",
+    content: "2022年10月9日，中共杭州市委办公厅、杭州市⼈⺠政府办公厅印发《关于促进智能物联产业⾼质量发展的若⼲意⻅》的通知。支持链主企业建设数字经济产业园。",
   }, now);
   assert.equal(result.decision, "discarded");
   assert.equal(result.visible, false);

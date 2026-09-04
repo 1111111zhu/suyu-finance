@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import brandMark from "../../design_mockups/brand/seeextech-symbol-user.png";
 import { selectPolicyItems } from "../../scripts/policy-view.mjs";
 import "./policy.css";
@@ -238,11 +237,11 @@ export default function PolicyPage() {
   });
   return <main className="application-page">
     <aside className="app-sidebar">
-      <Link className="suyu-logo" href="/" aria-label="溯驭财务首页"><Image className="suyu-logo-mark" src={brandMark} alt="SEEEx" priority /><strong>溯驭财务</strong></Link>
+      <a className="suyu-logo" href="/" aria-label="溯驭财务首页"><Image className="suyu-logo-mark" src={brandMark} alt="SEEEx" priority /><strong>溯驭财务</strong></a>
       <nav className="side-nav">
-        <Link href="/"><Icon name="file" />研发费用</Link>
-        <Link className="active" href="/policy" aria-current="page"><Icon name="folder" />项目申报</Link>
-        <Link href="/salary/"><Icon name="salary" />工资表</Link>
+        <a href="/"><Icon name="file" />研发费用</a>
+        <a className="active" href="/policy" aria-current="page"><Icon name="folder" />项目申报</a>
+        <a href="/salary/"><Icon name="salary" />工资表</a>
       </nav>
     </aside>
     <section className="app-content">

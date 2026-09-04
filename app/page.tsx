@@ -2,7 +2,6 @@
 
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import brandMark from "../design_mockups/brand/seeextech-symbol-user.png";
 
 type PyodideLike = {
@@ -326,7 +325,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <Link className="brand" href="/" aria-label="溯驭财务首页">
+        <a className="brand" href="/" aria-label="溯驭财务首页">
           <Image
             className="brand-mark"
             src={brandMark}
@@ -334,30 +333,30 @@ export default function Home() {
             priority
           />
           <strong>溯驭财务</strong>
-        </Link>
+        </a>
         <nav className="main-nav" aria-label="主导航">
-          <Link className="nav-item active" href="/" aria-current="page">
+          <a className="nav-item active" href="/" aria-current="page">
             <Icon>
               <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
               <path d="M14 3v5h5M8 13h6M8 17h4" />
             </Icon>
             <span>研发费用</span>
-          </Link>
-          <Link className="nav-item" href="/policy">
+          </a>
+          <a className="nav-item" href="/policy">
             <Icon>
               <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
               <path d="M14 3v5h5" />
             </Icon>
             <span>项目申报</span>
-          </Link>
-          <Link className="nav-item" href="/salary/">
+          </a>
+          <a className="nav-item" href="/salary/">
             <Icon>
               <rect x="4" y="3" width="16" height="18" rx="2" />
               <circle cx="12" cy="9" r="2.2" />
               <path d="M7.5 17c.8-2 2.2-3 4.5-3s3.7 1 4.5 3" />
             </Icon>
             <span>工资表</span>
-          </Link>
+          </a>
         </nav>
       </aside>
       <section className="content">

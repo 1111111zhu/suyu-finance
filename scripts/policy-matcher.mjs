@@ -76,6 +76,12 @@ const companyLocations = [
 const includesAny = (text, terms) => terms.filter((term) => text.includes(term.toLowerCase()));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+function normalizePolicyText(value) {
+  // 部分扫描 PDF 的 CJK 兼容字不会被 NFKC 完整合并，例如“⻅”。
+  // 先规范化，随后补齐该类高频字，保证规则不因 PDF 字形而失效。
+  return String(value || "").normalize("NFKC").replaceAll("⻅", "见");
+}
+
 function textFields(policy) {
   return [
     ["title", String(policy.title || "")],
@@ -490,9 +496,9 @@ function annualOrStaleApplicationReason(policy, title, now, retrieval) {
 }
 
 function isGuidanceOpinionDocument(policy) {
-  if (guidanceOpinionTitlePattern.test(policy.title || "")) return true;
+  if (guidanceOpinionTitlePattern.test(normalizePolicyText(policy.title))) return true;
   const leadingOriginal = `${policy.summary || ""}\n${policy.content || ""}`.slice(0, 800);
-  return guidanceOpinionDocumentPattern.test(leadingOriginal);
+  return guidanceOpinionDocumentPattern.test(normalizePolicyText(leadingOriginal));
 }
 
 export function evaluatePolicy(policy, now = new Date(), companyProfile = null) {
