@@ -11,6 +11,9 @@ const trackGroups = [
 const applicationTerms = ["申报", "征集", "遴选", "评选", "推荐", "认定", "培育库", "补助", "补贴", "资助", "奖励", "揭榜挂帅", "项目计划", "申报指南", "专项指南", "重点专项", "专项资金", "项目通知"];
 const formalApplicationTerms = ["申报", "申请", "认定", "项目计划", "申报指南", "专项指南", "重点专项", "专项资金", "项目通知"];
 const enterpriseTerms = ["企业", "科技型中小企业", "高新技术企业", "中小微", "初创企业", "创新型企业", "研发机构", "创新团队"];
+// 五项关键证据现在是“任意一项即充分”，因此“支持对象”不能再由
+// 普通的“企业”二字触发，必须是可定位的对象性表述。
+const beneficiaryTerms = ["支持对象", "申报对象", "申请对象", "适用对象", "资助对象", "扶持对象", "补助对象", "面向企业", "面向科技型中小企业", "申报单位范围"];
 const supportTerms = ["研发", "科技计划", "成果转化", "技术改造", "资金", "补助", "补贴", "贴息", "资助", "人才", "融资", "知识产权", "培育"];
 const directSupportTerms = ["资金", "专项资金", "补助", "补贴", "奖励", "资助", "贷款贴息", "贴息", "服务券", "场地", "用房", "用地", "场租", "租金补贴", "资源配额", "配额", "资质", "资格认定", "认定", "贷款", "融资支持"];
 const benefitCategories = [
@@ -37,6 +40,29 @@ const publicSectorApplicantTerms = ["县（市、区）试点", "县市区试点
 const portalTerms = ["服务网", "服务专区", "申报平台", "管理办法", "实施意见", "行动方案", "工作方案"];
 const resultTerms = ["公示", "名单", "评审结果", "拟推荐", "拟认定", "拟入选", "结果公告"];
 const completedActivityTerms = ["成功举办", "圆满举办", "顺利举办", "活动回顾", "工作动态", "经验交流", "会议纪要"];
+// These are publication/news formats, rather than an action a company can take.
+// Keep this narrow and title-based: an actual application notice that merely
+// refers to a forum or a result in its body must not be discarded by accident.
+const newsOnlyTitleTerms = ["喜报", "再创新高", "全省第一", "全市第一", "全区第一", "全省唯一", "全市唯一", "调研", "走访", "座谈", "考察", "签约仪式", "新闻稿", "大显身手", "招聘会举行", "专场招聘会", "活动举行"];
+const activityOnlyTitleTerms = ["合作", "对接", "洽谈", "签约", "招聘会", "论坛", "峰会", "大讲堂", "讲座", "沙龙", "推介会", "交流会", "发布会", "培训会", "展会", "大赛"];
+const applicationTitleTerms = ["申报", "申请", "征集", "认定", "推荐", "评选", "遴选", "填报", "报送"];
+// 政府官网也会发布新闻、案例和会议报道。来源是政府网站并不能把它们
+// 变成政策文件；只有具备正式文件形态且不属于新闻/活动的记录，才进入
+// 后续的项目匹配流程。
+const governmentPolicyDocumentSuffix = /(?:通知|公告|通告|决定|命令|意见|办法|细则|规定|方案|规划|指南|条例|规则)$/;
+const governmentPolicyDocumentInBrackets = /《[^》]{2,120}(?:通知|公告|通告|决定|命令|意见|办法|细则|规定|方案|规划|指南|条例|规则)》/;
+const governmentActionTitle = /(?:申报|申请|征集|遴选|认定|评选|推荐|报送|填报)(?:工作)?(?:通知|公告)?$/;
+const governmentFormalText = /(?:现将|印发|转发|特此通知|本(?:通知|办法|细则|规定|方案|规划|指南)|依据|按照|经[^。；]{0,30}同意)[^。；]{0,120}/;
+const governmentNewsOrCaseTitle = /(?:新闻|报道|动态|简报|纪实|案例|故事|专访|调研|走访|座谈|考察|会议|活动|论坛|峰会|发布会|启动会|仪式|抢救|患者|争取.{0,20}时间)/;
+const standingPolicyTitleTerms = ["实施意见", "若干措施", "管理办法", "实施办法", "行动方案", "发展规划"];
+// “关于……的若干意见”是长期指导性文件，不是可直接跟进的具体事项。
+// 即使正文包含资金或扶持表述，也不应占用项目申报页面的位置。
+const guidanceOpinionTitlePattern = /关于[\s\S]{0,100}?的\s*若干意见/;
+// 有些政策库将章节名（如“做强做大链主企业”）误作列表标题。仅匹配
+// 标题会漏掉这类记录，因此也识别原文开头明确“印发/发布《…若干意见》”的主文件。
+const guidanceOpinionDocumentPattern = /(?:印发|发布)\s*[《“"]?\s*关于[\s\S]{0,100}?的\s*若干意见[》”"]?(?:的)?(?:通知|文件)?/;
+const supplierWorkflowTerms = ["公开征集", "征集", "在线填写", "填报", "报送", "提交"];
+const supplierRoleTerms = ["产业供给能力", "供给能力", "供给方", "供给主体", "技术、产品、服务", "技术、产品和服务", "新技术、新产品", "创新解决方案", "参与应用场景建设"];
 const coreIndustryTerms = ["氢能", "氢能源", "燃料电池", "氢燃料", "氢电耦合", "氢动力", "制氢", "储氢", "电控", "电力电子", "能量管理", "功率控制", "控制器", "碳化硅", "低空经济", "无人机", "无人飞行器", "飞控", "新型储能", "新型电力系统", "微电网", "源网荷储", "多能互补", "绿色氢"];
 
 // 主体所在地只适用本区及市级以上项目。区名必须出现在标题、部门、摘要或正文中才会触发，
@@ -90,11 +116,101 @@ function firstDate(value = "") {
   return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
 
-function dateEvidence(policy) {
-  if (parseDate(policy.deadline, policy.deadlineTime)) {
-    return { found: true, citations: [{ source: "deadline", term: policy.deadline, excerpt: `${policy.deadline}${policy.deadlineTime ? ` ${policy.deadlineTime}` : ""}` }] };
+// "政府政策文件"在本站指：政府机关（或依法受权机构）发布的正式
+// 规范、指导或执行性文件。它至少要有正式文件名/申报征集文件形态或
+// 可核验的正式行文；政府部门新闻、会议报道和服务案例均不属于此类。
+function governmentPolicyDocumentAssessment(policy) {
+  const rawTitle = String(policy.title || "").trim();
+  const title = rawTitle.replace(/[。；，、\s]+$/, "");
+  const fullText = `${rawTitle} ${policy.summary || ""} ${policy.content || ""}`;
+  const isActivityTitle = includesAny(rawTitle.toLowerCase(), activityOnlyTitleTerms).length > 0;
+  const isNewsOrCase = governmentNewsOrCaseTitle.test(rawTitle)
+    || includesAny(rawTitle.toLowerCase(), [...newsOnlyTitleTerms, ...activityOnlyTitleTerms, ...completedActivityTerms]).length > 0;
+  const hasFormalTitle = governmentPolicyDocumentSuffix.test(title) || governmentPolicyDocumentInBrackets.test(rawTitle);
+  const hasActionableTitle = governmentActionTitle.test(title);
+  const hasFormalText = governmentFormalText.test(fullText);
+  const isPolicyDocument = !isNewsOrCase && (hasFormalTitle || hasActionableTitle || hasFormalText);
+
+  return {
+    isPolicyDocument,
+    hasFormalTitle,
+    hasActionableTitle,
+    hasFormalText,
+    isNewsOrCase,
+    reason: isPolicyDocument
+      ? "已识别正式政策文件形态"
+      : isNewsOrCase
+        ? isActivityTitle
+          ? "属于合作或活动通知，不是政府政策文件"
+          : "属于政府部门新闻、会议或活动动态、服务案例，不是政府政策文件"
+        : "未识别正式政策文件形态，不作为政府政策文件入库",
+  };
+}
+
+function policyEffectiveUntil(policy) {
+  const matches = [];
+  const pattern = /(?:本(?:办法|意见|政策|通知)|该(?:办法|意见|政策|通知))?[^。；]{0,80}?有效期至\s*(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)/g;
+  for (const [source, value] of textFields(policy)) {
+    for (const match of value.matchAll(pattern)) {
+      const date = firstDate(match[1]);
+      if (!date) continue;
+      matches.push({ date, source, term: match[1], index: match.index || 0, value });
+    }
   }
-  return findEvidence(policy, ["截至", "截止时间", "截止", "申报时间", "受理时间", "系统关闭"]);
+  const latest = matches.sort((left, right) => left.date.localeCompare(right.date)).at(-1);
+  return latest ? { date: latest.date, source: latest.source, term: latest.term, excerpt: excerpt(latest.value, latest.index, latest.term) } : null;
+}
+
+function deadlineInfo(policy) {
+  if (parseDate(policy.deadline, policy.deadlineTime)) {
+    return {
+      date: policy.deadline,
+      time: policy.deadlineTime || "",
+      evidence: { found: true, citations: [{ source: "deadline", term: policy.deadline, excerpt: `${policy.deadline}${policy.deadlineTime ? ` ${policy.deadlineTime}` : ""}` }] },
+    };
+  }
+
+  // Government notices frequently put the date only in a sentence such as
+  // “请报送单位于2026年5月20日前在线填写”. Extract that action deadline
+  // from the parsed original, rather than relying on a list-page field.
+  const patterns = [
+    /(?:截至|截止(?:时间)?(?:为|至|到)?|申报时间|受理时间|系统关闭)[^。；]{0,60}?(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)/g,
+    /(?:请(?:各?单位|申报单位|报送单位)?|(?:各?单位|申报单位|报送单位))?于\s*(20\d{2}[年.\/-]\d{1,2}[月.\/-]\d{1,2}日?)\s*前(?:扫描|通过|登录|在线|按|完成|报送|提交|填报|申报|将|。|，|,|$)/g,
+  ];
+  const matches = [];
+  for (const [source, value] of textFields(policy)) {
+    for (const pattern of patterns) {
+      for (const match of value.matchAll(pattern)) {
+        const date = firstDate(match[1]);
+        if (!date) continue;
+        const dateOffset = match[0].indexOf(match[1]);
+        matches.push({
+          date,
+          time: "",
+          evidence: { found: true, citations: [{ source, term: match[1], excerpt: excerpt(value, match.index + dateOffset, match[1]) }] },
+        });
+      }
+    }
+  }
+
+  // A common official form is “企业于2026年4月25日至5月25日填报”。
+  // The end of this range is the deadline even when the word “截止” is absent.
+  const rangePattern = /(?:企业|单位|申报主体|申报单位|填报主体)?(?:于|自)?\s*(20\d{2})[年.\/-](\d{1,2})[月.\/-](\d{1,2})日?\s*(?:至|到|[-—~～])\s*(?:(20\d{2})年)?(\d{1,2})月(\d{1,2})日?[^。；]{0,48}?(?:填报|申报|申请|提交|上传|报送|办理|登录)/g;
+  for (const [source, value] of textFields(policy)) {
+    for (const match of value.matchAll(rangePattern)) {
+      const date = `${match[4] || match[1]}-${match[5].padStart(2, "0")}-${match[6].padStart(2, "0")}`;
+      const deadlineTerm = `${match[4] || match[1]}年${match[5]}月${match[6]}日`;
+      const dateOffset = match[0].lastIndexOf(`${match[5]}月${match[6]}日`);
+      matches.push({
+        date,
+        time: "",
+        evidence: { found: true, citations: [{ source, term: deadlineTerm, excerpt: excerpt(value, match.index + dateOffset, `${match[5]}月${match[6]}日`) }] },
+      });
+    }
+  }
+  // If a document states multiple deadline-like dates, the final one normally
+  // extends/corrects the earlier window. This matches the synchronizer logic.
+  return matches.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)).at(-1) || { date: "", time: "", evidence: { found: false, citations: [] } };
 }
 
 function findActivityDate(policy) {
@@ -145,7 +261,8 @@ function activityAssessment(policy, now) {
   const role = isOrganizerProject ? "organizer" : isEnterpriseOpportunity ? "enterprise_opportunity" : applicant.found ? "enterprise_applicant" : "unknown";
   const activity = findActivityDate(policy);
   const period = findProjectPeriod(policy);
-  const deadline = parseDate(policy.deadline, policy.deadlineTime);
+  const deadlineInfoValue = deadlineInfo(policy);
+  const deadline = parseDate(deadlineInfoValue.date, deadlineInfoValue.time);
   const activityDeadline = parseDate(activity.date);
   const priorFiling = findEvidence(policy, priorFilingTerms, 1);
   const priorFilingExempt = includesAny(`${policy.title || ""} ${policy.summary || ""} ${policy.content || ""}`.toLowerCase(), ["无需事前备案", "免于事前备案"]).length > 0;
@@ -163,9 +280,9 @@ function activityAssessment(policy, now) {
     isEnterpriseOpportunity,
     timing: {
       applicationWindow: findEvidence(policy, ["申报时间", "受理时间", "申请时间", "申报窗口"], 1),
-      deadline: dateEvidence(policy),
-      deadlineDate: policy.deadline || "",
-      deadlineTime: policy.deadlineTime || "",
+      deadline: deadlineInfoValue.evidence,
+      deadlineDate: deadlineInfoValue.date,
+      deadlineTime: deadlineInfoValue.time,
       daysLeft,
       applicationWindowStatus: deadline ? (deadline.getTime() < now.getTime() ? "expired" : "open") : "unknown",
       activityDate: activity.date,
@@ -290,7 +407,7 @@ function companyEligibilityAssessment(fullText, now, companyProfile) {
 
 function decisionFields(status, { visible, filterReason = "", matchScore = 0, rankScore = 0, daysLeft = null, reasons = [], assessment, evidence }) {
   const needsReview = status === "needs_review";
-  const matchLevel = status === "eligible" ? (matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配") : status === "opportunity" ? "可争取机会" : status === "needs_review" ? "待人工复核" : "不匹配";
+  const matchLevel = status === "eligible" ? (matchScore >= 80 ? "高度匹配" : matchScore >= 65 ? "较高匹配" : "可能匹配") : status === "supplier_call" ? "可作为供给方" : status === "opportunity" ? "可争取机会" : status === "needs_review" ? "待查" : status === "discarded" ? "直接丢弃" : "不匹配";
   return {
     visible,
     ...(filterReason ? { filterReason } : {}),
@@ -314,8 +431,12 @@ function decisionFields(status, { visible, filterReason = "", matchScore = 0, ra
       directSupport: evidence.support.found,
       eligibleBenefits: evidence.benefits.map((benefit) => ({ code: benefit.code, label: benefit.label, evidence: benefit.evidence })),
       beneficiaryEvidence: evidence.beneficiary,
+      participationType: status === "supplier_call" ? "supplier" : null,
+      supplierWorkflowEvidence: evidence.supplierWorkflow,
+      supplierRoleEvidence: evidence.supplierRole,
     },
     companyEligibility: evidence.companyEligibility,
+    governmentPolicyDocument: evidence.governmentPolicyDocument,
     timing: assessment.timing,
     evidence,
     requiresInvitationEvidence: assessment.invitationRequirement.found,
@@ -329,21 +450,69 @@ function ineligible(assessment, evidence, filterReason, reasons = [filterReason]
   return decisionFields("ineligible", { visible: false, filterReason, assessment, evidence, reasons });
 }
 
+// A discarded record is retained only during this run's internal audit. It is
+// intentionally excluded from both `policies` and `filteredPolicies`, so an
+// expired notice, news item, event, or results announcement can never leak to
+// the frontend's “全部” filter.
+function discard(assessment, evidence, filterReason, reasons = [filterReason]) {
+  return decisionFields("discarded", { visible: false, filterReason, assessment, evidence, reasons });
+}
+
+function retrievalState(policy) {
+  const verification = policy.originalVerification;
+  if (!verification) return { status: "not_checked", reason: "尚未读取官方原文" };
+  if (verification.retrievalStatus) return { status: verification.retrievalStatus, reason: verification.reason || "" };
+  // 兼容旧版同步数据：verified=true 表示正文曾成功读取；其余记录
+  // 只能放入待查，不能据此判为不匹配。
+  if (verification.verified === true) return { status: "parsed", reason: verification.reason || "已读取官方原文" };
+  return { status: verification.checkedAt ? "failed" : "not_checked", reason: verification.reason || "尚未读取官方原文" };
+}
+
+function annualOrStaleApplicationReason(policy, title, now, retrieval) {
+  const actionTitle = includesAny(title, applicationTitleTerms).length > 0;
+  const annualYear = Number(String(policy.title || "").match(/(20\d{2})年度/)?.[1] || 0);
+  const publishYear = Number(String(policy.publishDate || "").slice(0, 4));
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const standingPolicy = includesAny(title, standingPolicyTitleTerms).length > 0;
+
+  // An annual allowance/recognition whose named year has passed is historical
+  // unless it is a standing policy document such as a management measure.
+  if (annualYear && annualYear < currentYear && !standingPolicy) return `申报年度${annualYear}已结束`;
+  // A current-year call released in the previous year normally closes in the
+  // first part of the target year. After March it must present an explicit
+  // still-open deadline before it can remain in the action queue.
+  if (actionTitle && annualYear === currentYear && publishYear && publishYear < currentYear && currentMonth >= 3) return "跨年度申报事项未提供仍有效的截止日期";
+  // For a time-limited application notice, an unread original that is already
+  // four months old is not enough evidence to claim the window remains open.
+  if (actionTitle && retrieval.status !== "parsed" && publishYear && publishYear < currentYear) return "未读取原文且公告年度已过，无法证明仍可申报";
+  return "";
+}
+
+function isGuidanceOpinionDocument(policy) {
+  if (guidanceOpinionTitlePattern.test(policy.title || "")) return true;
+  const leadingOriginal = `${policy.summary || ""}\n${policy.content || ""}`.slice(0, 800);
+  return guidanceOpinionDocumentPattern.test(leadingOriginal);
+}
+
 export function evaluatePolicy(policy, now = new Date(), companyProfile = null) {
   const title = (policy.title || "").toLowerCase();
   const fullText = `${policy.title || ""} ${policy.summary || ""} ${policy.content || ""}`.toLowerCase();
   const assessment = activityAssessment(policy, now);
   const companyEligibility = companyEligibilityAssessment(fullText, now, companyProfile);
-  const deadline = parseDate(policy.deadline, policy.deadlineTime);
+  const deadline = parseDate(assessment.timing.deadlineDate, assessment.timing.deadlineTime);
   const daysLeft = assessment.timing.daysLeft;
   const evidence = {
-    beneficiary: findEvidence(policy, enterpriseTerms),
+    governmentPolicyDocument: governmentPolicyDocumentAssessment(policy),
+    beneficiary: findEvidence(policy, beneficiaryTerms),
     applicant: assessment.applicant,
     conditions: findEvidence(policy, eligibilityConditionTerms),
     support: findEvidence(policy, directSupportTerms),
     benefits: benefitEvidence(policy),
     deadline: assessment.timing.deadline,
     invitation: assessment.invitationEvidence,
+    supplierWorkflow: findEvidence(policy, supplierWorkflowTerms),
+    supplierRole: findEvidence(policy, supplierRoleTerms),
     companyEligibility,
   };
   const requiredEvidence = [
@@ -354,21 +523,43 @@ export function evaluatePolicy(policy, now = new Date(), companyProfile = null) 
     ["截止日期", evidence.deadline],
   ];
   const missingEvidence = requiredEvidence.filter(([, item]) => !item.found).map(([name]) => name);
-  evidence.completeness = { complete: missingEvidence.length === 0, required: requiredEvidence.map(([name]) => name), missing: missingEvidence };
+  const matchedEvidence = requiredEvidence.filter(([, item]) => item.found).map(([name]) => name);
+  evidence.completeness = {
+    complete: missingEvidence.length === 0,
+    sufficient: matchedEvidence.length >= 1,
+    matched: matchedEvidence,
+    matchedCount: matchedEvidence.length,
+    requiredCount: 1,
+    required: requiredEvidence.map(([name]) => name),
+    missing: missingEvidence,
+  };
 
-  if (deadline && deadline.getTime() < now.getTime()) return ineligible(assessment, evidence, "已过申报截止时间");
-  if (assessment.isEnterpriseOpportunity && assessment.timing.activityStatus === "expired") return ineligible(assessment, evidence, "活动日期已结束");
+  if (!evidence.governmentPolicyDocument.isPolicyDocument) {
+    return discard(assessment, evidence, evidence.governmentPolicyDocument.reason);
+  }
+
+  const effectiveUntil = policyEffectiveUntil(policy);
+  if (effectiveUntil && parseDate(effectiveUntil.date) < now) {
+    return discard(assessment, evidence, `政策有效期已于${effectiveUntil.date}届满`);
+  }
+  if (deadline && deadline.getTime() < now.getTime()) return discard(assessment, evidence, "已过申报截止时间");
+  if (assessment.isEnterpriseOpportunity && assessment.timing.activityStatus === "expired") return discard(assessment, evidence, "活动日期已结束");
+  if (includesAny(title, resultTerms).length) return discard(assessment, evidence, "属于申报结果或名单公示");
+  if (isGuidanceOpinionDocument(policy)) return discard(assessment, evidence, "属于长期指导性“若干意见”，不是具体申报事项");
+  if (includesAny(title, completedActivityTerms).length || includesAny(title, newsOnlyTitleTerms).length) return discard(assessment, evidence, "属于新闻、调研或已举办活动，不是企业可行动事项");
+  if (includesAny(title, activityOnlyTitleTerms).length && !includesAny(title, applicationTitleTerms).length) return discard(assessment, evidence, "属于合作或活动通知，不是企业可申报事项");
+  if (assessment.isOrganizerProject || assessment.isEnterpriseOpportunity) return discard(assessment, evidence, "属于活动或会务事项，不是企业可行动事项");
+  const retrieval = retrievalState(policy);
+  const annualOrStaleReason = annualOrStaleApplicationReason(policy, title, now, retrieval);
+  if (annualOrStaleReason) return discard(assessment, evidence, annualOrStaleReason);
   if (policy.region?.endsWith("市") && !["苏州市", "杭州市", "连云港市"].includes(policy.region)) return ineligible(assessment, evidence, "地区不适用");
   const districtReason = inapplicableDistrict(policy);
   if (districtReason) return ineligible(assessment, evidence, districtReason);
-  if (includesAny(title, resultTerms).length) return ineligible(assessment, evidence, "属于申报结果或名单公示");
-  if (includesAny(title, completedActivityTerms).length) return ineligible(assessment, evidence, "属于已举办活动或工作动态，不是申报通知");
-  if (includesAny(title, portalTerms).length && !title.includes("申报")) return ineligible(assessment, evidence, "属于政策依据或服务入口");
+  const actionableStandingPolicy = includesAny(title, standingPolicyTitleTerms).length
+    && /(?:在线申报|提出申请|提交.*申报材料|申报材料|认定程序)/.test(fullText)
+    && evidence.support.found;
+  if (includesAny(title, portalTerms).length && !title.includes("申报") && !actionableStandingPolicy) return ineligible(assessment, evidence, "属于政策依据或服务入口");
   if (includesAny(fullText, excludedIndustryTerms).length) return ineligible(assessment, evidence, "所属行业与溯驭核心业务无关");
-  if (policy.originalVerification && policy.originalVerification.verified !== true) {
-    return ineligible(assessment, evidence, policy.originalVerification.reason || "官方原文尚未验证，不进入项目库");
-  }
-  if (assessment.isOrganizerProject) return ineligible(assessment, evidence, "面向活动主办、承办或组织方，不是企业可申报政策", ["活动角色为主办/承办/组织方", "企业以受邀演讲或参会身份不能申报该项目"]);
   if (includesAny(title, publicSectorApplicantTerms).length) return ineligible(assessment, evidence, "申报主体为地方政府或区县试点，不是企业申报事项");
 
   const negatives = includesAny(title, negativeTerms);
@@ -399,7 +590,7 @@ export function evaluatePolicy(policy, now = new Date(), companyProfile = null) 
   // “科技、人才、企业”属于泛词，不能把通信、医疗等其他赛道的项目
   // 误推给溯驭。只有命中核心产业方向，或命中公司已核验资质，才保留。
   const coreIndustryHits = includesAny(fullText, coreIndustryTerms);
-  if (!coreIndustryHits.length && !companyEligibility.met.length) {
+  if (!coreIndustryHits.length && !companyEligibility.met.length && !actionableStandingPolicy) {
     return ineligible(assessment, evidence, "未命中溯驭核心赛道或已核验企业资质");
   }
 
@@ -408,18 +599,41 @@ export function evaluatePolicy(policy, now = new Date(), companyProfile = null) 
   const negativePenalty = Math.min(30, negatives.length * 20);
   const rawScore = Math.round(clamp(trackScore + enterpriseScore + supportScore + area.score + metadataCompleteness - negativePenalty, 0, 100));
   const invitationMissing = assessment.invitationRequirement.found && !assessment.invitationEvidence.found;
+  // 原文是否已经成功读取与“是否可申报”是两个维度。未读取、
+  // 读取失败或暂不支持的文档统一留在待查队列，不再被判为不匹配。
+  if (retrieval.status !== "parsed") {
+    const statusLabel = retrieval.status === "unsupported" ? "文档格式待解析" : retrieval.status === "failed" ? "官方原文读取失败" : "官方原文尚未读取";
+    const matchScore = Math.min(rawScore, 64);
+    return decisionFields("needs_review", {
+      visible: true,
+      filterReason: retrieval.reason || statusLabel,
+      matchScore,
+      rankScore: Number((matchScore * 0.85 + urgency(daysLeft) * 0.15).toFixed(2)),
+      daysLeft,
+      assessment,
+      evidence,
+      reasons: [statusLabel, ...(retrieval.reason && retrieval.reason !== statusLabel ? [retrieval.reason] : []), ...trackReasons, area.reason],
+    });
+  }
 
-  if (assessment.isEnterpriseOpportunity) {
-    const score = Math.min(rawScore, 60);
-    return decisionFields("opportunity", {
-      visible: false,
-      filterReason: "属于企业可争取活动机会，不是可申报政策",
+  // “征集应用场景需求及产业供给能力”不等同于资金项目，但若企业可
+  // 以技术、产品或解决方案供给方身份提交材料，仍是值得跟进的正式事项。
+  // 需求侧征集没有供给方角色证据时不会走这里，仍按一般规则进入待查。
+  // “新技术、新产品”常见于普通认定办法和扶持政策，不能单独说明
+  // 企业是供给方。只有明确写出供给能力/供给方，或把新产品与创新
+  // 解决方案、应用场景建设关联起来，才标为供给方征集。
+  const explicitSupplierRole = /(?:产业供给能力|供给能力|供给方|供给主体|参与应用场景建设|新技术、新产品(?:和|及)?创新解决方案)/.test(fullText);
+  const supplierCall = evidence.supplierWorkflow.found && explicitSupplierRole && enterpriseHits.length > 0;
+  if (supplierCall) {
+    const score = Math.max(65, rawScore);
+    return decisionFields("supplier_call", {
+      visible: true,
       matchScore: score,
       rankScore: Number((score * 0.85 + urgency(daysLeft) * 0.15).toFixed(2)),
       daysLeft,
       assessment,
       evidence,
-      reasons: ["企业可作为受邀演讲、路演或参会对象争取机会", ...(invitationMissing ? ["邀请制尚无企业已获邀请的证据"] : []), "不作为企业可申报政策展示"],
+      reasons: ["企业可作为技术、产品或解决方案供给方报送", ...trackReasons, area.reason, "非资金申报，按供给方征集跟进"],
     });
   }
 
@@ -427,7 +641,7 @@ export function evaluatePolicy(policy, now = new Date(), companyProfile = null) 
   // It only prevents automatic eligibility, because the user may later supply
   // additional evidence or the profile may refresh with a new official source.
   const companyFactNeedsReview = companyEligibility.notMet.length > 0 || companyEligibility.unknown.length > 0;
-  const eligible = assessment.role === "enterprise_applicant" && evidence.support.found && evidence.completeness.complete && !invitationMissing && !companyFactNeedsReview;
+  const eligible = evidence.completeness.sufficient && !invitationMissing && !companyFactNeedsReview;
   const status = eligible ? "eligible" : "needs_review";
   // 信息不完整时，分数不得进入“高匹配”区间，避免把关键词命中误当成可申报结论。
   const matchScore = eligible ? rawScore : Math.min(rawScore, 64);

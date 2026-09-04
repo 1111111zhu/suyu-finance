@@ -1,2 +1,3 @@
-# Every day at 06:00. Replace /opt/rd-workbench with the deployment directory.
-0 6 * * * cd /opt/rd-workbench && /usr/bin/npm run sync:policies >> /var/log/policy-radar.log 2>&1
+# Every day at 06:00 Asia/Shanghai. Replace the deployment directory below.
+CRON_TZ=Asia/Shanghai
+0 6 * * * /usr/bin/flock -n /tmp/policy-radar.lock /bin/sh -c 'cd /opt/rd-workbench && /usr/bin/npm run sync:policies >> /var/log/policy-radar.log 2>&1'

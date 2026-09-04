@@ -52,7 +52,9 @@
 .disposition-filter button:hover { border-color: #90bcac; background: #f2f8f5; }
 .disposition-filter button.active { border-color: #08794f; color: #fff; background: #08794f; }
 .disposition-filter button.active.opportunity { border-color: #2875a8; background: #2875a8; }
+.disposition-filter button.active.supplier { border-color: #5f7c1b; background: #5f7c1b; }
 .disposition-filter button.active.review { border-color: #ad6b14; background: #ad6b14; }
+.disposition-filter button.active.ineligible { border-color: #9b4e42; background: #9b4e42; }
 .disposition-filter b { margin-left: 3px; font-weight: 700; }
 .project-table { overflow-x: auto; }
 .table-head, .project-row { min-width: 1120px; grid-template-columns: minmax(405px, 1.55fr) minmax(130px, .55fr) minmax(128px, .48fr) minmax(170px, .65fr) 88px 62px; }
@@ -64,6 +66,7 @@
 .project-title-line h2 { flex: 1; min-width: 0; margin: 0 0 2px; }
 .disposition-badge { flex: 0 0 auto; padding: 4px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
 .disposition-badge.eligible { color: #08794f; background: #e9f7ef; }
+.disposition-badge.supplier_call { color: #5a731a; background: #f0f6df; }
 .disposition-badge.opportunity { color: #246492; background: #e9f3fa; }
 .disposition-badge.needs_review { color: #9a5b0c; background: #fff3df; }
 .disposition-badge.ineligible { color: #9b4e42; background: #fbecea; }
@@ -71,6 +74,7 @@
 .decision-reasons { display: flex; gap: 5px; margin-top: 6px; overflow: hidden; }
 .decision-reasons span { overflow: hidden; max-width: 200px; padding: 3px 6px; border: 1px solid #e1eee8; border-radius: 5px; color: #497468; background: #f7fbf9; font-size: 11px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
 .disposition-opportunity .decision-reasons span { border-color: #d9eaf6; color: #3a6d94; background: #f5faff; }
+.disposition-supplier_call .decision-reasons span { border-color: #dfebc5; color: #617b21; background: #fafcef; }
 .disposition-needs_review .decision-reasons span { border-color: #f1e2ca; color: #8b641b; background: #fffaf2; }
 .disposition-ineligible .decision-reasons span { border-color: #f0d9d5; color: #95564d; background: #fff8f7; }
 .support-cell { align-self: center; }
@@ -87,6 +91,7 @@
 .evidence-label.unknown { color: #607d73; background: #f0f5f2; }
 .source-link { align-self: center; }
 .select-button, .remove-button { align-self: center; }
+.view-only { justify-self: center; align-self: center; color: #8d746f; font-size: 12px; }
 @media (max-width: 1100px) {
   .table-head, .project-row { min-width: 1120px; grid-template-columns: minmax(405px, 1.55fr) minmax(130px, .55fr) minmax(128px, .48fr) minmax(170px, .65fr) 88px 62px; }
   .table-head span:nth-child(4), .table-head span:nth-child(5), .source-link { display: block; }
@@ -121,4 +126,5 @@
   .time-cell small, .evidence-cell small { max-width: calc(100vw - 185px); }
   .source-link { justify-self: start; margin-left: 79px; }
   .select-button, .remove-button { justify-self: stretch; width: 100%; height: 40px; }
+  .view-only { justify-self: start; margin-left: 79px; }
 }

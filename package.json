@@ -10,7 +10,7 @@
     "build": "vinext build",
     "start": "vinext start",
     "sync:policies": "node scripts/sync-policies.mjs",
-    "test:policy": "node --test tests/policy-matcher.test.mjs",
+    "test:policy": "node --test tests/policy-matcher.test.mjs tests/policy-feed.test.mjs tests/document-text.test.mjs",
     "sync:company-profile": "node scripts/sync-company-profile.mjs",
     "test:company-profile": "node --test tests/company-profile.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
@@ -18,8 +18,10 @@
   "dependencies": {
     "fflate": "^0.8.3",
     "next": "16.2.6",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "word-extractor": "^1.0.4"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
