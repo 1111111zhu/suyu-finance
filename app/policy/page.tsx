@@ -199,13 +199,16 @@ export default function PolicyPage() {
   const [selected, setSelected] = useState<string[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("policy-radar-selected-ids");
-    if (saved) try { setSelected(JSON.parse(saved)); } catch { /* ignore an invalid local selection */ }
+    const restoreSelection = requestAnimationFrame(() => {
+      const saved = localStorage.getItem("policy-radar-selected-ids");
+      if (saved) try { setSelected(JSON.parse(saved)); } catch { /* ignore an invalid local selection */ }
+    });
     fetch(`/policies.json?t=${Date.now()}`, { cache: "no-store" })
       .then(response => response.json() as Promise<Feed>)
       .then(setFeed)
       .catch(() => setFeed(fallback))
       .finally(() => setLoading(false));
+    return () => cancelAnimationFrame(restoreSelection);
   }, []);
 
   const allItems = useMemo<DisplayPolicy[]>(() => {

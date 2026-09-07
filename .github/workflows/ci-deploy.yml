@@ -1,0 +1,127 @@
+name: CI and production deploy
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run JavaScript tests
+        run: |
+          npm run test:policy
+          npm run test:company-profile
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python test dependencies
+        run: python -m pip install openpyxl pyyaml
+
+      - name: Run Python regression tests
+        run: python -m unittest tests/test_platform_regressions.py
+
+      - name: Build production application
+        run: npm run build
+
+  deploy:
+    name: Deploy production
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: suyu-finance-production
+      cancel-in-progress: false
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      SITE_URL: ${{ vars.SITE_URL }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SSH_KNOWN_HOSTS DEPLOY_PATH; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing production secret or variable: ${name}" >&2
+              exit 1
+            fi
+          done
+          [[ "$SERVER_PORT" =~ ^[0-9]+$ ]] || { echo "SERVER_PORT must be numeric" >&2; exit 1; }
+          (( SERVER_PORT >= 1 && SERVER_PORT <= 65535 )) || { echo "SERVER_PORT is out of range" >&2; exit 1; }
+          [[ "$SERVER_HOST" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo "SERVER_HOST contains unsupported characters" >&2; exit 1; }
+          [[ "$SERVER_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || { echo "SERVER_USER contains unsupported characters" >&2; exit 1; }
+          [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "DEPLOY_PATH must be an absolute safe path" >&2; exit 1; }
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/suyu_finance_deploy
+          chmod 600 ~/.ssh/suyu_finance_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Package and upload release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          archive="/tmp/suyu-finance-${GITHUB_SHA}.tar.gz"
+          git archive --format=tar.gz --output="$archive" "$GITHUB_SHA"
+          scp -P "$SERVER_PORT" \
+            -i ~/.ssh/suyu_finance_deploy \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            "$archive" "${SERVER_USER}@${SERVER_HOST}:/tmp/"
+
+      - name: Activate release with Docker
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -p "$SERVER_PORT" \
+            -i ~/.ssh/suyu_finance_deploy \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            "${SERVER_USER}@${SERVER_HOST}" \
+            'bash -s' -- "$DEPLOY_PATH" "$GITHUB_SHA" < ops/deploy-release.sh
+
+      - name: Verify public website
+        if: env.SITE_URL != ''
+        shell: bash
+        run: curl --retry 8 --retry-all-errors --retry-delay 3 --fail --silent --show-error "$SITE_URL/" >/dev/null

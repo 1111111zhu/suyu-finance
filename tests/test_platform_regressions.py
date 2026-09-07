@@ -100,13 +100,15 @@ class PlatformRegressionTests(unittest.TestCase):
         """Prevent indentation regressions inside the Python template embedded in the page."""
         page_source = (PROJECT_ROOT / "app" / "page.tsx").read_text(encoding="utf-8")
         match = re.search(
-            r"const resultText = await runtime\.runPythonAsync\(`\n(.*?)\n`\);",
+            r"await runtime\.runPythonAsync\(\s*`(.*?)`\s*,?\s*\);",
             page_source,
             flags=re.DOTALL,
         )
         self.assertIsNotNone(match, "未找到浏览器端测算 Python 模板")
-        calculation_source = match.group(1).replace(
-            "${inputPaths}", 'Path("/work/input_1.xlsx")'
+        calculation_source = (
+            match.group(1)
+            .replace(r"\n", "\n")
+            .replace('${paths.join(",")}', 'Path("/work/input_1.xlsx")')
         )
         compile(calculation_source, "browser_calculation_template.py", "exec")
 

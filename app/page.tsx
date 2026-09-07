@@ -65,12 +65,6 @@ const ClockIcon = () => (
     <path d="M12 7v5l3.2 2" />
   </Icon>
 );
-const ShieldIcon = () => (
-  <Icon>
-    <path d="M12 2.5 20 6v5.8c0 5.3-3.4 8.8-8 10.7-4.6-1.9-8-5.4-8-10.7V6l8-3.5Z" />
-    <path d="m8.5 12.3 2.2 2.2 4.8-5" />
-  </Icon>
-);
 const ExcelIcon = () => (
   <svg className="excel-icon" viewBox="0 0 64 70" aria-label="Excel 文件">
     <path
