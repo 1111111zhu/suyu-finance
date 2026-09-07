@@ -14,24 +14,27 @@ if [[ ! "$deploy_path" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
   exit 1
 fi
 
-command -v docker >/dev/null || { echo "Docker is not installed" >&2; exit 1; }
 command -v curl >/dev/null || { echo "curl is not installed" >&2; exit 1; }
 test -f "$archive" || { echo "Release archive is missing: ${archive}" >&2; exit 1; }
+sudo -n true || { echo "The deployment user needs passwordless sudo" >&2; exit 1; }
+sudo -n docker version >/dev/null || { echo "Docker is unavailable through sudo" >&2; exit 1; }
+docker_cmd=(sudo -n docker)
 
+sudo -n install -d -m 755 -o "$(id -un)" -g "$(id -gn)" "${deploy_path}/releases"
 mkdir -p "$release_dir"
 tar -xzf "$archive" -C "$release_dir"
 rm -f "$archive"
 
-docker build --pull --tag "$image" "$release_dir"
+"${docker_cmd[@]}" build --pull --tag "$image" "$release_dir"
 
-docker rm --force "$canary" >/dev/null 2>&1 || true
-docker run --detach \
+"${docker_cmd[@]}" rm --force "$canary" >/dev/null 2>&1 || true
+"${docker_cmd[@]}" run --detach \
   --name "$canary" \
   --publish 127.0.0.1:3001:3000 \
   "$image" >/dev/null
 
 cleanup_canary() {
-  docker rm --force "$canary" >/dev/null 2>&1 || true
+  "${docker_cmd[@]}" rm --force "$canary" >/dev/null 2>&1 || true
 }
 trap cleanup_canary EXIT
 
@@ -43,14 +46,14 @@ curl --retry 4 --retry-all-errors --retry-delay 2 --fail --silent --show-error \
 cleanup_canary
 trap - EXIT
 
-old_image=$(docker inspect --format '{{.Config.Image}}' "$container" 2>/dev/null || true)
-docker rm --force "$container" >/dev/null 2>&1 || true
+old_image=$("${docker_cmd[@]}" inspect --format '{{.Config.Image}}' "$container" 2>/dev/null || true)
+"${docker_cmd[@]}" rm --force "$container" >/dev/null 2>&1 || true
 
 rollback() {
   echo "Production health check failed; restoring ${old_image:-no previous image}." >&2
-  docker rm --force "$container" >/dev/null 2>&1 || true
+  "${docker_cmd[@]}" rm --force "$container" >/dev/null 2>&1 || true
   if [[ -n "$old_image" ]]; then
-    docker run --detach \
+    "${docker_cmd[@]}" run --detach \
       --name "$container" \
       --restart unless-stopped \
       --publish 127.0.0.1:3000:3000 \
@@ -58,7 +61,7 @@ rollback() {
   fi
 }
 
-if ! docker run --detach \
+if ! "${docker_cmd[@]}" run --detach \
   --name "$container" \
   --restart unless-stopped \
   --publish 127.0.0.1:3000:3000 \
