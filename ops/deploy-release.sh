@@ -76,7 +76,7 @@ if ! curl --retry 12 --retry-connrefused --retry-delay 2 --fail --silent --show-
   exit 1
 fi
 
-ln -sfn "$release_dir" "${deploy_path}/current"
+sudo -n ln -sfn "$release_dir" "${deploy_path}/current"
 
 # Keep the five newest extracted releases. Images remain available for rollback
 # and can be pruned independently during scheduled server maintenance.
