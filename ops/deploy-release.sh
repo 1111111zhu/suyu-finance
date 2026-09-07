@@ -38,7 +38,7 @@ cleanup_canary() {
 }
 trap cleanup_canary EXIT
 
-curl --retry 12 --retry-connrefused --retry-delay 2 --fail --silent --show-error \
+curl --retry 20 --retry-all-errors --retry-connrefused --retry-delay 2 --fail --silent --show-error \
   http://127.0.0.1:3001/ >/dev/null
 curl --retry 4 --retry-all-errors --retry-delay 2 --fail --silent --show-error \
   http://127.0.0.1:3001/policy >/dev/null
@@ -70,7 +70,7 @@ if ! "${docker_cmd[@]}" run --detach \
   exit 1
 fi
 
-if ! curl --retry 12 --retry-connrefused --retry-delay 2 --fail --silent --show-error \
+if ! curl --retry 20 --retry-all-errors --retry-connrefused --retry-delay 2 --fail --silent --show-error \
   http://127.0.0.1:3000/ >/dev/null; then
   rollback
   exit 1
