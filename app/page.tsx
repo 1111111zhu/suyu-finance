@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-html-link-for-pages -- Vinext production navigation requires full-page anchors. */
+
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import Image from "next/image";
 import brandMark from "../design_mockups/brand/seeextech-symbol-user.png";
@@ -62,12 +64,6 @@ const ClockIcon = () => (
   <Icon>
     <circle cx="12" cy="12" r="8.5" />
     <path d="M12 7v5l3.2 2" />
-  </Icon>
-);
-const ShieldIcon = () => (
-  <Icon>
-    <path d="M12 2.5 20 6v5.8c0 5.3-3.4 8.8-8 10.7-4.6-1.9-8-5.4-8-10.7V6l8-3.5Z" />
-    <path d="m8.5 12.3 2.2 2.2 4.8-5" />
   </Icon>
 );
 const ExcelIcon = () => (

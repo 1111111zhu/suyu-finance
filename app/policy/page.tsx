@@ -1,8 +1,9 @@
 "use client";
 
+/* eslint-disable @next/next/no-html-link-for-pages -- Vinext production navigation requires full-page anchors. */
+
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import brandMark from "../../design_mockups/brand/seeextech-symbol-user.png";
 import { displayPolicyTime } from "../../scripts/policy-time.mjs";
 import { selectPolicyItems, applicationFeedItems, canonicalSelections, paginatePolicies, effectiveDisposition, safeSourceHref } from "../../scripts/policy-view.mjs";
@@ -215,9 +216,9 @@ export default function PolicyPage() {
   });
   return <main className="application-page">
     <aside className="app-sidebar">
-      <Link className="suyu-logo" href="/" aria-label="溯驭财务首页"><Image className="suyu-logo-mark" src={brandMark} alt="SEEEx" priority /><strong>溯驭财务</strong></Link>
+      <a className="suyu-logo" href="/" aria-label="溯驭财务首页"><Image className="suyu-logo-mark" src={brandMark} alt="SEEEx" priority /><strong>溯驭财务</strong></a>
       <nav className="side-nav">
-        <Link href="/"><Icon name="file" />研发费用</Link>
+        <a href="/"><Icon name="file" />研发费用</a>
         <a className="active" href="/policy" aria-current="page"><Icon name="folder" />项目申报</a>
         <a href="/salary/"><Icon name="salary" />工资表</a>
       </nav>
