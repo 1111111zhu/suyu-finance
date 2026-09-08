@@ -181,6 +181,14 @@
     .source-filename { color: var(--text-2); max-width: 175px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .source-error { color: var(--red); background: var(--red-soft); border-radius: 6px; padding: 5px 7px; margin: -3px 0 9px; font-size: 11px; line-height: 1.35; }
     .upload-zone { border: 1px dashed #bfd0ec; border-radius: 10px; padding: 28px; text-align: center; color: var(--text-2); background: #fbfdff; }
+    .upload-zone { cursor: pointer; }
+    .upload-zone:focus-visible, .upload-zone.drag-over { outline: 2px solid var(--brand); background: #eef4ff; }
+    .upload-zone[aria-disabled="true"] { cursor: wait; opacity: .65; }
+    .import-review { margin-top: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+    .import-review-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .import-review-row > div { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+    .import-review-row select { max-width: 100%; }
+    .source-filename { overflow-wrap: anywhere; }
     .upload-zone svg { width: 27px; height: 27px; color: var(--brand); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
     .upload-zone-title { margin-top: 8px; font-weight: 700; color: var(--text); }
     .upload-zone-copy { font-size: 12px; color: var(--text-3); margin-top: 4px; }
@@ -533,24 +541,86 @@
       employees = importedEmployees();
       const batch=currentBatch(); batch.employees=employees.length; batch.sources=Object.keys(sourceRows).length; batch.status='待计算'; state.calculated=false;
     }
-    async function handleSourceInput(input) {
-      const file=input.files[0], key=input.dataset.sourceInput;
-      if (!file) return;
-      state.sourceStatus[key]={uploaded:false,loading:true,filename:file.name};
-      render('upload');
-      try {
-        const rows=await parseXlsxFile(file);
-        sourceRows[key]=rows;
-        state.liveImport=true;
-        state.sourceStatus[key]={uploaded:true,loading:false,filename:file.name,rows:rows.length,parsed:true};
-        rebuildImportedEmployees();
-        render('upload');
-        showToast(`${file.name} 已解析 ${rows.length} 行`);
-      } catch (error) {
-        state.sourceStatus[key]={uploaded:false,loading:false,filename:file.name,error:error.message};
-        render('upload');
-        showToast(`解析失败：${error.message}`);
+    const sourceRules = {
+      roster: {names:['花名册','人员名册','员工名册'], fields:['公司','一级部门','一级部门名称','二级部门','入职日期','离职日期','是否入离职','银行卡号']},
+      salary: {names:['员工基本工资','基本工资表','基本薪资'], fields:['基本工资','工资基数','岗位工资','绩效基数']},
+      performance: {names:['绩效考核','绩效表'], fields:['绩效系数','绩效分数']},
+      attendance: {names:['考勤'], fields:['餐补合计','交通补贴','病假(天)','病假天数','事假(天)','事假天数','旷工天数','旷工(天)']},
+      other: {names:['其他表','其他加减','其他津贴'], fields:['其他津贴','其他加','其他减','其他代扣']},
+      social: {names:['社保','社会保险'], fields:['个人总计','个人社保']},
+      fund: {names:['公积金'], fields:['个人缴纳','个人公积金']},
+      utility: {names:['水电','人才公寓'], fields:['水电费合计']},
+      meal: {names:['餐费'], fields:['餐费合计']}
+    };
+    const importSessions = new WeakMap();
+    function importSession() {
+      const batch=currentBatch();
+      if (!importSessions.has(batch)) importSessions.set(batch,{busy:false,items:[],summary:''});
+      return importSessions.get(batch);
+    }
+    function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function matchSource(filename, rows) {
+      const name=canonicalKey(filename), headers=Object.keys(rows[0] || {}).map(canonicalKey);
+      const byName=Object.keys(sourceRules).filter(key=>sourceRules[key].names.some(alias=>name.includes(alias)));
+      const byHeader=Object.keys(sourceRules).filter(key=>sourceRules[key].fields.some(field=>headers.includes(canonicalKey(field))));
+      if (byName.length===1 && (!byHeader.length || (byHeader.length===1 && byHeader[0]===byName[0]))) return {key:byName[0],reason:'文件名匹配'};
+      if (!byName.length && byHeader.length===1) return {key:byHeader[0],reason:'表头匹配'};
+      return {key:'',reason:byName.length || byHeader.length ? '识别存在歧义，请指定模块' : '未识别到模块，请手动指定'};
+    }
+    function commitSource(key, item) {
+      if (!state.liveImport) {
+        sourceRows={};
+        state.sourceStatus=Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}]));
       }
+      state.liveImport=true;
+      sourceRows[key]=item.rows;
+      state.sourceStatus[key]={uploaded:true,filename:item.filename,rows:item.rows.length,parsed:true};
+      employees=importedEmployees();
+      Object.assign(currentBatch(),{employees:employees.length,sources:Object.keys(sourceRows).length,status:'待计算'});
+      state.calculated=false;
+    }
+    async function importFiles(files, explicitKey='') {
+      const session=importSession(), batch=currentBatch();
+      if (session.busy || !files.length) return;
+      session.busy=true;session.summary='正在解析文件…';render('upload');
+      const parsed=[];
+      try {
+        for (const file of Array.from(files)) {
+          try {
+            if (!/\.xlsx$/i.test(file.name)) throw new Error('仅支持 .xlsx 文件');
+            if (file.size>20*1024*1024) throw new Error('单个文件不能超过 20MB');
+            const rows=await parseXlsxFile(file);
+            parsed.push({filename:file.name,rows,...(explicitKey?{key:explicitKey,reason:'手动指定模块'}:matchSource(file.name,rows))});
+          } catch(error) { parsed.push({filename:file.name,key:'',error:error.message}); }
+        }
+        // Never apply an asynchronous import to a different payroll batch.
+        if (currentBatch()!==batch) {session.summary='已取消：解析期间切换了工资批次，请重新选择文件';return;}
+        const counts={};parsed.forEach(item=>{if(item.key) counts[item.key]=(counts[item.key]||0)+1;});
+        let imported=0;
+        for (const item of parsed) {
+          const existing=item.key && state.sourceStatus[item.key];
+          if (!item.error && item.key && counts[item.key]===1 && !(existing?.uploaded && !existing.demo) && !session.items.some(p=>!p.error && p.key===item.key)) {
+            commitSource(item.key,item);imported++;
+          } else {
+            if (!item.error && item.key) item.reason=counts[item.key]>1?'多个文件匹配同一模块，请选择一个导入':existing?.uploaded && !existing.demo?'模块已有文件，请确认替换':'该模块还有待确认文件';
+            session.items.push(item);
+          }
+        }
+        session.summary=`本次选择 ${parsed.length} 个文件，自动导入 ${imported} 个，待处理 ${parsed.length-imported} 个`;
+      } finally {
+        session.busy=false;
+        if (currentBatch()===batch) {render('upload');showToast(session.summary);}
+      }
+    }
+    async function handleSourceInput(input) { return importFiles(input.files,input.dataset.sourceInput); }
+    function resolveImport(index, key) {
+      const session=importSession(), item=session.items[index];
+      if (session.busy || !item || item.error || !sourceRules[key]) return;
+      commitSource(key,item);session.items.splice(index,1);render('upload');showToast('文件已导入');
+    }
+    function renderImportReview() {
+      const session=importSession();
+      return `<div role="status" aria-live="polite" class="section-desc" style="margin-top:12px">${escapeHtml(session.summary)}</div>${session.items.length?`<div class="import-review"><div class="section-title">待确认 / 导入失败（${session.items.length}）</div>${session.items.map((item,index)=>`<div class="import-review-row"><div><strong>${escapeHtml(item.filename)}</strong><div class="section-desc">${escapeHtml(item.error || item.reason)}${item.rows?` · ${item.rows.length} 行`:''}</div></div>${item.error?'':`<select class="select" aria-label="${escapeHtml(item.filename)}的目标模块" data-import-target="${index}" ${session.busy?'disabled':''}><option value="">请选择模块</option>${sourceSheets.map(s=>`<option value="${s.key}" ${item.key===s.key?'selected':''}>${s.name}${state.sourceStatus[s.key]?.uploaded && !state.sourceStatus[s.key]?.demo?'（替换已有文件）':''}</option>`).join('')}</select><button class="btn btn-sm" data-import-confirm="${index}" ${session.busy?'disabled':''}>确认导入 / 替换</button>`}<button class="btn btn-sm" data-import-dismiss="${index}" ${session.busy?'disabled':''}>移除</button></div>`).join('')}</div>`:''}`;
     }
 
     const content = document.getElementById('content');
@@ -591,7 +661,7 @@
       return {
         overview:['算薪概览','掌握本月批次进度、计算结果与异常情况'],
         batches:['批次管理','按月管理算薪批次、源表版本与计算状态'],
-        upload:['上传源表',`${currentBatch().name} · 依次上传 9 张标准源表`],
+        upload:['上传源表',`${currentBatch().name} · 批量上传并自动匹配 9 张标准源表`],
         mapping:['字段映射配置',`${monthLabel(currentMonth)} · 校验直接映射与系统计算字段`],
         results:['计算结果 · 工资明细表',`${monthLabel(currentMonth)} · 7 组字段 · ${employees.length} 人示例数据`],
         slip:['工资条预览',`${monthLabel(currentMonth)} · 按员工查看工资明细`],
@@ -634,7 +704,7 @@
     function renderUpload() {
       const uploaded = sourceSheets.filter(s=>state.sourceStatus[s.key]?.uploaded).length;
       return `${setPageHead('upload','<button class="btn" data-go="batches">返回批次管理</button>')}${stepper('upload')}
-        <div class="card"><div class="section-head"><div><div class="section-title">上传 9 张标准源表</div><div class="section-desc">支持 .xlsx 文件，第一行为表头，所有源表通过“姓名”作为关联键</div></div><span class="badge ${uploaded===9?'green':'orange'}">${uploaded} / 9 已上传</span></div><div class="section-body"><div class="upload-zone"><div>${icon.upload}</div><div class="upload-zone-title">点击或拖拽 .xlsx 文件到此处</div><div class="upload-zone-copy">直接读取首个工作表，在浏览器本地解析，不上传工资数据</div><button class="btn btn-sm" style="margin-top:14px" data-simulate-all>模拟导入全部源表</button></div><div class="source-grid" style="margin-top:16px">${sourceSheets.map(s=>{const st=state.sourceStatus[s.key]||{};const statusLabel=st.loading?'解析中…':st.uploaded?'已解析':'待上传';const badgeClass=st.loading?'blue':st.uploaded?'green':'orange';const rowLabel=st.rows?` · ${st.rows} 行`:'';return `<div class="source-card"><div class="source-head"><div class="source-icon">${s.icon}</div><div><div class="source-name">${s.name}</div><div class="source-meta">${s.fields} · ${s.desc}</div></div></div><div class="source-status"><span class="source-filename">${st.filename||'待上传'}${rowLabel}</span><span class="badge ${badgeClass}">${statusLabel}</span></div>${st.error?`<div class="source-error">${st.error}</div>`:''}<input type="file" accept=".xlsx,.xls" id="file-${s.key}" data-source-input="${s.key}" hidden><button class="btn btn-sm" data-upload="${s.key}">${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`}).join('')}</div><div class="upload-bottom"><div class="muted">花名册决定最终员工范围 · 必须包含姓名字段 · Excel 仅在本机浏览器内解析</div><button class="btn btn-primary" data-go="mapping">下一步：配置字段映射 ${icon.arrow}</button></div></div></div>`;
+        <div class="card"><div class="section-head"><div><div class="section-title">上传 9 张标准源表</div><div class="section-desc">支持 .xlsx 文件，第一行为表头，所有源表通过“姓名”作为关联键</div></div><span class="badge ${uploaded===9?'green':'orange'}">${uploaded} / 9 已上传</span></div><div class="section-body"><input type="file" id="bulk-source-input" accept=".xlsx" multiple hidden><div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${importSession().busy}"><div>${icon.upload}</div><div class="upload-zone-title">${importSession().busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 .xlsx 文件，单个文件 ≤ 20MB · 文件名优先、表头辅助匹配</div><div class="upload-zone-copy">读取首个工作表，仅在本机浏览器解析，不上传工资数据</div></div>${renderImportReview()}<div class="source-grid" style="margin-top:16px">${sourceSheets.map(s=>{const st=state.sourceStatus[s.key]||{};const statusLabel=st.loading?'解析中…':st.uploaded?'已解析':'待上传';const badgeClass=st.loading?'blue':st.uploaded?'green':'orange';const rowLabel=st.rows?` · ${st.rows} 行`:'';return `<div class="source-card"><div class="source-head"><div class="source-icon">${s.icon}</div><div><div class="source-name">${s.name}</div><div class="source-meta">${s.fields} · ${s.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'待上传')}${rowLabel}</span><span class="badge ${badgeClass}">${statusLabel}</span></div>${st.error?`<div class="source-error">${escapeHtml(st.error)}</div>`:''}<input type="file" accept=".xlsx" id="file-${s.key}" data-source-input="${s.key}" hidden><button class="btn btn-sm" data-upload="${s.key}" ${importSession().busy?'disabled':''}>${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`}).join('')}</div><div class="upload-bottom"><div class="muted">花名册决定最终员工范围 · 必须包含姓名字段 · Excel 仅在本机浏览器内解析</div><button class="btn btn-primary" data-go="mapping">下一步：配置字段映射 ${icon.arrow}</button></div></div></div>`;
     }
     const mappingRows = [
       ['姓名','花名册','姓名','同名映射','green'],['公司','花名册','公司','同名映射','green'],['银行卡号','花名册','银行卡号','同名映射','green'],['是否入离职','花名册','是否入离职','同名映射','green'],['基本工资','员工基本工资表','基本工资','同名映射','green'],['绩效分数','绩效考核表','绩效系数','异名映射','blue'],['餐饮津贴','考勤统计表','餐补合计','异名映射','blue'],['病假(天)','考勤统计表','病假（天）','异名映射','blue'],['事假(天)','考勤统计表','事假（天）','异名映射','blue'],['其他减','其他表','其他减','同名映射','green'],['其他代扣','其他表','其他代扣','同名映射','green'],['个人社保','社保明细','个人总计','异名映射','blue'],['员工宿舍水电费代扣','人才公寓水电明细','水电费合计','异名映射','blue'],['餐费代扣','餐费明细','餐费合计','异名映射','blue']
@@ -673,7 +743,17 @@
       content.querySelectorAll('[data-step-view]').forEach(el=>el.addEventListener('click',()=>render(el.dataset.stepView)));
       content.querySelectorAll('[data-upload]').forEach(btn=>btn.addEventListener('click',()=>document.getElementById('file-'+btn.dataset.upload).click()));
       content.querySelectorAll('[data-source-input]').forEach(input=>input.addEventListener('change',()=>handleSourceInput(input)));
-      const sim=content.querySelector('[data-simulate-all]'); if(sim) sim.addEventListener('click',()=>{sourceRows={};state.liveImport=false;employees=profiles.map(p=>calcSalary(p,currentMonth));const batch=currentBatch();batch.employees=80;batch.sources=9;batch.status='已计算';state.calculated=true;sourceSheets.forEach(s=>state.sourceStatus[s.key]={uploaded:true,filename:`${s.name}.xlsx`,rows:s.rows,demo:true});render('upload');showToast('9 张源表已模拟导入并解析');});
+      const bulk=content.querySelector('#bulk-source-input'), zone=content.querySelector('[data-bulk-upload]');
+      const choose=()=>{if(!importSession().busy) bulk?.click();};
+      zone?.addEventListener('click',choose);
+      zone?.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();choose();}});
+      zone?.addEventListener('dragover',event=>{event.preventDefault();if(!importSession().busy) zone.classList.add('drag-over');});
+      zone?.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+      zone?.addEventListener('drop',event=>{event.preventDefault();zone.classList.remove('drag-over');importFiles(event.dataTransfer.files);});
+      bulk?.addEventListener('change',()=>importFiles(bulk.files));
+      content.querySelectorAll('[data-import-target]').forEach(select=>select.addEventListener('change',()=>{importSession().items[Number(select.dataset.importTarget)].key=select.value;}));
+      content.querySelectorAll('[data-import-confirm]').forEach(button=>button.addEventListener('click',()=>{const index=Number(button.dataset.importConfirm);const key=content.querySelector(`[data-import-target="${index}"]`).value;if(!key){showToast('请先选择目标模块');return;}resolveImport(index,key);}));
+      content.querySelectorAll('[data-import-dismiss]').forEach(button=>button.addEventListener('click',()=>{if(importSession().busy)return;importSession().items.splice(Number(button.dataset.importDismiss),1);render('upload');}));
       const calc=content.querySelector('[data-calculate]'); if(calc) calc.addEventListener('click',()=>{state.calculating=true;render('mapping');setTimeout(()=>{recalculateEmployees();state.calculating=false;state.calculated=true;currentBatch().status='已计算';render('results');showToast('计算完成：已生成 38 字段工资明细表');},900);});
       const save=content.querySelector('[data-save-template]'); if(save) save.addEventListener('click',()=>showToast('已保存为“默认模板 V1 · 副本”'));
       const exp=content.querySelector('[data-export]'); if(exp) exp.addEventListener('click',()=>downloadCsv());
