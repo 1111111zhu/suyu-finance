@@ -32,6 +32,10 @@ server {
     listen 80;
     server_name example.com;
 
+    gzip on;
+    gzip_min_length 1024;
+    gzip_types application/json text/css application/javascript;
+
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
@@ -65,7 +69,22 @@ server {
 npm run sync:policies
 ```
 
-要实现每天自动推送到政策页面，请把 `ops/policy-radar.cron` 中的部署目录改成服务器实际目录，再加入服务器的 `crontab`。默认每天早上 06:00 读取一次免费政府公开来源。政策数据写入 `public/policies.json`，不包含企业 Excel、人员或财务数据。
+要实现每天自动推送到政策页面，请把 `ops/policy-radar.cron` 中的部署目录改成腾讯云服务器实际目录，再加入服务器的 `crontab`。默认每天早上 06:00（Asia/Shanghai）读取一次免费政府公开来源，并用文件锁避免两次同步重叠。
+
+直接 Node.js 部署时，同步程序会原子替换 `public/policies.json`，并在已构建的项目中同步更新 `dist/client/policies.json`，因此无需每天重新 build。Docker 部署若需长期更新，可由宿主机 cron 执行 `docker exec rd-cost-console npm run sync:policies`；重建容器前应先执行一次同步，避免回到镜像内的旧数据。政策数据不包含企业 Excel、人员或财务数据。
+
+长期官方来源、判定顺序、PDF/Word 解析、可调参数及防归零保护见 [`docs/policy-radar.md`](docs/policy-radar.md)。
+
+### 扫描版 PDF 的 OCR（推荐）
+
+政策雷达会先读取 PDF 的文字层；对无文字层或异常字体的扫描版 PDF，会自动使用 `pdftoppm` 和 `tesseract` 识别中文正文。腾讯云 Ubuntu/Debian 服务器可在首次部署时安装：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y poppler-utils tesseract-ocr tesseract-ocr-chi-sim
+```
+
+若服务器暂不安装这些工具，其他网页、文字型 PDF 和 Word 仍可正常同步；扫描 PDF 会保留为待查，而不会被误判为可申报。可设置 `POLICY_DOCUMENT_OCR=0` 显式关闭 OCR。
 
 ## 溯驭公司档案月度刷新
 
