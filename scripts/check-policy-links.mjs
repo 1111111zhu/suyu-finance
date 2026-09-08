@@ -11,4 +11,5 @@ if (await access("dist/client").then(() => true, () => false)) {
   await cp("public/policy-sources", "dist/client/policy-sources", { recursive: true });
   await copyFile("public/policies.json", "dist/client/policies.json");
 }
+await import("./write-policy-applications.mjs");
 console.log(JSON.stringify(payload.linkAudit));

@@ -254,7 +254,7 @@ export default function PolicyPage() {
               </div></div>
               <div className="support-cell">{supportItems(policy).map(item => <span key={item}>{item}</span>)}</div>
               <div className={`time-cell ${timing.label ? "" : "empty-time"}`}>{timing.label && <span className={`deadline-cell ${timing.tone}`}>{timing.label}</span>}{timing.date && <small>{timing.date}{timing.time ? ` ${timing.time}` : ""}</small>}</div>
-              {sourceHref ? <a className="source-link" href={sourceHref} target="_blank" rel="noopener noreferrer">{policy.linkHealth?.status === "unavailable" ? "查阅原文（历史副本）" : "查阅原文与附件"}</a> : <span className="view-only">原文地址待定位</span>}
+              {sourceHref ? <a className="source-link" href={sourceHref} target="_blank" rel="noopener noreferrer">{policy.linkHealth?.status === "unavailable" ? "查阅来源（原站异常）" : "查阅原文与附件"}</a> : <span className="view-only">原文地址待定位</span>}
               {selected.includes(policy.id) ? <button className="remove-button" onClick={() => updateSelected(policy.id, false)}>取消收藏</button> : <button className="select-button" onClick={() => updateSelected(policy.id, true)} aria-label="收藏项目"><Icon name="plus" /></button>}
             </article>;
           })}

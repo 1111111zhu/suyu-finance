@@ -755,12 +755,12 @@ async function main() {
   const payload = assertViablePolicyFeed(buildPolicyFeed(expanded, sourceStatus, companyProfile, new Date()));
   // Every published link, including attachments, is checked independently of
   // content/qualification parsing. Historical parsing is not proof of availability.
-  if (!process.argv.includes('--cached')) await auditPolicyLinks(payload, { candidates });
-  else payload.linkAudit = {status:'not_rechecked',reason:'缓存重算未请求外部链接；保留原读取时间，不能当作本轮网页核验'};
+  await auditPolicyLinks(payload, { candidates });
   payload.refreshMode = cachedOnly ? 'cached_reassessment' : resume ? 'detail_resume' : 'source_and_detail';
   await mkdir(path.resolve(".policy-cache/history"), { recursive: true });
   await copyFile(outputPath, path.resolve(`.policy-cache/history/policies-${Date.now()}.json`)).catch(() => {});
   await writePolicyOutputs(payload);
+  await import("./write-policy-applications.mjs");
   console.log(`Policy sync complete: ${payload.policies.length} confirmed project calls (${payload.decisionCounts.eligible} eligible; ${payload.coverage.pendingDocuments} documents pending), ${sourceStatus.filter((source) => source.ok).length}/${sourceStatus.length} sources available.`);
 }
 

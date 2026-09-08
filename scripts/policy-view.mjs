@@ -34,7 +34,7 @@ export function effectiveDisposition(policy, company = 'all') {
   return company === 'all' ? policy.disposition || policy.decision || 'needs_review' : policy.companyAssessments?.find(c=>c.companyId===company)?.status || 'needs_review';
 }
 export function safeSourceHref(policy) {
-  for (const value of [policy.originalSourceUrl,policy.sourceReaderUrl,policy.linkHealth?.resolvedUrl,policy.url]) {
+  for (const value of [policy.linkHealth?.resolvedUrl,policy.sourceReaderUrl,policy.originalSourceUrl,policy.url]) {
     if (typeof value !== 'string') continue;
     if (/^\/policy-sources\/[a-zA-Z0-9_-]+\.html$/.test(value)) return value;
     try { const u=new URL(value); if (['http:','https:'].includes(u.protocol)) return u.href; } catch { /* unknown link is visibly pending */ }

@@ -19,6 +19,7 @@ const payload = {
   ruleDocumentVersion: feed.ruleDocumentVersion,
   updatedAt: feed.updatedAt,
   refreshMode: feed.refreshMode,
+  linkAudit: feed.linkAudit,
   coverage: feed.coverage,
   policies: applicationFeedItems(feed),
   sources: [],

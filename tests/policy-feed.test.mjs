@@ -95,7 +95,7 @@ test("转发正文完整文件名优先于漏字标题，兼容组织申报、�
    for (const date of [now, new Date("2026-09-12T00:00:00+08:00")]) {
      const rows = applicationFeedItems(feed, date);
      assert.deepEqual(rows.map(p => p.id), ["original"]);
-     assert.equal(safeSourceHref(rows[0]), original.url);
+     assert.equal(safeSourceHref(rows[0]), original.sourceReaderUrl);
      assert.equal(rows[0].deadline, "2026-09-28");
      assert.equal(rows[0].relatedDocuments[0].deadline, "2026-09-11");
      assert.match(rows[0].relatedDocuments[0].requirement, /所在地科技主管部门/);

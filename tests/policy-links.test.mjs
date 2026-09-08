@@ -21,7 +21,7 @@ test("accepts title outside article container, rejects HTML disguised as attachm
 });
 test("repair candidates must be observed, same-title official records", () => {
   assert.deepEqual(replacementUrls({ title, url }, [
-    { title, url:"https://other.gov.cn/new.html" },
+    { title, originalUrl:url, url:"https://other.gov.cn/new.html" },
     { title, url:"https://untrusted.example/new.html" },
     { title:title.replace("2026", "2025"), url:"https://other.gov.cn/old.html" },
   ]), ["https://other.gov.cn/new.html"]);
@@ -33,7 +33,7 @@ test("repairs official link, archives files, keeps historical files after outage
   try {
     const p = { id:"sample", title, url, content:"历史内容<script>alert(1)</script>", attachments:[{url:"https://test.gov.cn/file.pdf"}] };
     const payload = { policies:[p] };
-    const candidates = [{ title, url:"https://other.gov.cn/new.html" }];
+    const candidates = [{ title, originalUrl:url, url:"https://other.gov.cn/new.html" }];
     await auditPolicyLinks(payload, { root, candidates, fetchImpl: async target => new Response(target.endsWith(".pdf") ? "%PDF-1.7\ncontent" : target.includes("other.gov.cn") ? html : "not found", { status:target===url ? 404 : 200 }) });
     assert.equal(p.linkHealth.status, "repaired");
     assert.equal(p.attachments[0].linkHealth.status, "available");
@@ -57,4 +57,33 @@ test("all source pages use compact links-only template and escape document title
   assert.match(page, /href="https:\/\/other.gov.cn\/new.html"/);
   assert.match(page, /href="\/policy-sources\/abcdef.pdf"/);
   assert.match(page, /附件与相关文件/);
+});
+
+test('same title alone cannot replace a municipal notice with a provincial notice', () => {
+  assert.deepEqual(replacementUrls({title,url}, [{title,url:'https://province.gov.cn/another.html'}]), []);
+});
+
+test('validated repairs take priority over legacy URLs after original-record merging', async () => {
+  const {safeSourceHref, applicationFeedItems} = await import('../scripts/policy-view.mjs');
+  const repaired = 'https://service2.most.gov.cn/kjjh_tztg_all/20260730/5851.html';
+  const policy = {id:'kept',title,url, originalSourceUrl:url, sourceReaderUrl:'/policy-sources/a.html', linkHealth:{status:'repaired',resolvedUrl:repaired}};
+  assert.equal(safeSourceHref(policy),repaired);
+  const unavailable = {...policy,linkHealth:{status:'unavailable'}};
+  assert.equal(safeSourceHref(unavailable),policy.sourceReaderUrl);
+  assert.equal(applicationFeedItems({policies:[unavailable]}).length,1);
+});
+
+test('preferred official mirror survives another successful response from intermittent old URL', async () => {
+  const {policyLinkRepairs} = await import('../data/policy-link-repairs.mjs');
+  const root = await mkdtemp(path.join(tmpdir(),'policy-preferred-'));
+  try {
+    const repair = policyLinkRepairs[0];
+    const p = {id:'mirror',title:repair.title,url:repair.originalUrl};
+    const calls=[];
+    await auditPolicyLinks({policies:[p]}, {root,fetchImpl:async target=>{calls.push(target);return new Response(`<title>${p.title}</title><p>${'项目申报条件。'.repeat(40)}</p>`);}});
+    assert.equal(p.linkHealth.resolvedUrl,repair.url);
+    assert.equal(p.linkHealth.status,'repaired');
+    assert.ok(calls.includes(repair.originalUrl));
+    assert.ok(calls.includes(repair.url));
+  } finally {await rm(root,{recursive:true,force:true});}
 });

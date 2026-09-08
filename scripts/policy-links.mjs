@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, access } from "node:fs/promises";
 import path from "node:path";
+import { policyLinkRepairs } from "../data/policy-link-repairs.mjs";
 import { officialBody } from "./policy-collection.mjs";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -60,10 +61,10 @@ async function fetchChecked(url, { title, attachment, referer, fetchImpl = fetch
 }
 
 export function replacementUrls(doc, candidates = []) {
-  const list = [];
+  const list = policyLinkRepairs.filter(c => c.originalUrl === doc.url && titleKey(c.title) === titleKey(doc.title)).map(c => c.url);
   if (doc.url.startsWith("http://")) list.push(doc.url.replace(/^http:/, "https:"));
   // Only observed official records with the exact title. Never guess a URL or substitute a related year's notice.
-  for (const c of candidates) if (c.url !== doc.url && official(c.url) && titleKey(c.title) === titleKey(doc.title)) list.push(c.url);
+  for (const c of candidates) if (c.url !== doc.url && c.originalUrl === doc.url && official(c.url) && titleKey(c.title) === titleKey(doc.title)) list.push(c.url);
   return [...new Set(list)].slice(0, 8);
 }
 
@@ -91,12 +92,14 @@ export async function auditPolicyLinks(payload, { candidates = [], root = proces
     const task = (async () => {
       const original = await fetchChecked(doc.url, { title: doc.title, attachment, referer, fetchImpl });
       let result = original;
-      if (!result.ok) for (const alternate of replacementUrls(doc, attachment ? [] : candidates)) {
+      // Explicit repairs are preferred even when the intermittent original currently responds.
+      const preferred = policyLinkRepairs.some(c => c.originalUrl === doc.url && titleKey(c.title) === titleKey(doc.title));
+      if (!result.ok || preferred) for (const alternate of replacementUrls(doc, attachment ? [] : candidates)) {
         const attempt = await fetchChecked(alternate, { title: doc.title, attachment, referer, fetchImpl });
         if (attempt.ok) { result = attempt; break; }
       }
       const stored = previous[hash(key)];
-      const metadata = { status: result.ok ? original.ok ? "available" : "repaired" : "unavailable", checkedAt: result.checkedAt, originalUrl: doc.url, resolvedUrl: result.resolvedUrl, originalError: original.ok ? undefined : original.reason, reason: result.ok ? undefined : result.reason, httpStatus: original.httpStatus };
+      const metadata = { status: result.ok ? result.resolvedUrl === doc.url ? "available" : "repaired" : "unavailable", checkedAt: result.checkedAt, originalUrl: doc.url, resolvedUrl: result.resolvedUrl, originalError: original.ok ? undefined : original.reason, reason: result.ok ? undefined : result.reason, httpStatus: original.httpStatus };
       if (result.ok && result.extension) {
         const filename = `${hash(result.bytes)}.${result.extension}`;
         await writeFile(path.join(directory, filename), result.bytes);
