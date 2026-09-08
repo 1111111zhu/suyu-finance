@@ -62,6 +62,24 @@ test('all payroll views render with current parameters',()=>{
  for(const view of ['Overview','Upload','Mapping','Results','Slip','Batches','Templates']) assert.equal(typeof run(`render${view}()`),'string');
 });
 
+test('roster alone can start payroll and every missing source value defaults to zero',()=>{
+ const run=app();
+ run("state.sourceStatus=Object.fromEntries(sourceSheets.map(sheet=>[sheet.key,{uploaded:sheet.key==='roster'}]));sourceRows={roster:[{姓名:'甲',是否入离职:'在职'}]};state.liveImport=true;recalculateEmployees();");
+ assert.equal(run('hasPayrollRoster()'),true);
+ assert.equal(run('missingSourceSheets().length'),8);
+ for(const field of ['base','post','perfBase','score','meal','transit','otherAllow','otherAdd','annual','flexible','compensatory','companySocial','companyFund','sick','personal','absent','social','fund','otherReduction','otherDeduct','utility','mealDeduct','gross','net']) assert.equal(run(`employees[0].${field}`),0,field);
+ assert.match(run('renderUpload()'),/可启动规则运算/);
+ assert.match(run('renderMapping()'),/未上传，对应字段按 0 计算/);
+});
+
+test('payroll requires the roster only to establish employee scope',()=>{
+ const run=app();
+ run("state.sourceStatus=Object.fromEntries(sourceSheets.map(sheet=>[sheet.key,{uploaded:false}]));sourceRows={};state.liveImport=true;");
+ assert.equal(run('hasPayrollRoster()'),false);
+ assert.match(run('renderUpload()'),/请先上传花名册/);
+ assert.match(run('renderUpload()'),/disabled aria-disabled="true"/);
+});
+
 test('employment workday ranges include the event date and exclude weekends',()=>{
  const run=app();
  assert.equal(run("weekdaysBetween(parseDate('2026-09-01'),parseDate('2026-09-08'))"),6);
