@@ -19,9 +19,12 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || { echo "policy deployment already running"; exit 0; }
 cd "$APP_DIR"
 
-git fetch --quiet origin "$BRANCH"
-git checkout --quiet "$BRANCH"
-git pull --ff-only --quiet origin "$BRANCH"
+if [[ -d .git ]] && git fetch --quiet origin "$BRANCH" </dev/null; then
+  git checkout --quiet "$BRANCH"
+  git pull --ff-only --quiet origin "$BRANCH" </dev/null
+else
+  echo "GitHub pull unavailable; using the verified rules and source currently deployed in $APP_DIR"
+fi
 
 docker_cmd build -t "$IMAGE" .
 docker_cmd run -d --name "$CANDIDATE" "$IMAGE" >/dev/null
