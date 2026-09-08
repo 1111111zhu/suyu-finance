@@ -86,8 +86,36 @@ function matchesReference(original, reference) {
 function relatedDocumentKey(document) {
   return `${document.id || ''}|${document.url || ''}`;
 }
+function mirrorDocumentKey(policy) {
+  if (!isVerifiedDocument(policy) || isForwarding(policy)) return null;
+  const text = documentText(policy.content).replace(/[﹝〔【\[]/g, '〔').replace(/[﹞〕】\]]/g, '〕');
+  // Bind the issuing document number, not numbers of cited regulations.
+  const number = text.match(/发文字号[:：]([\u4e00-\u9fff]+〔20\d{2}〕\d+号)/)?.[1];
+  if (!number) return null;
+  const start = text.indexOf(number, text.indexOf(number) + number.length);
+  if (start < 0) return null;
+  const body = text.slice(start).replace(/〔返回顶部〕.*$/, '');
+  return JSON.stringify([new URL(policy.url).hostname.replace(/^www\./, ''), documentText(policy.title), number, body,
+    policy.region, policy.batch || '', policy.applicationItemId || '', policy.decision,
+    policy.deadline, policy.deadlineTime, policy.timing, policy.companyAssessments]);
+}
+function mergeMirroredDocuments(items) {
+  const groups = new Map();
+  for (const policy of items) {
+    const key = mirrorDocumentKey(policy) || policy.id;
+    const existing = groups.get(key);
+    if (!existing) { groups.set(key, policy); continue; }
+    groups.set(key, {...existing,
+      aliases: [...new Set([...(existing.aliases || []), policy.id, ...(policy.aliases || [])])].filter(id => id !== existing.id),
+      relatedDocuments: [...(existing.relatedDocuments || []), ...(policy.relatedDocuments || []),
+        {id: policy.id, title: policy.title, url: policy.url, relation: '同一通知的其他官方栏目'}]
+        .filter((item, index, all) => all.findIndex(candidate => relatedDocumentKey(candidate) === relatedDocumentKey(item)) === index),
+    });
+  }
+  return [...groups.values()];
+}
 export function applicationFeedItems(feed, now = new Date()) {
-  const items = allFeedItems({policies: feed.policies || []}, now).filter(isWithinApplicationScope);
+  const items = mergeMirroredDocuments(allFeedItems({policies: feed.policies || []}, now).filter(isWithinApplicationScope));
   const originals = items.filter(policy => !isForwarding(policy) && isVerifiedDocument(policy));
   const wrappers = new Map(), hidden = new Set();
   // Expired local notices may still explain an active national application's
