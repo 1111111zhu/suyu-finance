@@ -218,21 +218,21 @@ test('attendance days are the sole source by name for all statuses and recalcula
  assert.equal(run("matchSource('导出.xlsx',[{姓名:'甲',实发薪天数:18.5}]).key"),'attendance');
  assert.match(run('renderMapping()'),/实发薪天数/);
 });
-test('invalid or missing paid days never fall back and block both exports and printing',()=>{
+test('invalid or missing paid days never fall back and allow exports while retaining missing amounts',()=>{
  for(const raw of [null,undefined,'','  ','abc','50%','—',-1,NaN,Infinity,true,[],{}]) {
   const run=app();
   const literal=raw===undefined?'undefined':Number.isNaN(raw)?'NaN':raw===Infinity?'Infinity':JSON.stringify(raw);
   run(`sourceRows={roster:[{姓名:'甲',实发薪天数:22}],attendance:[{姓名:'甲',实发薪天数:${literal}}]};state.liveImport=true;recalculateEmployees();window.XLSX={};`);
   for(const field of ['payableDays','deductDays','attendanceDeduct','gross','net']) assert.equal(run(`employees[0].${field}`),null);
-  assert.equal(run('payrollExportReady()'),false);assert.equal(run('workbookReady()'),false);
-  assert.doesNotThrow(()=>run('downloadCsv();downloadSlip();'));
+  assert.equal(run('payrollExportReady()'),true);assert.equal(run('workbookReady()'),true);
+  assert.equal(run('employees[0].hasException'),true);
   assert.match(run('employees[0].exception'),/实发薪天数/);
   assert.equal(run('integer(employees[0].payableDays)'),'—');
  }
  const run=app();run("sourceRows={roster:[{姓名:'甲'}]};state.liveImport=true;recalculateEmployees();");
- assert.equal(run('payrollExportReady()'),false);
+ assert.equal(run('payrollExportReady()'),true);
  run("sourceRows.attendance=[{姓名:'乙',实发薪天数:22}];recalculateEmployees();");
- assert.equal(run('payrollExportReady()'),false);
+ assert.equal(run('payrollExportReady()'),true);
 });
 test('zero and fractional paid days survive detail and slip export without clamping',()=>{
  const run=app();
@@ -243,12 +243,13 @@ test('zero and fractional paid days survive detail and slip export without clamp
   assert.equal(run('exportRow(employees[0])[10]'),paid);
  }
 });
-test('duplicate names block payroll until corrected, including whitespace-normalized names',()=>{
+test('duplicate names warn without blocking payroll, including whitespace-normalized names',()=>{
  for(const key of ['roster','attendance','salary']) {
   const run=app();
   run(`sourceRows={roster:[{姓名:'甲'}],attendance:[{姓名:'甲',实发薪天数:22}],salary:[{姓名:'甲',基本工资:2175}]};sourceRows['${key}'].push({...sourceRows['${key}'][0],姓名:' 甲 '});state.liveImport=true;recalculateEmployees();`);
-  assert.equal(run('payrollExportReady()'),false);
-  assert.equal(run('employees[0].payableDays'),null);
+  assert.equal(run('payrollExportReady()'),true);
+  assert.equal(run('employees[0].payableDays'),22);
+  assert.equal(run('employees[0].hasException'),true);
   run(`sourceRows['${key}'].pop();recalculateEmployees();`);
   assert.equal(run('payrollExportReady()'),true);
  }
@@ -271,4 +272,17 @@ test('exception cards open a complete list including nonblocking warnings',()=>{
  const details=run('renderExceptions()');
  assert.match(details,/Alice/);assert.match(details,/Bob/);assert.match(details,/Review social insurance/);assert.match(details,/data-employee="A"/);assert.match(details,/data-employee="B"/);
  run('employees=[];');assert.ok(run('renderExceptions()').includes('colspan="7"'));
+});
+
+test('mixed valid and invalid employees export the entire workbook with exception notes',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'正常'},{姓名:'缺失'},{姓名:'重复'}],attendance:[{姓名:'正常',实发薪天数:20},{姓名:'重复',实发薪天数:21},{姓名:'重复',实发薪天数:19}],salary:['正常','缺失','重复'].map(姓名=>({姓名,基本工资:2175}))};state.liveImport=true;recalculateEmployees();window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({sheets:[]}),book_append_sheet:(book,sheet,name)=>book.sheets.push({sheet,name})}};downloadXlsx=(book)=>{globalThis.exported=book;};downloadCsv();");
+ assert.equal(run('exported.sheets[0].sheet.rows.length'),5);
+ assert.equal(run('employees[0].net'),2000);
+ assert.equal(run('employees[1].net'),null);
+ assert.equal(run('employees[2].net'),2100);
+ assert.match(run("exported.sheets[0].sheet.A4.c[0].t"),/考勤统计表中未找到此姓名/);
+ assert.match(run('renderExceptions()'),/第 3、4 行/);
+ assert.equal(run('exported.sheets[1].sheet.rows.at(-1)[3]'),null);
+ assert.ok(!run('renderResults()').includes('禁止导出'));
 });
