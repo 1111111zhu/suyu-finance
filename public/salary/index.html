@@ -277,6 +277,7 @@
     .form-field .input, .form-field .select { width: 100%; height: 40px; }
     .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; background: #fbfcfe; border-top: 1px solid var(--line); }
     .toast { position: fixed; right: 24px; bottom: 24px; z-index: 100; color: #fff; background: #1f2b3d; border-radius: 9px; padding: 11px 15px; box-shadow: 0 10px 22px rgba(20,31,48,.2); transform: translateY(20px); opacity: 0; pointer-events: none; transition: .22s ease; font-size: 12px; }
+    .toast { max-width: min(560px, calc(100vw - 48px)); white-space: pre-line; overflow-wrap: anywhere; line-height: 1.65; font-size: 14px; }
     .toast.show { transform: translateY(0); opacity: 1; }
     .loading { display: inline-flex; align-items: center; gap: 8px; }
     .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
@@ -652,7 +653,7 @@
     function money(value, dash=false) { if (value === null || (dash && value === undefined)) return '—'; return Number(value || 0).toLocaleString('zh-CN', {minimumFractionDigits:2, maximumFractionDigits:2}); }
     function integer(value) { if (value === null) return '—'; return Number(value || 0).toLocaleString('zh-CN', {maximumFractionDigits:2}); }
     function monthLabel(month) { const [y,m]=month.split('-'); return `${y}年${Number(m)}月`; }
-    function showToast(message) { toastEl.textContent = message; toastEl.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toastEl.classList.remove('show'), 2400); }
+    function showToast(message, duration=2400) { toastEl.textContent = message; toastEl.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toastEl.classList.remove('show'), duration); }
     function currentBatch() { return state.batches.find(b => b.active) || state.batches[0]; }
     function recalculateEmployees() {
       employees = state.liveImport ? importedEmployees() : profiles.map(p => calcSalary(p));
@@ -819,7 +820,9 @@
       if (!employees.length || employees.some(e=>e.payrollBlocked)) {
         render('results');
         document.getElementById('payrollIssues')?.scrollIntoView?.({behavior:'smooth',block:'start'});
-        showToast(employees.length?'暂不能导出：请查看页面上方逐人列出的具体原因':'没有可导出的员工，请先上传花名册');
+        const blocked=employees.filter(e=>e.payrollBlocked);
+        const details=blocked.slice(0,3).map(e=>`${e.name || '（空姓名）'}${e.rosterRow?'（花名册第 '+e.rosterRow+' 行）':''}：${e.paidDayIssues?.length?e.paidDayIssues.join('；'):'实发薪天数“'+String(e.actualPaidDays ?? '')+'”无效，须填写非负数（允许 0 和小数）'}`).join('\n');
+        showToast(employees.length?`无法导出或打印：${blocked.length} 人未通过校验。\n${details}${blocked.length>3?'\n另有 '+(blocked.length-3)+' 人，请查看上方完整异常明细。':''}\n请修正对应源表后重新上传并计算。实发薪天数仅取考勤表，不会自动补算。`:'无法导出或打印：没有可导出的员工。请先上传包含“姓名”列的花名册，再上传对应考勤表并计算。', 15000);
         return false;
       }
       return true;
