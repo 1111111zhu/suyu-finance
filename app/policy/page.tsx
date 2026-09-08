@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import brandMark from "../../design_mockups/brand/seeextech-symbol-user.png";
-import { selectPolicyItems } from "../../scripts/policy-view.mjs";
+import { displayPolicyTime } from "../../scripts/policy-time.mjs";
+import { selectPolicyItems, applicationFeedItems, canonicalSelections, paginatePolicies, effectiveDisposition, safeSourceHref } from "../../scripts/policy-view.mjs";
+import { cardReasons, companyFitItems, qualificationNotes } from "./presentation.mjs";
 import "./policy.css";
 import "./policy-overrides.css";
 
-type MatchDisposition = "eligible" | "supplier_call" | "opportunity" | "needs_review" | "ineligible";
+type MatchDisposition = "eligible" | "supplier_call" | "opportunity" | "needs_review" | "ineligible" | "upcoming" | "expired" | "discarded";
 type EvidenceValue = number | string | {
   score?: number | string;
   missing?: string[] | string;
@@ -24,6 +27,20 @@ type TimeValue = string | {
   daysLeft?: number;
 };
 type Policy = {
+  collection?: string;
+  supportKinds?: string[];
+  verificationIssues?: string[];
+  subprojectReviewRequired?: boolean;
+  sourceReaderUrl?: string;
+  originalSourceUrl?: string;
+  linkHealth?: LinkHealth;
+  projectAuthenticity?: { status: string };
+  applicationRequirements?: string;
+  aliases?: string[];
+  applicableCompanies?: string[];
+  companyAssessments?: { companyId: string; companyName: string; status: string; reasons: string[]; missing: string[] }[];
+  relatedDocuments?: { id?: string; title: string; url: string; linkHealth?: LinkHealth; relation?: string; region?: string; deadline?: string; deadlineTime?: string; expired?: boolean; requirement?: string }[];
+  attachments?: { url: string; status: string; linkHealth?: LinkHealth }[];
   id: string;
   title: string;
   region: string;
@@ -63,17 +80,11 @@ type Policy = {
     reason?: string;
   };
 };
-type Feed = { updatedAt: string; policies: Policy[]; filteredPolicies?: Policy[]; sources: { id: string; name: string; ok: boolean; count: number }[] };
+type LinkHealth = { status: string; resolvedUrl?: string; localUrl?: string; reason?: string; checkedAt?: string };
+type Feed = { refreshMode?: string; coverage?: { status: string; sourceFailures: number; pendingDocuments: number; pendingLeads?: number; pendingQualifications?: number; pendingSubprojects?: number; incompleteSources?: number; unconfiguredSources?: number; companyGaps?: string[]; matrix?: {name:string;status:string;reason:string}[]; fundingDirections?: {name:string;status:string}[] }; sourceCandidateCount?: number; updatedAt: string; policies: Policy[]; reviewQueue?: Policy[]; historyPolicies?: Policy[]; excludedRecords?: Policy[]; filteredPolicies?: Policy[]; sources: { id: string; name: string; ok: boolean; count: number; incomplete?: boolean; error?: string; pendingPageUrls?: string[] }[] };
 type DisplayPolicy = Policy & { remaining: number | null; disposition: MatchDisposition };
 
 const fallback: Feed = { updatedAt: "", sources: [], policies: [] };
-const dispositionLabels: Record<MatchDisposition, string> = {
-  eligible: "可申报",
-  supplier_call: "供给方征集",
-  opportunity: "可争取机会",
-  needs_review: "待查",
-  ineligible: "不匹配",
-};
 
 const daysUntil = (date?: string) => {
   if (!date) return null;
@@ -93,85 +104,19 @@ const asStringList = (value: unknown) => {
   return typeof value === "string" && value.trim() ? [value] : [];
 };
 const asObject = (value: unknown): Record<string, unknown> | null => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-const normalizeKey = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase().replace(/[\s-]/g, "_") : "";
-
-function matchDisposition(policy: Policy): MatchDisposition {
-  const value = normalizeKey(policy.matchDisposition ?? policy.decision ?? policy.eligibilityStatus ?? policy.matchStatus ?? policy.policyEligibility);
-  if (["eligible", "apply", "applicable", "可申报", "申报"].includes(value)) return "eligible";
-  if (["supplier_call", "supplier", "供给方征集", "可作为供给方"].includes(value)) return "supplier_call";
-  if (["opportunity", "event_opportunity", "可争取机会", "机会"].includes(value)) return "opportunity";
-  if (["needs_review", "manual_review", "pending_review", "待人工确认", "待核验", "待查"].includes(value)) return "needs_review";
-  if (["ineligible", "not_matched", "excluded", "false", "不匹配"].includes(value)) return "ineligible";
-  if (policy.needsReview) return "needs_review";
-  // Older feeds do not have a verdict. Do not infer that a policy can be applied for.
-  return "needs_review";
-}
 
 function supportItems(policy: Policy) {
-  if (matchDisposition(policy) === "supplier_call") return ["供给方征集"];
-  if (matchDisposition(policy) === "opportunity") return ["活动机会"];
-  const text = `${policy.title} ${policy.summary} ${policy.content || ""}`;
-  const terms = ["补助", "补贴", "奖励", "资助", "贴息", "贷款", "减免"];
-  const tags = terms.flatMap((term, index) => text.split(/[。；]/).filter(sentence => sentence.includes(term)).map(sentence => {
-    const amount = sentence.match(/(\d+(?:\.\d+)?)\s*(亿元|亿|万元|万|元|个百分点|%)/);
-    return { label: `${term === "补贴" ? "补助" : term}${amount ? `${amount[1]}${amount[2] === "个百分点" ? "%" : amount[2]}` : ""}`.slice(0, 8), priority: Number(amount?.[1] || 0) + 70 - index * 7 };
-  })).filter((item, index, all) => item.label && all.findIndex(candidate => candidate.label === item.label) === index).sort((a, b) => b.priority - a.priority).slice(0, 3).map(item => item.label);
-  return tags.length ? tags : ["支持方式待核验"];
-}
-
-function evidenceInfo(policy: Policy) {
-  const raw = policy.evidenceCompleteness;
-  const detail = asObject(raw);
-  const evidenceDetail = asObject(policy.evidence);
-  const completeness = asObject(evidenceDetail?.completeness);
-  const rawScore = detail?.score ?? (typeof raw === "number" ? raw : undefined);
-  const numberScore = typeof rawScore === "number" ? rawScore : typeof rawScore === "string" && rawScore.trim() !== "" ? Number(rawScore) : undefined;
-  const normalizedScore = typeof numberScore === "number" && numberScore >= 0 && numberScore <= 1 ? numberScore * 100 : numberScore;
-  const score = Number.isFinite(normalizedScore) ? Math.max(0, Math.min(100, Math.round(normalizedScore as number))) : undefined;
-  const missing = [...asStringList(detail?.missing), ...asStringList(detail?.missingFields), ...asStringList(completeness?.missing)].filter((item, index, all) => all.indexOf(item) === index);
-  const evidence = [...asStringList(detail?.evidence), ...asStringList(detail?.confirmed)].filter((item, index, all) => all.indexOf(item) === index);
-  const suppliedLabel = typeof raw === "string" ? raw : typeof detail?.label === "string" ? detail.label : "";
-  const confirmed = [
-    ["支持对象", evidenceDetail?.beneficiary],
-    ["申报主体", evidenceDetail?.applicant],
-    ["申报条件", evidenceDetail?.conditions],
-    ["支持方式", evidenceDetail?.support],
-    ["截止日期", evidenceDetail?.deadline],
-  ].flatMap(([label, item]) => asObject(item)?.found === true ? [label] : []);
-  const complete = completeness?.complete === true;
-  const sufficient = completeness?.sufficient === true || complete;
-  const matchedCount = typeof completeness?.matchedCount === "number" ? completeness.matchedCount : confirmed.length;
-  const label = suppliedLabel || (complete ? "五项证据齐全" : sufficient ? `已命中 ${matchedCount} 项证据` : score === undefined ? missing.length ? "证据待补" : "证据待核验" : score >= 80 ? `证据较完整 ${score}%` : `证据不完整 ${score}%`);
-  return { label, score, missing, evidence: evidence.length ? evidence : confirmed, complete, sufficient };
+  const evidence = asObject(policy.evidence?.support);
+  const citations = Array.isArray(evidence?.citations) ? evidence.citations : [];
+  const terms = citations.flatMap((item: unknown) => {
+    const term = asObject(item)?.term;
+    return typeof term === "string" ? [term] : [];
+  });
+  return terms.length ? terms : ["以申报指南为准"];
 }
 
 function timeInfo(policy: DisplayPolicy) {
-  const raw = policy.timeStatus;
-  const detail = asObject(raw);
-  const timing = asObject(policy.timing);
-  const source = typeof raw === "string" ? raw : typeof detail?.status === "string" ? detail.status : typeof timing?.applicationWindowStatus === "string" ? timing.applicationWindowStatus : "";
-  const suppliedLabel = typeof detail?.label === "string" ? detail.label : "";
-  const normalized = normalizeKey(source || suppliedLabel);
-  const date = typeof detail?.deadline === "string" ? detail.deadline : typeof timing?.deadlineDate === "string" ? timing.deadlineDate : policy.deadline;
-  const rawDays = typeof detail?.daysLeft === "number" ? detail.daysLeft : typeof timing?.daysLeft === "number" ? timing.daysLeft : policy.daysLeft ?? policy.remaining;
-  const remaining = typeof rawDays === "number" && Number.isFinite(rawDays) ? Math.ceil(rawDays) : policy.remaining;
-  let tone: "open" | "soon" | "closed" | "unknown" = "unknown";
-  let label = suppliedLabel || source;
-
-  if (/[已截止|截止|expired|closed]/i.test(normalized)) { tone = "closed"; label ||= "已截止"; }
-  else if (/[即将截止|临近|closing|soon]/i.test(normalized)) { tone = "soon"; label ||= "即将截止"; }
-  else if (/[长期|long_term|ongoing]/i.test(normalized)) { tone = "open"; label ||= "长期受理"; }
-  else if (/[申报中|开放|open|active|accepting]/i.test(normalized)) { tone = "open"; label ||= "申报中"; }
-  else if (/[即将开始|upcoming]/i.test(normalized)) { tone = "unknown"; label ||= "即将开始"; }
-  else if (/[待核验|未知|unknown|not_specified]/i.test(normalized)) { label ||= "时间待核验"; }
-  else if (remaining !== null) {
-    if (remaining < 0) { tone = "closed"; label = "已截止"; }
-    else if (remaining <= 30) { tone = "soon"; label = `剩余 ${remaining} 天`; }
-    else { tone = "open"; label = `剩余 ${remaining} 天`; }
-  }
-  if (!label) label = "时间待核验";
-  const projectPeriod = typeof timing?.projectPeriod === "string" ? timing.projectPeriod : "";
-  return { label, tone, date, remaining, reason: typeof detail?.reason === "string" ? detail.reason : projectPeriod ? `项目周期：${projectPeriod}` : "" };
+  return displayPolicyTime(policy);
 }
 
 function decisionReason(policy: DisplayPolicy) {
@@ -201,34 +146,48 @@ function Icon({ name }: { name: "menu" | "search" | "file" | "salary" | "folder"
 export default function PolicyPage() {
   const [feed, setFeed] = useState<Feed>(fallback);
   const [loading, setLoading] = useState(true);
-  const [region, setRegion] = useState("全部地区");
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"pending" | "selected">("pending");
+  const [region, setRegion] = useState("全部地区");
+  const [tab, setTab] = useState<"all" | "selected">("all");
+  const [loadError, setLoadError] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [clock, setClock] = useState(() => Date.now());
 
   useEffect(() => {
     let active = true;
     Promise.resolve().then(() => {
       const saved = localStorage.getItem("policy-radar-selected-ids");
-      if (active && saved) try { setSelected(JSON.parse(saved)); } catch { /* ignore an invalid local selection */ }
+      if (active && saved) try { setSelected(canonicalSelections([], JSON.parse(saved))); } catch { /* ignore an invalid local selection */ }
     });
-    fetch(`/policies.json?t=${Date.now()}`, { cache: "no-store" })
-      .then(response => response.json() as Promise<Feed>)
-      .then(value => { if (active) setFeed(value); })
-      .catch(() => { if (active) setFeed(fallback); })
+    const refresh = () => fetch(`/policies.json?t=${Date.now()}`, { cache: "no-store" })
+      .then(response => { if (!response.ok) throw new Error("读取失败"); return response.json() as Promise<Feed>; })
+      .then(value => { if (active) {
+        setFeed(value);
+        setLoadError(false);
+        setSelected(current => {
+          const next = canonicalSelections(applicationFeedItems(value), current);
+          localStorage.setItem("policy-radar-selected-ids", JSON.stringify(next));
+          return next;
+        });
+      } })
+      .catch(() => { if (active) setLoadError(true); })
       .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    refresh();
+    const timer = setInterval(refresh, 5 * 60_000);
+    const updateClock = () => setClock(Date.now());
+    const tick = setInterval(updateClock, 60_000);
+    window.addEventListener("focus", updateClock);
+    return () => { active = false; clearInterval(timer); clearInterval(tick); window.removeEventListener("focus", updateClock); };
   }, []);
 
   const allItems = useMemo<DisplayPolicy[]>(() => {
-    const seen = new Set<string>();
-    return [...feed.policies].filter(policy => {
-      if (seen.has(policy.id)) return false;
-      seen.add(policy.id);
-      return true;
-    }).map(policy => ({ ...policy, remaining: daysUntil(policy.deadline), disposition: matchDisposition(policy) })).filter(policy => ["eligible", "supplier_call", "needs_review"].includes(policy.disposition));
-  }, [feed.policies]);
-  const items = useMemo<DisplayPolicy[]>(() => selectPolicyItems(allItems, selected, { tab, disposition: "all", region, query }), [allItems, query, region, selected, tab]);
+    return applicationFeedItems(feed, new Date(clock)).map((policy: Policy & {disposition: MatchDisposition}) => ({ ...policy, remaining: daysUntil(policy.deadline) }));
+  }, [feed, clock]);
+  const regions = useMemo(() => [...new Set(allItems.map(item => item.region).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN")), [allItems]);
+  const items = useMemo<DisplayPolicy[]>(() => selectPolicyItems(allItems, selected, { tab, query, region, now: new Date(clock) }), [allItems, query, region, selected, tab, clock]);
+  const pagination = paginatePolicies(items, page, 30);
+  const clearSearch = () => {setQuery('');setPage(1);};
 
   const updateSelected = (id: string, add: boolean) => setSelected(current => {
     const next = add ? [...new Set([...current, id])] : current.filter(item => item !== id);
@@ -237,41 +196,52 @@ export default function PolicyPage() {
   });
   return <main className="application-page">
     <aside className="app-sidebar">
-      <a className="suyu-logo" href="/" aria-label="溯驭财务首页"><Image className="suyu-logo-mark" src={brandMark} alt="SEEEx" priority /><strong>溯驭财务</strong></a>
+      <Link className="suyu-logo" href="/" aria-label="溯驭财务首页"><Image className="suyu-logo-mark" src={brandMark} alt="SEEEx" priority /><strong>溯驭财务</strong></Link>
       <nav className="side-nav">
-        <a href="/"><Icon name="file" />研发费用</a>
+        <Link href="/"><Icon name="file" />研发费用</Link>
         <a className="active" href="/policy" aria-current="page"><Icon name="folder" />项目申报</a>
         <a href="/salary/"><Icon name="salary" />工资表</a>
       </nav>
     </aside>
     <section className="app-content">
-      <header className="app-header"><button className="menu-button" aria-label="展开菜单"><Icon name="menu" /></button><label className="global-search"><Icon name="search" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索项目、部门、匹配依据等" /><kbd>/</kbd></label></header>
+      <header className="app-header"><button className="menu-button" aria-label="展开菜单"><Icon name="menu" /></button><label className="global-search"><Icon name="search" /><input value={query} onChange={event => {setQuery(event.target.value);setPage(1);}} placeholder="搜索标题、正文、条件、部门或附件" /><kbd>/</kbd></label></header>
       <div className="application-body">
-        <div className="page-intro"><div><h1>政府项目申报</h1><p>仅展示可申报、有效供给方征集，以及时间未过且非活动的待查事项。</p></div></div>
-        <div className="tabs"><button className={tab === "pending" ? "active" : ""} onClick={() => setTab("pending")}>待选项目 <b>{allItems.length - selected.filter(id => allItems.some(item => item.id === id)).length}</b></button><button className={tab === "selected" ? "active" : ""} onClick={() => setTab("selected")}>已选项目 <b>{selected.filter(id => allItems.some(item => item.id === id)).length}</b></button></div>
-        <div className="application-filters">
-          <label><select value={region} onChange={event => setRegion(event.target.value)}><option>全部地区</option><option>国家</option><option>浙江省</option><option>江苏省</option><option>杭州市</option><option>苏州市</option><option>连云港市</option></select><Icon name="chevron" /></label>
-          <span className="update-note">{loading ? "正在更新…" : `更新于 ${formatDate(feed.updatedAt)}`}</span>
-        </div>
+        <div className="page-intro"><div><h1>政府项目申报</h1><p>苏州溯驭、杭州溯驭、连云港溯驭的具体申报事项。企业条件未确认的项目单独标注。</p></div></div>
+        <h2 className="application-section-title" id="application-scope">可申报</h2>
+        <div className="tabs application-tabs" aria-labelledby="application-scope"><button className={tab === "all" ? "active" : ""} aria-pressed={tab === "all"} onClick={() => {setTab("all");setPage(1);}}>本区全部</button><button className={tab === "selected" ? "active" : ""} aria-pressed={tab === "selected"} onClick={() => {setTab("selected");setPage(1);}}>收藏 <b>{selected.filter(id => allItems.some(item => item.id === id)).length}</b></button></div>
+        <label className="region-filter">地区筛选<select value={region} onChange={event => {setRegion(event.target.value);setPage(1);}}><option>全部地区</option>{regions.map(item => <option key={item}>{item}</option>)}</select></label>
+        {loading && <p className="coverage-note" role="status">正在读取项目…</p>}
+        {loadError && <p role="alert" className="coverage-note">项目数据读取失败，请刷新重试。</p>}
         <div className="project-table">
-          <div className="table-head"><span>项目名称及判定</span><span>参与类型 / 支持方式</span><span>时间状态</span><span>资料核验</span><span>查看原文</span><span>操作</span></div>
-          {items.map(policy => {
-            const score = policy.matchScore ?? 0;
-            const evidence = evidenceInfo(policy);
+          <div className="table-head"><span>项目名称及判定</span><span>支持方式</span><span>时间状态</span><span>查看原文</span><span>操作</span></div>
+          {pagination.items.map((policy: DisplayPolicy) => {
             const timing = timeInfo(policy);
-            const reasons = decisionReason(policy);
-            const evidenceTitle = evidence.evidence.length ? `已定位：${evidence.evidence.slice(0, 2).join("、")}` : undefined;
-            return <article className={`project-row disposition-${policy.disposition}`} key={policy.id} title="双击打开官方原文" onDoubleClick={() => window.location.assign(policy.url)}>
-              <div className="project-name"><span className="match-badge" style={{ "--score": score } as CSSProperties}><strong>{score}</strong><small>匹配度</small></span><div><div className="project-title-line"><span className={`disposition-badge ${policy.disposition}`}>{dispositionLabels[policy.disposition]}</span><h2>{policy.title}</h2></div><p>{policy.summary || "政策摘要待补充。"}</p><div className="decision-reasons" aria-label="匹配依据">{reasons.map(reason => <span key={reason}>{reason}</span>)}</div></div></div>
+            const effective = effectiveDisposition(policy);
+            const sourceHref = safeSourceHref(policy);
+            const reasons = asStringList(cardReasons(decisionReason(policy)));
+            const notes = qualificationNotes(policy);
+            return <article className={`project-row disposition-${policy.disposition}`} key={policy.id} title={sourceHref ? "双击查阅来源（未核实记录请先核对原文）" : "原文地址待定位"} onDoubleClick={() => { if (sourceHref) window.location.assign(sourceHref); }}>
+              <div className="project-name"><div>
+                <div className="project-title-line"><h2>{policy.title}</h2></div>
+                <span className="record-kind">{effective === 'eligible' ? '已核验可申报' : effective === 'upcoming' ? '即将开放 · 企业条件请核实' : '企业资格／申报窗口待核实'}</span>
+                {reasons.length > 0 && <div className="decision-reasons" aria-label="匹配依据">{reasons.map(reason => <span key={reason}>{reason}</span>)}</div>}
+                <details className="qualification-details" onDoubleClick={event => event.stopPropagation()}>
+                  <summary>查看企业条件与核查缺口</summary>
+                  <ul className="company-fit-list" aria-label="三家企业适配情况">{companyFitItems(policy).map(c => <li key={c.id}><strong>{c.name}</strong><span className={`company-fit-status ${c.status}`} title={c.description} aria-label={c.description}>{c.label}</span></li>)}</ul>
+                  {notes.length > 0 && <ul>{notes.map(note => <li key={note}>{note}</li>)}</ul>}
+                  {policy.filterReason && <p>{policy.filterReason}</p>}
+                </details>
+              </div></div>
               <div className="support-cell">{supportItems(policy).map(item => <span key={item}>{item}</span>)}</div>
-              <div className="time-cell"><span className={`deadline-cell ${timing.tone}`}>{timing.label}</span>{timing.date && <small>{timing.date}</small>}{timing.reason && <small>{timing.reason}</small>}</div>
-              <div className="evidence-cell" title={evidenceTitle}><span className={`evidence-label ${evidence.sufficient || evidence.score !== undefined && evidence.score >= 80 ? "complete" : evidence.score !== undefined || evidence.missing.length ? "partial" : "unknown"}`}>{evidence.label}</span>{evidence.sufficient && evidence.evidence.length ? <small>已定位 {evidence.evidence.slice(0, 2).join("、")}</small> : evidence.missing.length ? <small>待查：{evidence.missing.slice(0, 2).join("、")}{evidence.missing.length > 2 ? "等" : ""}</small> : evidence.evidence.length ? <small>已定位 {evidence.evidence.slice(0, 2).join("、")}</small> : <small>未提供可核验资料</small>}</div>
-              <a className="source-link" href={policy.url}>{policy.originalVerification?.retrievalStatus === "parsed" || policy.originalVerification?.verified === true ? "查看原文（已读取）" : "查看原文"}</a>
-              {tab === "selected" ? <button className="remove-button" onClick={() => updateSelected(policy.id, false)}>移除</button> : policy.disposition === "ineligible" ? <span className="view-only">仅查看</span> : <button className="select-button" onClick={() => updateSelected(policy.id, true)} aria-label={policy.disposition === "supplier_call" ? "加入已选供给方征集" : policy.disposition === "opportunity" ? "加入已选机会" : "加入已选项目"}><Icon name="plus" /></button>}
+              <div className={`time-cell ${timing.label ? "" : "empty-time"}`}>{timing.label && <span className={`deadline-cell ${timing.tone}`}>{timing.label}</span>}{timing.date && <small>{timing.date}{timing.time ? ` ${timing.time}` : ""}</small>}</div>
+              {sourceHref ? <a className="source-link" href={sourceHref} target="_blank" rel="noopener noreferrer">{policy.linkHealth?.status === "unavailable" ? "查阅原文（历史副本）" : "查阅原文与附件"}</a> : <span className="view-only">原文地址待定位</span>}
+              {selected.includes(policy.id) ? <button className="remove-button" onClick={() => updateSelected(policy.id, false)}>取消收藏</button> : <button className="select-button" onClick={() => updateSelected(policy.id, true)} aria-label="收藏项目"><Icon name="plus" /></button>}
             </article>;
           })}
-          {!items.length && <div className="empty-projects">{tab === "selected" ? "尚未选择项目。" : "当前没有可跟进的项目。"}</div>}
+          {!items.length && !loading && !loadError && <div className="empty-projects">{query ? <>没有符合搜索条件的项目。<button onClick={clearSearch}>清空搜索</button></> : tab === 'selected' ? '暂无收藏的有效申报项目。' : '当前暂无已收录的有效申报项目，仍需继续核查。'}</div>}
         </div>
+        <nav className="policy-pagination" aria-label="记录分页"><button disabled={pagination.page <= 1} onClick={()=>setPage(pagination.page-1)}>上一页</button><span>第 {pagination.page} / {pagination.pages} 页 · 共 {pagination.total} 条 · 每页 30 条</span><button disabled={pagination.page >= pagination.pages} onClick={()=>setPage(pagination.page+1)}>下一页</button></nav>
+        {!loading && feed.updatedAt && <p className="policy-update-note">{feed.refreshMode === 'cached_reassessment' ? '规则重算于（非重新联网核验）' : '数据更新于'} {formatDate(feed.updatedAt)}{feed.coverage?.status === 'partial' ? ' · 来源与企业条件仍在核查中' : ''}</p>}
       </div>
     </section>
   </main>;

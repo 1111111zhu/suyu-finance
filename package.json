@@ -10,7 +10,10 @@
     "build": "vinext build",
     "start": "vinext start",
     "sync:policies": "node scripts/sync-policies.mjs",
-    "test:policy": "node --test tests/policy-matcher.test.mjs tests/policy-feed.test.mjs tests/document-text.test.mjs",
+    "presync:policies": "npm run test:policy",
+    "check:policy-integrity": "node scripts/check-policy-integrity.mjs",
+    "check:policy-links": "node scripts/check-policy-links.mjs",
+    "test:policy": "node --test tests/policy-matcher.test.mjs tests/policy-feed.test.mjs tests/document-text.test.mjs tests/policy-links.test.mjs tests/policy-integrity.test.mjs",
     "sync:company-profile": "node scripts/sync-company-profile.mjs",
     "test:company-profile": "node --test tests/company-profile.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"

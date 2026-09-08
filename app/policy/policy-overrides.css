@@ -1,4 +1,12 @@
 .sync-state.loading { background: #fff4dc; color: #9b6811; }
+.coverage-note { color: #62776d; font-size: 14px; line-height: 1.6; margin: 12px 0; }
+.application-filters { flex-wrap: wrap; }
+.qualification-details { margin-top: 8px; font-size: 14px; line-height: 1.6; }
+.qualification-details summary { color: #08794f; cursor: pointer; }
+.qualification-details p { display: block; white-space: normal; overflow: visible; -webkit-line-clamp: unset; font-size: 14px; }
+.qualification-details a { color: #08794f; }
+.empty-time::before { content: none !important; }
+@media (max-width: 800px) { .time-cell.empty-time { display: none; } }
 .policy-card.unread { border-left: 4px solid #2764e8; }
 .policy-tags b.urgent { background: #c94b30; }
 .policy-tags b.match-score { background: #0d7568; font-size: 11px; }
@@ -128,3 +136,43 @@
   .select-button, .remove-button { justify-self: stretch; width: 100%; height: 40px; }
   .view-only { justify-self: start; margin-left: 79px; }
 }
+.reward-cell { min-width: 0; padding: 12px 8px; color: #315e50; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.reward-cell ul { margin: 0; padding-left: 18px; }
+.reward-cell li + li { margin-top: 6px; }
+@media (max-width: 720px) {
+  .reward-cell { position: relative; padding: 0 0 0 79px; font-size: 14px; }
+  .reward-cell::before { content: "奖励方式"; position: absolute; left: 0; top: 0; color: #6b887e; font-size: 12px; font-weight: 700; }
+}
+.company-fit-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 14px; }
+.company-fit-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 8px 10px; border-radius: 6px; background: #f5f9f7; }
+.company-fit-list strong { font-weight: 600; color: #234d40; }
+.company-fit-status { line-height: 1.5; }
+.company-fit-status.eligible { color: #08794f; }
+.company-fit-status.pending { color: #8b641b; }
+.company-fit-status.ineligible { color: #737d78; }
+.local-requirements { display: grid; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #dfebe5; color: #497468; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.local-requirements a { color: #08794f; text-decoration: underline; text-underline-offset: 3px; }
+/* 当前申报清单不展示奖励方式列；地区作为唯一显式列表筛选。 */
+.region-filter { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 16px; color: #285c50; font-size: 14px; }
+.region-filter select { min-width: 150px; padding: 9px 12px; border: 1px solid #dceae4; border-radius: 8px; color: #244f44; background: #fff; font: inherit; }
+.table-head, .project-row { grid-template-columns: minmax(370px, 1.25fr) minmax(145px, .65fr) 150px 105px 80px; }
+.reward-cell { display: none; }
+@media (max-width: 1100px) { .table-head, .project-row { grid-template-columns: minmax(340px, 1.4fr) 135px 130px 85px; } .table-head span:nth-child(4), .source-link { display: block; } }
+@media (max-width: 800px) { .region-filter { width: 100%; } .region-filter select { flex: 1; } }
+@media (max-width: 720px) { .table-head, .project-row { min-width: 1060px; grid-template-columns: minmax(405px, 1.55fr) minmax(130px, .55fr) minmax(128px, .48fr) 88px 62px; } }
+/* Separate review/audit surfaces: never mix unverified leads into project counts. */
+.scope-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; }
+.scope-tabs button,.reset-filters,.policy-pagination button { font:inherit; font-size:14px; padding:9px 14px; background:#fff; border:1px solid #c8d9d3; border-radius:8px; color:#205247; cursor:pointer; }
+.scope-tabs button.active { background:#e4f3eb; border-color:#258360; }
+.coverage-panel { margin:14px 0 20px; padding:14px 18px; border:1px solid #dfc994; background:#fffaf0; border-radius:10px; font-size:14px; line-height:1.7; }
+.coverage-panel summary { cursor:pointer; font-weight:600; }
+.coverage-panel ul { max-height:260px; overflow:auto; padding-left:22px; }
+.record-kind { display:block; margin:6px 0; color:#71571e; font-size:14px; }
+.policy-pagination { display:flex; align-items:center; justify-content:center; gap:16px; padding:22px 0; font-size:14px; }
+.policy-pagination button:disabled { opacity:.45; cursor:default; }
+.application-filters { flex-wrap:wrap; }
+.application-section-title { margin: 24px 0 0; color: #234d40; font-size: 18px; font-weight: 600; }
+.tabs.application-tabs { margin: 12px 0 24px; }
+.application-tabs button { cursor: pointer; }
+.application-tabs button:focus-visible { outline: 2px solid #08794f; outline-offset: 3px; }
+.policy-update-note { margin: 0; color: #6b887e; font-size: 13px; line-height: 1.6; text-align: center; }

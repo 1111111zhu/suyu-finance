@@ -1,16 +1,26 @@
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, copyFile, cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { extractApplicationTiming } from "./policy-time.mjs";
+import { auditPolicies } from "./policy-matcher.mjs";
+import { officialBody, parseSushangIndex, collectPagedRecords } from "./policy-collection.mjs";
 import { detectDocumentType, extractDocumentText } from "./document-text.mjs";
 import { assertViablePolicyFeed, buildPolicyFeed } from "./policy-feed.mjs";
+import { auditPolicyLinks } from "./policy-links.mjs";
+import { DISCOVERY_SIGNAL, PARSER_VERSION, inferPolicyRegion, originalBinding, reviewQueue } from './policy-integrity.mjs';
+import { policyWatchlist, additionalFundingSources } from '../data/policy-watchlist.mjs';
+import { pathToFileURL } from 'node:url';
+import {candidateContentHash, expandApplicationItems} from './policy-records.mjs';
+import { assertPolicyRulesLoaded, loadPolicyRules } from "./policy-rules.mjs";
+export {candidateContentHash} from './policy-records.mjs';
 
 const outputPath = path.resolve(process.cwd(), "public/policies.json");
 const deployedOutputPath = path.resolve(process.cwd(), "dist/client/policies.json");
 const companyProfilePath = path.resolve(process.cwd(), "public/company-profile.json");
-const keywords = /(申报|征集|补助|补贴|奖励|扶持|资助|资金|科技|研发|创新|中小企业|专精特新|高新技术)/;
-const excludedTopics = /(基础教育|教学改革|卫生高级职称|失能老年人|竞技体育|非盈利性工程建设|行政决策事项|民生实事)/;
+const keywords = DISCOVERY_SIGNAL;
+const sourceProgress = new Map();
 const completedActivityPattern = /(?:成功举办|圆满举办|顺利举办|活动回顾|工作动态|经验交流|会议纪要)/;
 const applicationDocumentPattern = /(?:项目申报|申报指南|申报主体|申报条件|申报要求|申请条件|申请主体|征集公告|申报通知|受理时间)/;
-const corePriorityPattern = /(?:氢能|燃料电池|制氢|储氢|电控|电力电子|能量管理|功率控制|碳化硅|低空经济|无人机|飞控|新型储能|新型电力系统|微电网|源网荷储|绿色低碳|智能制造|技术改造|专精特新|高新技术企业)/i;
 
 function paginatedListUrls(url, pages) {
   const match = url.match(/^(.*\/)([^/?#]+)(\.[a-z]+)$/i);
@@ -19,6 +29,7 @@ function paginatedListUrls(url, pages) {
 }
 
 const htmlSources = [
+  ...additionalFundingSources,
   { id: "national", name: "国务院政策文件库", region: "国家", level: "国家级", url: "https://www.gov.cn/zhengce/zhengceku/bmwj/home.htm" },
   { id: "ndrc-notices", name: "国家发展改革委通知公告", region: "国家", level: "国家级", url: "https://www.ndrc.gov.cn/xwdt/tzgg/" },
   { id: "ndrc-circulars", name: "国家发展改革委通知", region: "国家", level: "国家级", url: "https://www.ndrc.gov.cn/xxgk/zcfb/tz/" },
@@ -57,13 +68,6 @@ const jiangsuStructuredSources = [
   { id: "jiangsu-miit-xml", name: "江苏省工业和信息化厅结构化通知", region: "江苏省", level: "省级", host: "https://gxt.jiangsu.gov.cn", listPath: "/col/col6278/index.html", webId: "23", columnId: "6278", unitId: "403981", webName: "江苏省工业和信息化厅", pages: 4 },
   { id: "jiangsu-ndrc-xml", name: "江苏省发展和改革委员会结构化通知", region: "江苏省", level: "省级", host: "https://fzggw.jiangsu.gov.cn", listPath: "/col/col284/index.html", webId: "3", columnId: "284", unitId: "423656", webName: "江苏省发展和改革委员会", pages: 2 },
   { id: "jiangsu-ip-xml", name: "江苏省知识产权局结构化通知", region: "江苏省", level: "省级", host: "https://jsip.jiangsu.gov.cn", listPath: "/col/col85036/index.html", webId: "16", columnId: "85036", unitId: "360321", webName: "江苏省知识产权局", pages: 2 },
-];
-
-const hangzhouIncubatorManagementOfficialText = `杭州市科学技术局关于印发《杭州市科技企业孵化器管理办法》的通知。杭科高〔2023〕118号。各区、县（市）科技局，各有关单位：现印发《杭州市科技企业孵化器管理办法》，请遵照执行。\n\n杭州市科技企业孵化器管理办法\n\n市级孵化器是促进科技成果转化、培育科技企业的科技创业服务机构。申请认定市级孵化器的运营主体应依法登记注册；在孵企业主要从事新技术、新产品的研发、生产和服务，或开展高价值科技成果转化，满足科技型中小企业相关要求。\n\n三、申报与管理\n（一）认定程序。1. 在线申报。孵化器运营主体通过孵化器数字管理平台在线提出申请，并提交相应申报材料。2. 审核推荐。各地科技管理部门对申报材料进行审核，向市科技局提交核查报告和推荐名单。3. 复审核验。市科技局对推荐名单进行复核，必要时组织专家进行现场考察。4. 公示发文。\n\n四、扶持政策\n（一）运营资助。对年度绩效评价为五星、四星等次的市级孵化器，按照五星30万元、四星20万元给予运营资助。\n（二）绩效奖励。对年度绩效评价为三星及以上等次的市级孵化器，孵化企业在孵期间或毕业后1年内通过高新技术企业和技术先进型服务企业备案的，给予所在市级孵化器每家不超过15万元的绩效奖励。\n（三）升级奖励。对市级孵化器新升级为省级孵化器的，给予不超过50万元一次性奖励，从省级孵化器升级为国家级孵化器的，再给予不超过50万元一次性奖励。\n\n五、促进与发展。鼓励孵化“飞地”建设，支持行业龙头企业、高校、科研院所、新型研发机构、投资机构等开展垂直孵化，推动大中小企业融通发展。\n\n六、附则。本办法自2024年1月26日起施行，有效期至2027年12月31日。`;
-
-const fixedPolicies = [
-  { id: "hangzhou-runmiao", title: "实施“润苗计划”陪伴式扶持科技型初创企业高质量发展", region: "杭州市", level: "市级", department: "杭州市人民政府办公厅", publishDate: "2025-10-14", deadline: "", category: "科技创新", summary: "面向科技型初创企业建立种子企业、好苗子企业梯度培育和政策支持体系。", url: "https://zfgb.hangzhou.gov.cn/10/110220253/t114220253104/529697.shtml", sourceName: "杭州市人民政府公报", firstSeenAt: new Date().toISOString() },
-  { id: "hangzhou-incubator-management-2024", title: "杭州市科学技术局关于印发《杭州市科技企业孵化器管理办法》的通知", region: "杭州市", level: "市级", department: "杭州市科学技术局", publishDate: "2023-12-26", deadline: "", category: "科技创新", summary: "市级孵化器运营主体可在线申报认定；办法包含运营资助、绩效奖励和升级奖励，自2024年1月26日起施行，有效期至2027年12月31日。", pinnedOriginalContent: hangzhouIncubatorManagementOfficialText, url: "https://zfgb.hangzhou.gov.cn/11/105220253/t117220253054/518591.shtml", sourceName: "杭州市人民政府公报（固定官方原文）", firstSeenAt: new Date().toISOString() },
 ];
 
 function decode(value = "") {
@@ -151,27 +155,23 @@ function findDeadlineInfo(text) {
 }
 const findDeadline = (text) => findDeadlineInfo(text).date;
 
-function compactText(value = "") {
-  return decode(value).replace(/[\s\p{P}\p{S}]+/gu, "").toLowerCase();
-}
-
-function verifyOriginalDocument(policy, content, checkedAt) {
-  const title = compactText(policy.title);
-  const body = compactText(content);
-  const titleMatched = title.length >= 8 && body.includes(title);
+export function verifyOriginalDocument(policy, content, checkedAt) {
+  const bindingStatus = originalBinding(policy.title, content);
+  const titleMatched = bindingStatus === 'matched';
   const completedActivity = completedActivityPattern.test(`${policy.title || ""} ${content}`);
   const hasApplicationSignal = applicationDocumentPattern.test(content);
-  // 只要官方页面/附件成功读取就是 parsed。标题一致性、申报关键词和
-  // 已举办活动只作为诊断信息，不再是“可申报”的隐性前置条件。
+  // 读取状态与正文关联分开；parsed 不能代替 matched，更不能证明企业可申报。
   return {
-    verified: true,
+    verified: titleMatched,
+    parserVersion: PARSER_VERSION,
+    bindingStatus,
     retrievalStatus: "parsed",
     checkedAt,
     titleMatched,
     hasApplicationSignal,
     completedActivity,
     diagnostics: { titleMatched, hasApplicationSignal, completedActivity },
-    reason: "已读取官方原文",
+    reason: titleMatched ? "已读取与标题关联的原文，企业资格仍须独立核验" : "已取得内容，但标题与正文关联待核；不得作为真实项目证据",
   };
 }
 
@@ -251,31 +251,11 @@ async function parseDocumentResource(url) {
   return text;
 }
 
-function policyPriority(policy, now = new Date()) {
-  const { year: shanghaiYear, iso: today } = shanghaiDate(now);
-  const text = `${policy.title || ""} ${policy.summary || ""} ${policy.department || ""} ${policy.region || ""}`;
-  const currentYear = policy.publishDate?.startsWith(shanghaiYear) || text.includes(shanghaiYear);
-  const stillOpen = policy.deadline && policy.deadline >= today;
-  const targetRegion = text.includes("吴江") ? 600 : text.includes("苏州") ? 500 : text.includes("江苏") ? 400 : 0;
-  return (stillOpen ? 1200 : 0) + (currentYear ? 1000 : 0) + targetRegion + (corePriorityPattern.test(text) ? 350 : 0) + Number(policy.publishDate?.replaceAll("-", "") || 0) / 100_000_000;
-}
-
 async function enrichPolicyDetail(policy) {
   const checkedAt = new Date().toISOString();
+  policy.lastAttemptAt = checkedAt;
   try {
-    if (policy.pinnedOriginalContent) {
-      const fullContent = String(policy.pinnedOriginalContent);
-      policy.originalVerification = verifyOriginalDocument(policy, fullContent, checkedAt);
-      const deadline = findDeadlineInfo(fullContent);
-      policy.content = fullContent.slice(0, 120_000);
-      policy.deadline = deadline.date || policy.deadline;
-      policy.deadlineTime = deadline.time || policy.deadlineTime || "";
-      policy.publishDate = policy.publishDate || findDate(fullContent);
-      policy.summary = fullContent.slice(0, 220) || policy.summary;
-      delete policy.pinnedOriginalContent;
-      return "parsed";
-    }
-    if (/\.(xlsx?|zip)(?:\?|$)/i.test(policy.url)) {
+    if (/\.(xls|zip)(?:\?|$)/i.test(policy.url)) {
       policy.originalVerification = { ...policy.originalVerification, retrievalStatus: "unsupported", checkedAt, reason: "该附件不是 PDF 或 Word 正文，待查" };
       return "unsupported";
     }
@@ -291,26 +271,33 @@ async function enrichPolicyDetail(policy) {
       const redirectedToHome = requestedUrl.pathname !== finalUrl.pathname && /(?:^\/$|\/(?:index|default)\.(?:s?html?|jsp)$)/i.test(finalUrl.pathname);
       if (redirectedToHome) throw new Error("官方详情链接重定向到门户首页");
       detailHtml = decodeResourceText(resource.bytes, resource.contentType);
-      fullContent = decode(detailHtml.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " "));
-      const attachmentUrls = [...detailHtml.matchAll(/href=["']([^"']+\.(?:pdf|docx?|PDF|DOCX?)(?:\?[^"']*)?)["']/g)]
+      fullContent = officialBody(detailHtml);
+      policy.referencedUrls = [...detailHtml.matchAll(/href=["']([^"']+)["']/gi)].map(match => normalizeUrl(match[1], policy.url)).filter(Boolean);
+      const attachmentUrls = [...detailHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)]
+        .filter(match => /\.(?:pdf|docx?|xlsx?|zip)(?:[?"'\s<]|$)|downFileEx/i.test(`${match[1]} ${decode(match[2])}`))
         .map((match) => normalizeUrl(match[1], resource.finalUrl || policy.url))
         .filter(Boolean)
-        .filter((url, index, all) => all.indexOf(url) === index)
-        .slice(0, 3);
+        .filter((url, index, all) => all.indexOf(url) === index);
       const attachmentText = [];
+      policy.attachments = [];
       for (const attachmentUrl of attachmentUrls) {
         try {
           attachmentText.push(await parseDocumentResource(attachmentUrl));
-        } catch { /* the HTML body is still a successfully parsed official source */ }
+          policy.attachments.push({ url: attachmentUrl, status: "parsed" });
+        } catch (error) {
+          policy.attachments.push({ url: attachmentUrl, status: "failed", reason: String(error.message || error) });
+        }
       }
       if (attachmentText.length) fullContent = `${fullContent}\n${attachmentText.join("\n")}`;
     }
     if (!fullContent.trim()) throw new Error("官方原文未提取到可用文字");
     policy.originalVerification = verifyOriginalDocument(policy, fullContent, checkedAt);
-    const deadline = findDeadlineInfo(fullContent);
+    if (policy.attachments?.some(a => a.status !== "parsed") || fullContent.length > 120_000) policy.originalVerification = { ...policy.originalVerification, verified: false, retrievalStatus: "partial", reason: "正文已读，关键附件或超长内容尚未完整解析" };
+    const deadline = extractApplicationTiming({ ...policy, content: fullContent });
     policy.content = fullContent.slice(0, 120_000);
-    policy.deadline = deadline.date || policy.deadline;
-    policy.deadlineTime = deadline.time || policy.deadlineTime || "";
+    policy.contentHash = candidateContentHash(policy);
+    policy.deadline = deadline.deadlineDate;
+    policy.deadlineTime = deadline.deadlineTime;
     policy.publishDate = policy.publishDate || findDate(fullContent);
     policy.summary = fullContent.slice(0, 220) || policy.summary;
     return "parsed";
@@ -327,22 +314,12 @@ async function enrichPolicyDetail(policy) {
 }
 
 async function enrichPolicyDetails(policies, { limit: requestedLimit } = {}) {
-  for (const policy of policies) {
-    policy.originalVerification = {
-      verified: false,
-      retrievalStatus: "not_checked",
-      checkedAt: null,
-      titleMatched: false,
-      hasApplicationSignal: false,
-      completedActivity: false,
-      diagnostics: { titleMatched: false, hasApplicationSignal: false, completedActivity: false },
-      reason: "尚未读取官方原文，已放入待查",
-    };
-  }
-  const configuredLimit = Number.parseInt(process.env.POLICY_SYNC_DETAIL_LIMIT || "240", 10);
+  for (const policy of policies) policy.originalVerification ||= {verified:false,retrievalStatus:'not_checked',reason:'尚未读取原文'};
+  const configuredLimit = Number.parseInt(process.env.POLICY_SYNC_DETAIL_LIMIT || "480", 10);
   const configuredDetailLimit = Number.isFinite(configuredLimit) ? Math.max(0, Math.min(policies.length, configuredLimit)) : Math.min(policies.length, 240);
   const detailLimit = Number.isFinite(requestedLimit) ? Math.max(0, Math.min(policies.length, requestedLimit)) : configuredDetailLimit;
-  const queue = [...policies].sort((a, b) => policyPriority(b) - policyPriority(a)).slice(0, detailLimit);
+  const queue = reviewQueue(policies).slice(0, detailLimit);
+  await writeJsonAtomically(path.resolve('.policy-cache/review-queue.json'), {updatedAt:new Date().toISOString(),pendingIds:reviewQueue(policies).map(p=>p.id),scheduledIds:queue.map(p=>p.id)});
   const concurrency = Math.max(1, Math.min(12, Number.parseInt(process.env.POLICY_SYNC_CONCURRENCY || "6", 10) || 6));
   const hostDelay = Math.max(0, Math.min(2_000, Number.parseInt(process.env.POLICY_SYNC_HOST_DELAY_MS || "120", 10) || 0));
   const hostQueues = new Map();
@@ -363,6 +340,8 @@ async function enrichPolicyDetails(policies, { limit: requestedLimit } = {}) {
       for (let index = 0; index < hostPolicies.length; index += 1) {
         const policy = hostPolicies[index];
         const result = await enrichPolicyDetail(policy);
+        // Checkpoint each result; interruption does not reset the queue next time.
+        await writeJsonAtomically(path.resolve(`.policy-cache/details/${encodeURIComponent(policy.id)}.json`), policy);
         consecutiveFailures = result === "failed" ? consecutiveFailures + 1 : 0;
         if (consecutiveFailures >= 2) {
           for (const deferred of hostPolicies.slice(index + 1)) {
@@ -377,78 +356,84 @@ async function enrichPolicyDetails(policies, { limit: requestedLimit } = {}) {
   return policies;
 }
 
-async function enrichVisibleReviewPolicies(candidates, sourceStatus, companyProfile) {
-  // The first detail pass is intentionally capped so a large public index does
-  // not overload government sites. That cap must never leave an otherwise
-  // page-worthy policy permanently in "待查" just because it was published
-  // before the current year. Re-read the small visible review queue, then let
-  // the matcher make its decision from the official original.
-  const preliminary = buildPolicyFeed(candidates, sourceStatus, companyProfile, new Date());
-  const reviewIds = new Set(
-    preliminary.policies
-      .filter((policy) => policy.decision === "needs_review" && policy.originalVerification?.retrievalStatus === "not_checked")
-      .map((policy) => policy.id),
-  );
-  const configuredLimit = Number.parseInt(process.env.POLICY_VISIBLE_REVIEW_DETAIL_LIMIT || "60", 10);
-  const limit = Number.isFinite(configuredLimit) ? Math.max(0, Math.min(120, configuredLimit)) : 60;
-  const queue = candidates
-    .filter((policy) => reviewIds.has(policy.id))
-    .sort((left, right) => visibleReviewPriority(right) - visibleReviewPriority(left))
-    .slice(0, limit);
-  if (queue.length) await enrichPolicyDetails(queue, { limit: queue.length });
-}
-
-function visibleReviewPriority(policy) {
-  const title = String(policy.title || "");
-  const directDocument = /\.(?:pdf|docx?)(?:[?#]|$)/i.test(String(policy.url || ""));
-  // These are standing support policies rather than annual calls. Their
-  // publication date is often old, so the general current-year priority alone
-  // would starve them behind a large number of fresh, unverified notices.
-  const standingPolicy = /(?:政策|办法|措施|意见|规划)/.test(title)
-    && !/(?:\d{4}年度|申报|申请|征集|认定|推荐|评选|遴选|填报|报送)/.test(title);
-  return policyPriority(policy) + (standingPolicy ? 900 : 0) + (directDocument ? 300 : 0);
+async function collectSushang() {
+  const first = "https://sst.suzhou.gov.cn/ndaservplat/Apps/sme/index.php?s=/Home/Notice/index";
+  let url = sourceProgress.get('sushang')?.nextUrl || first;
+  const seen = new Set();
+  const policies = [];
+  const limit = Number(process.env.POLICY_SUSHANG_PAGES || 25);
+  while (url && seen.size < limit) {
+    seen.add(url);
+    const parsed = parseSushangIndex(await fetchText(url), url);
+    policies.push(...parsed.records);
+    url = parsed.next && !seen.has(parsed.next) ? parsed.next : null;
+  }
+  const result = dedupe(policies);
+  result.incomplete = Boolean(url);
+  result.progress = {nextUrl:url,paginationExhausted:!url};
+  // Always overlap the first page on a resumed backfill.
+  if (sourceProgress.get('sushang')?.nextUrl) result.push(...parseSushangIndex(await fetchText(first),first).records.filter(p=>!result.some(r=>r.id===p.id)));
+  return result;
 }
 
 async function collectSuzhou() {
   const endpoint = "https://www.suzhou.gov.cn/szinf/interfaceZcwjkAll/page";
-  const { year } = shanghaiDate();
-  const searchTerms = ["申报", "征集", "认定", "补助", "奖励", "氢能", "低空"];
-  const payloads = await Promise.all(searchTerms.map((title) => fetchText(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ page: "1", size: "200", titleType: "2", year, title }).toString(),
-  }).then((text) => JSON.parse(text))));
-  const rows = payloads.flatMap((payload) => payload?.data?.records || payload?.data?.list || payload?.records || payload?.rows || []);
-  const policies = rows.filter((row) => keywords.test(row.title || "") && !excludedTopics.test(row.title || "")).map((row) => {
-    const url = normalizeUrl(row.url || row.linkUrl || "", "https://www.suzhou.gov.cn/");
-    const title = decode(row.title);
-    const content = decode(row.memo || row.content || "");
-    const deadline = findDeadlineInfo(row.content || row.memo || "");
-    return { id: stableId("suzhou", url, title), title, region: "苏州市", level: "市级", department: decode(row.fbjg) || "苏州市政府相关部门", publishDate: findDate(row.publishedTimeFormat || row.fwTimeFormat || ""), deadline: deadline.date, deadlineTime: deadline.time, category: "政策申报", summary: content.slice(0, 180), url, sourceName: "苏州市政策文件库", firstSeenAt: new Date().toISOString() };
-  }).filter((item) => item.title && item.url);
-  return dedupe(policies);
+  const terms = ["申报","申领","兑现","征集","认定","补助","奖励","贴息","券","资助"];
+  const rows = [], termProgress = {};
+  for (const title of terms) {
+    try {
+      const batch = await collectPagedRecords({startPage:sourceProgress.get('suzhou')?.termProgress?.[title]?.nextPage || 2,pageSize:100,maxPages:Number(process.env.POLICY_SOURCE_PAGE_LIMIT || 3),fetchPage:async page=>{
+        const payload=JSON.parse(await fetchText(endpoint,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({page:String(page),size:'100',titleType:'2',title}).toString()}));
+        const list=payload?.data?.records || payload?.data?.list || payload?.records || payload?.rows;
+        if (!Array.isArray(list)) throw new Error('苏州政策库列表结构异常');
+        return {rows:list,total:payload?.data?.total ?? payload?.total};
+      }});
+      rows.push(...batch.rows);
+      termProgress[title]={nextPage:batch.nextPage,paginationExhausted:batch.paginationExhausted,error:batch.error};
+    } catch(error) { termProgress[title]={...sourceProgress.get('suzhou')?.termProgress?.[title],paginationExhausted:false,error:String(error.message || error)}; }
+  }
+  const policies=rows.map(row=>{
+    const url=normalizeUrl(row.url || row.linkUrl || '',"https://www.suzhou.gov.cn/");
+    const title=decode(row.title),content=decode(row.memo || row.content || '');
+    return {id:stableId('suzhou',url || String(row.id || ''),title),title,region:'苏州市',level:'市级',department:decode(row.fbjg) || '苏州市政府相关部门',publishDate:findDate(row.publishedTimeFormat || row.fwTimeFormat || ''),category:'政策申报',summary:content.slice(0,180),content,url,sourceName:'苏州市政策文件库',firstSeenAt:new Date().toISOString()};
+  }).filter(p=>p.title);
+  const result=dedupe(policies);
+  result.incomplete=Object.values(termProgress).some(p=>!p.paginationExhausted);
+  result.progress={termProgress,paginationExhausted:!result.incomplete};
+  return result;
 }
 
 async function collectHtmlSource(source) {
   const policies = [];
-  for (const sourceUrl of source.urls || [source.url]) {
+  const pending = [...new Set([...(source.urls || [source.url]), ...(sourceProgress.get(source.id)?.pendingPageUrls || [])])];
+  const seen = new Set(), limit = Math.max(1, Number(process.env.POLICY_SOURCE_PAGE_LIMIT || 6));
+  while (pending.length && seen.size < limit) {
+    const sourceUrl = pending.shift();
+    if (seen.has(sourceUrl)) continue;
+    seen.add(sourceUrl);
     const html = await fetchText(sourceUrl);
     const anchorPattern = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
     let match;
-    while ((match = anchorPattern.exec(html)) && policies.length < 160) {
-      const rawTitle = decode(match[2]);
+    while ((match = anchorPattern.exec(html))) {
+      const rawTitle = decode(match[0].match(/\btitle=["']([^"']+)["']/i)?.[1] || match[2]);
       if (/活动日期|产销融通对接会|直播预告/.test(rawTitle)) continue;
       const title = rawTitle.replace(/^(?:申报中|未开始|进行中)\s*/, "").replace(/^审核认定\s+\S+\s+/, "").replace(/\s*申报日期[:：][\s\S]*$/, "").replace(/\s+NEW\s+发布时间[:：][\s\S]*$/i, "").replace(/\s+发文日期[:：][\s\S]*$/, "").replace(/\s+[a-f0-9]{32}$/i, "").trim();
-      if (title.length < 8 || title.length > 150 || !keywords.test(title) || excludedTopics.test(title)) continue;
+      if (!title || !keywords.test(title)) continue;
       const url = normalizeUrl(match[1], sourceUrl);
       if (!url || !/^https?:/.test(url)) continue;
       const context = html.slice(Math.max(0, match.index - 120), Math.min(html.length, anchorPattern.lastIndex + 180));
-      const explicitCity = rawTitle.match(/([\u4e00-\u9fff]{2,6}市)/)?.[1];
-      const region = /吴江区|吴江/.test(`${rawTitle} ${source.name}`) ? "苏州市" : /杭州市|【杭州/.test(rawTitle) ? "杭州市" : /苏州市|【苏州/.test(rawTitle) ? "苏州市" : /连云港市|【连云港/.test(rawTitle) ? "连云港市" : explicitCity || source.region;
+      const region = inferPolicyRegion(rawTitle, source);
       policies.push({ id: stableId(source.id, url, title), title, region, level: source.level || (region.endsWith("市") ? "市级" : "省级"), department: source.name, publishDate: findDate(decode(context)), deadline: findDeadline(context), category: "政策申报", summary: "来自政府官方公开栏目的政策信息，请点击原文查看完整申报条件与材料要求。", url, sourceName: source.name, firstSeenAt: new Date().toISOString() });
     }
+    for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>\s*(?:下一页|下页|Next)[\s\S]*?<\/a>/gi)) {
+      const next = normalizeUrl(m[1],sourceUrl);
+      if (next && new URL(next).host === new URL(sourceUrl).host && !seen.has(next) && !pending.includes(next)) pending.push(next);
+    }
   }
-  return dedupe(policies);
+  const result = dedupe(policies);
+  result.incomplete = true; // Absence of a next link is not proof of a historical waterline.
+  result.progress = {pendingPageUrls:pending,paginationExhausted:false,pagesRead:seen.size};
+  return result;
 }
 
 function timestampToDate(value) {
@@ -457,33 +442,50 @@ function timestampToDate(value) {
 }
 
 async function collectZhejiangEnterpriseApi() {
-  const areas = [["33", "浙江省"], ["330100", "杭州市"], ["330102", "杭州市"], ["330105", "杭州市"], ["330106", "杭州市"], ["330108", "杭州市"], ["330109", "杭州市"], ["330110", "杭州市"], ["330111", "杭州市"], ["330112", "杭州市"], ["330113", "杭州市"], ["330114", "杭州市"], ["330122", "杭州市"], ["330127", "杭州市"], ["330182", "杭州市"]];
-  const batches = await Promise.all(areas.map(async ([areaCode, region]) => {
-    const policies = [];
-    const url = new URL("https://hqpt.jxt.zj.gov.cn/gateway/provider-zcgj-ent/elastic/policy/search/query");
-    Object.entries({ requestData: "true", pageNo: "1", pageSize: "100", sortColumn: "publishDate", declare: "true", showState: "2", areaCode }).forEach(([key, value]) => url.searchParams.set(key, value));
-    const payload = JSON.parse(await fetchText(url.href));
-    for (const row of payload?.result?.records || []) {
-      const title = decode(row.policyTitle || row.title || "");
-      const content = decode(row.interContent || row.content || "");
-      const declaration = row.declareList?.find((item) => item.showState === 2) || {};
-      const deadline = findDeadlineInfo(`${content} ${declaration.declareEndTime || ""}`);
-      const original = row.policyOriginalFilePath || declaration.pcLink || "";
-      if (!title || !original) continue;
-      policies.push({ id: stableId(`zhejiang-enterprise-api-${areaCode}`, original, title), title, region, level: region === "杭州市" ? "市级" : "省级", department: decode(row.department || row.publishDept || "浙江省企业之家"), publishDate: row.publishDate || "", deadline: deadline.date, deadlineTime: deadline.time, category: decode(row.policyCategoryText || "政策申报"), summary: content.slice(0, 220), content, url: original, sourceName: "浙江省企业之家（申报中）", firstSeenAt: new Date().toISOString() });
+  const areas = [["33","浙江省"],["330100","杭州市"], ...["330102","330105","330106","330108","330109","330110","330111","330112","330113","330114","330122","330127","330182"].map(c=>[c,"杭州市"])];
+  const policies = [], areaProgress = {};
+  // Sequential areas avoid bursts at the shared government gateway.
+  for (const [areaCode, region] of areas) {
+    try {
+    const result = await collectPagedRecords({
+      startPage:sourceProgress.get('zhejiang-enterprise-api')?.areaProgress?.[areaCode]?.nextPage || 2,
+      maxPages:Number(process.env.POLICY_SOURCE_PAGE_LIMIT || 3),pageSize:100,
+      fetchPage:async page => {
+        const url = new URL("https://hqpt.jxt.zj.gov.cn/gateway/provider-zcgj-ent/elastic/policy/search/query");
+        Object.entries({requestData:"true",pageNo:String(page),pageSize:"100",sortColumn:"publishDate",areaCode}).forEach(([k,v])=>url.searchParams.set(k,v));
+        const payload = JSON.parse(await fetchText(url.href));
+        if (!Array.isArray(payload?.result?.records)) throw new Error("企业之家列表结构异常，不能当作零条");
+        return {rows:payload.result.records,total:payload.result.total};
+      }
+    });
+    areaProgress[areaCode] = {nextPage:result.nextPage,paginationExhausted:result.paginationExhausted,error:result.error};
+    for (const row of result.rows) {
+      const title=decode(row.policyTitle || row.title || ""), content=decode(row.interContent || row.content || "");
+      if (!title) continue;
+      const declaration=row.declareList?.find(d=>d.showState===2) || row.declareList?.[0] || {};
+      const original=row.policyOriginalFilePath || declaration.pcLink || "";
+      policies.push({id:stableId("zhejiang-enterprise-api-"+areaCode,original,title),title,region,level:areaCode==="33"?"省级":"市区级",department:decode(row.department || row.publishDept || "浙江省企业之家"),publishDate:row.publishDate || "",category:decode(row.policyCategoryText || "政策线索"),summary:content.slice(0,220),content,url:original,sourceName:"浙江省企业之家（全状态）",firstSeenAt:new Date().toISOString()});
     }
-    return policies;
-  }));
-  return batches.flat();
+    } catch(error) { areaProgress[areaCode]={...sourceProgress.get('zhejiang-enterprise-api')?.areaProgress?.[areaCode],paginationExhausted:false,error:String(error.message || error)}; }
+  }
+  const result=dedupe(policies);
+  result.incomplete=Object.values(areaProgress).some(p=>!p.paginationExhausted);
+  result.progress={areaProgress,paginationExhausted:!result.incomplete};
+  return result;
 }
 
 async function collectSuzhouEnterpriseApi() {
-  const listUrl = "https://www.qyfw.suzhou.com.cn/gateway/policy/api/ua/policy/today-declare?current=1&size=100";
-  const payload = JSON.parse(await fetchText(listUrl));
-  const rows = payload?.data?.records || [];
+  const batch=await collectPagedRecords({startPage:sourceProgress.get('suzhou-enterprise-api')?.nextPage || 2,pageSize:100,maxPages:Number(process.env.POLICY_SOURCE_PAGE_LIMIT || 3),fetchPage:async page=>{
+    const payload=JSON.parse(await fetchText("https://www.qyfw.suzhou.com.cn/gateway/policy/api/ua/policy/today-declare?current="+page+"&size=100"));
+    if (!Array.isArray(payload?.data?.records)) throw new Error('苏州企业服务列表结构异常');
+    return {rows:payload.data.records,total:payload.data.total};
+  }});
+  const rows=batch.rows;
   const policies = await Promise.all(rows.map(async (row) => {
-    const detailPayload = JSON.parse(await fetchText(`https://www.qyfw.suzhou.com.cn/gateway/policy/api/ua/policy/detail?id=${encodeURIComponent(row.id)}`));
-    const detail = detailPayload?.data || row;
+    let detail=row, indexDetailError;
+    try { detail=JSON.parse(await fetchText(`https://www.qyfw.suzhou.com.cn/gateway/policy/api/ua/policy/detail?id=${encodeURIComponent(row.id)}`))?.data || row; }
+    catch(error) { indexDetailError=String(error.message || error); }
+    detail.indexDetailError=indexDetailError;
     const title = decode(detail.title || row.title || "");
     const content = decode(detail.content || row.policySystemDesc || "");
     const dateText = `${detail.declarationDate || row.declarationDate || ""} ${(detail.declarationDateList || row.declarationDateList || []).map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" ")}`;
@@ -492,21 +494,24 @@ async function collectSuzhouEnterpriseApi() {
     // Do not expose an API JSON endpoint as "查看原文". A record without an
     // independently verifiable original is held back until its source file is
     // supplied by the official platform.
-    if (!title || !sourceUrl) return null;
+    if (!title) return null;
     return { id: stableId("suzhou-enterprise-api", String(row.id), title), title, region: decode(detail.city || "苏州市").includes("苏州") ? "苏州市" : "江苏省", level: "市级", department: decode(detail.department || row.department || "苏州市企业服务平台"), publishDate: findDate(detail.publishTime || row.publishTime || ""), deadline: deadline.date, deadlineTime: deadline.time, category: decode(detail.categoryDesc || row.categoryDesc || "政策申报"), summary: content.slice(0, 220), content, url: sourceUrl, sourceName: "苏州市企业服务平台（申报中）", firstSeenAt: new Date().toISOString() };
   }));
-  return policies.filter(Boolean);
+  const result=dedupe(policies.filter(Boolean));
+  result.incomplete=true; // today-declare is only the current-window endpoint, not all states.
+  result.progress={nextPage:batch.nextPage,paginationExhausted:batch.paginationExhausted,scopeGap:'本接口只含当前申报，需其他来源补齐预告和历史',error:batch.error};
+  return result;
 }
 
 function collectStructuredXml(xml, source) {
   const policies = [];
   const pattern = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
   let match;
-  while ((match = pattern.exec(xml)) && policies.length < 100) {
+  while ((match = pattern.exec(xml))) {
     const attributes = match[1];
     const href = attributes.match(/\bhref=["']([^"']+)["']/i)?.[1] || "";
     const title = decode(attributes.match(/\btitle=["']([^"']+)["']/i)?.[1] || match[2]);
-    if (!title || excludedTopics.test(title)) continue;
+    if (!title) continue;
     const context = xml.slice(Math.max(0, match.index - 180), Math.min(xml.length, pattern.lastIndex + 180));
     policies.push({ id: stableId(source.id, href, title), title, region: source.region, level: source.level, department: source.name, publishDate: findDate(decode(context)), deadline: findDeadline(context), category: "政策申报", summary: "来自官方机器可读通知索引，已保留原文入口供核验申报条件。", url: normalizeUrl(href, source.baseUrl), sourceName: source.name, firstSeenAt: new Date().toISOString() });
   }
@@ -524,31 +529,43 @@ async function collectJiangsuStructured(source) {
   const firstXml = await fetchText(`${endpoint}?${firstParams}`, { headers });
   const reportedPages = Number.parseInt(firstXml.match(/<totalpage>(\d+)<\/totalpage>/i)?.[1] || "1", 10);
   const pageLimit = Math.max(1, Number.parseInt(process.env.POLICY_SOURCE_PAGE_LIMIT || "6", 10) || 6);
-  const pageCount = Math.min(pageLimit, Math.max(1, reportedPages));
   const pages = [firstXml];
-  for (let page = 2; page <= pageCount; page += 1) {
+  let page = sourceProgress.get(source.id)?.nextPage || 2;
+  let processed = 0;
+  for (; page <= reportedPages && processed < pageLimit; page += 1, processed += 1) {
     const params = new URLSearchParams(firstParams);
     params.set("page", String(page));
     pages.push(await fetchText(`${endpoint}?${params}`, { headers }));
   }
-  return dedupe(pages.flatMap((xml) => collectStructuredXml(xml, { ...source, baseUrl: `${source.host}/` })));
+  const result = dedupe(pages.flatMap((xml) => collectStructuredXml(xml, { ...source, baseUrl: `${source.host}/` })));
+  result.incomplete = page <= reportedPages;
+  result.progress = {nextPage:page <= reportedPages ? page : 2,reportedPages,paginationExhausted:page > reportedPages};
+  return result;
 }
 
 async function collectWujiangApi() {
   const { year } = shanghaiDate();
   const terms = ["申报", "征集", "遴选", "推荐", "补贴", "补助", "奖励", "资金", "项目"];
-  const policies = [];
+  const policies = [], termProgress = {};
   for (const term of terms) {
     const url = new URL("https://www.wujiang.gov.cn/appsearch/wjapi/list");
     url.searchParams.set("keywords", term);
-    url.searchParams.set("sdate", `${year}-01-01`);
+    // No title-year or expense-year cutoff; old rolling calls remain discoverable.
     url.searchParams.set("edate", `${year}-12-31`);
-    const body = new URLSearchParams({ currentPage: "1", pageSize: "100", pid: "" }).toString();
-    const payload = JSON.parse(await fetchText(url.href, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }));
-    for (const row of payload?.data?.list || []) {
+    let batch;
+    try {
+      batch=await collectPagedRecords({startPage:sourceProgress.get('wujiang-api')?.termProgress?.[term]?.nextPage || 2,pageSize:100,maxPages:Number(process.env.POLICY_SOURCE_PAGE_LIMIT || 3),fetchPage:async page=>{
+        const body=new URLSearchParams({currentPage:String(page),pageSize:'100',pid:''}).toString();
+        const payload=JSON.parse(await fetchText(url.href,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body}));
+        if (!Array.isArray(payload?.data?.list)) throw new Error('吴江列表结构异常');
+        return {rows:payload.data.list,total:payload.data.total};
+      }});
+      termProgress[term]={nextPage:batch.nextPage,paginationExhausted:batch.paginationExhausted,error:batch.error};
+    } catch(error) {termProgress[term]={...sourceProgress.get('wujiang-api')?.termProgress?.[term],paginationExhausted:false,error:String(error.message || error)};continue;}
+    for (const row of batch.rows) {
       const title = decode(row.title || "");
       const original = normalizeUrl(row.redirect_url || row.url || "", "https://www.wujiang.gov.cn/");
-      if (!title || !original || excludedTopics.test(title)) continue;
+      if (!title) continue;
       const summary = decode(row.memo || "") || "来自苏州市吴江区人民政府公开索引，正文将由定时同步程序自动读取。";
       policies.push({
         id: stableId("wujiang-api", String(row.manuscript_id || original), title),
@@ -566,7 +583,10 @@ async function collectWujiangApi() {
       });
     }
   }
-  return dedupe(policies);
+  const result=dedupe(policies);
+  result.incomplete=Object.values(termProgress).some(p=>!p.paginationExhausted);
+  result.progress={termProgress,paginationExhausted:!result.incomplete};
+  return result;
 }
 
 async function collectMostNotices() {
@@ -575,9 +595,9 @@ async function collectMostNotices() {
   const policies = [];
   const pattern = /<div\b[^>]*onclick=["']window\.parent\.openW\('([^']+)'\)["'][^>]*title=["']([^"']+)["'][^>]*>/gi;
   let match;
-  while ((match = pattern.exec(html)) && policies.length < 80) {
+  while ((match = pattern.exec(html))) {
     const title = decode(match[2]);
-    if (!title || excludedTopics.test(title)) continue;
+    if (!title) continue;
     const context = html.slice(Math.max(0, match.index - 220), Math.min(html.length, pattern.lastIndex + 240));
     const url = normalizeUrl(match[1], sourceUrl);
     policies.push({ id: stableId("most-notices", url, title), title, region: "国家", level: "国家级", department: "科学技术部", publishDate: findDate(decode(context)), deadline: findDeadline(context), category: "国家科技计划", summary: "来自科学技术部公开通知目录，已保留原文入口以核验申报条件、附件和截止时间。", url, sourceName: "科学技术部科技计划通知", firstSeenAt: new Date().toISOString() });
@@ -586,20 +606,29 @@ async function collectMostNotices() {
 }
 
 async function collectHangzhouTechApi() {
-  const payload = JSON.parse(await fetchText("https://sti.kj.hangzhou.gov.cn/technology-brain-web/tech/policyLaw/listPage", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "dataType=2&pageNum=1&numPerPage=80&order=2" }));
-  const policies = (payload?.data?.recordList || []).map((row) => {
-    const title = decode(row.title || "");
-    const content = decode(row.context || "");
-    const deadline = findDeadlineInfo(content);
-    return { id: stableId("hangzhou-tech-api", row.detailUrl || String(row.id), title), title, region: row.levelType === 1 ? "国家" : row.levelType === 2 ? "浙江省" : "杭州市", level: decode(row.levelTypeName || "市级"), department: decode(row.publishDepart || "杭州市科学技术局"), publishDate: timestampToDate(row.publishDate), deadline: deadline.date, deadlineTime: deadline.time, category: "科技项目通知", summary: content.slice(0, 220), content, url: row.detailUrl || "https://sti.kj.hangzhou.gov.cn/technology-brain-web/searchList/newPolicy?dataType=2", sourceName: "杭州市科技创新服务平台", firstSeenAt: new Date().toISOString() };
-  }).filter((item) => item.title && item.url);
-  return policies;
+  const batch = await collectPagedRecords({
+    startPage:sourceProgress.get('hangzhou-tech-api')?.nextPage || 2,
+    maxPages:Number(process.env.POLICY_SOURCE_PAGE_LIMIT || 3),pageSize:80,
+    fetchPage:async page => {
+      const payload=JSON.parse(await fetchText("https://sti.kj.hangzhou.gov.cn/technology-brain-web/tech/policyLaw/listPage",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:`dataType=2&pageNum=${page}&numPerPage=80&order=2`}));
+      if (!Array.isArray(payload?.data?.recordList)) throw new Error("杭州科技列表结构异常");
+      return {rows:payload.data.recordList,total:payload.data.totalRecord};
+    }
+  });
+  const policies = batch.rows.map(row => {
+    const title=decode(row.title || ""),content=decode(row.context || "");
+    return {id:stableId("hangzhou-tech-api",row.detailUrl || String(row.id),title),title,region:row.levelType===1?"国家":row.levelType===2?"浙江省":"杭州市",level:decode(row.levelTypeName || "市级"),department:decode(row.publishDepart || "杭州市科技局"),publishDate:timestampToDate(row.publishDate),category:"科技项目通知",summary:content.slice(0,220),content,url:row.detailUrl || "",sourceName:"杭州市科技创新服务平台",firstSeenAt:new Date().toISOString()};
+  }).filter(p=>p.title);
+  const result=dedupe(policies);
+  result.incomplete=!batch.paginationExhausted;
+  result.progress={nextPage:batch.nextPage,paginationExhausted:batch.paginationExhausted};
+  return result;
 }
 
-function dedupe(items) {
+export function dedupe(items) {
   const seen = new Map();
   for (const item of items) {
-    const key = item.url.replace(/\/$/, "") || `${item.region}|${item.title}`;
+    const key = item.id || `${item.region}|${item.url || ''}|${item.title}`;
     const existing = seen.get(key);
     if (!existing || (!existing.publishDate && item.publishDate)) seen.set(key, item);
   }
@@ -609,7 +638,7 @@ function dedupe(items) {
 async function loadCompanyProfile() {
   try {
     const profile = JSON.parse(await readFile(companyProfilePath, "utf8"));
-    return profile?.matcherProfile ? profile : null;
+    return profile?.matcherProfile || profile?.companies ? profile : null;
   } catch {
     // A missing or malformed profile must not stop a policy refresh. The
     // matcher will use document-only evidence and mark no profile conditions.
@@ -633,27 +662,10 @@ async function writePolicyOutputs(payload) {
   // too when it exists; local development continues to read public/ directly.
   try {
     await access(path.dirname(deployedOutputPath));
+    await cp(path.resolve("public/policy-sources"), path.resolve("dist/client/policy-sources"), { recursive: true });
     await writeJsonAtomically(deployedOutputPath, payload);
   } catch {
     // No production build yet, which is normal during local development.
-  }
-}
-
-async function assertSourceHealth(payload) {
-  // Do not replace a healthy published feed with a much smaller one merely
-  // because several government gateways temporarily rate-limit this run.
-  // First deployments and genuinely small source sets remain valid.
-  try {
-    const previous = JSON.parse(await readFile(outputPath, "utf8"));
-    const previousAvailable = (previous.sources || []).filter((source) => source.ok).length;
-    const currentAvailable = (payload.sources || []).filter((source) => source.ok).length;
-    const minimumRetained = Math.max(6, Math.ceil(previousAvailable * 0.7));
-    if (previousAvailable >= 10 && currentAvailable < minimumRetained && currentAvailable <= previousAvailable - 5) {
-      throw new Error(`Source availability fell from ${previousAvailable} to ${currentAvailable}; keeping the last healthy policy feed instead of publishing a partial refresh.`);
-    }
-  } catch (error) {
-    if (error instanceof SyntaxError || (error instanceof Error && error.code === "ENOENT")) return;
-    throw error;
   }
 }
 
@@ -672,9 +684,10 @@ async function collectOfficialSources(collectors) {
       const collector = collectors[index];
       try {
         const policies = await collector.run();
-        completed[index] = { policies, status: { id: collector.id, name: collector.name, ok: true, count: policies.length } };
+        completed[index] = { policies: policies.map(p => ({ ...p, sourceId: collector.id })), status: { id: collector.id, name: collector.name, ok: true, checkedAt:new Date().toISOString(), count: policies.length, incomplete: policies.incomplete !== false || policies.length === 0, ...(policies.progress || {}) } };
+        console.log(`来源 ${index + 1}/${collectors.length}：${collector.name} ${policies.length} 条`);
       } catch (error) {
-        completed[index] = { policies: [], status: { id: collector.id, name: collector.name, ok: false, count: 0, error: error instanceof Error ? error.message : String(error) } };
+        completed[index] = { policies: [], status: { ...sourceProgress.get(collector.id), id: collector.id, name: collector.name, ok: false, checkedAt:new Date().toISOString(), incomplete:true, count: 0, error: error instanceof Error ? error.message : String(error) } };
       }
     }
   }));
@@ -682,9 +695,12 @@ async function collectOfficialSources(collectors) {
 }
 
 async function main() {
+  const policyRules = assertPolicyRulesLoaded(await loadPolicyRules());
+  await writeJsonAtomically(path.resolve(".policy-cache/rules.json"), policyRules);
   const results = [];
   const sourceStatus = [];
   const collectors = [
+    { id: "sushang", name: "苏商通官方申报中心", run: collectSushang },
     { id: "suzhou", name: "苏州市政策文件库", run: collectSuzhou },
     { id: "wujiang-api", name: "苏州市吴江区人民政府政策搜索", run: collectWujiangApi },
     { id: "suzhou-enterprise-api", name: "苏州市企业服务平台申报事项", run: collectSuzhouEnterpriseApi },
@@ -694,18 +710,58 @@ async function main() {
     ...jiangsuStructuredSources.map((source) => ({ id: source.id, name: source.name, run: () => collectJiangsuStructured(source) })),
     ...htmlSources.map((source) => ({ id: source.id, name: source.name, run: () => collectHtmlSource(source) })),
   ];
-  const completed = await collectOfficialSources(collectors);
+  const cachePath = path.resolve(".policy-cache/candidates.json");
+  let previous;
+  try { previous = JSON.parse(await readFile(cachePath, "utf8")); } catch { try { previous = JSON.parse(await readFile(outputPath, "utf8")); } catch { previous = {}; } }
+  for (const status of previous.sources || []) sourceProgress.set(status.id,status);
+  const cachedOnly = process.argv.includes("--cached");
+  const resume = process.argv.includes("--resume");
+  const completed = cachedOnly || resume ? [] : await collectOfficialSources(collectors);
+  if (cachedOnly || resume) sourceStatus.push(...(previous.sources || []));
   for (const item of completed) { results.push(...item.policies); sourceStatus.push(item.status); }
   // Collect all indexes first, then deduplicate globally and enrich one shared
   // priority queue. This prevents each source's arbitrary first page from using
   // up the detail budget before current Jiangsu/Suzhou/Wujiang records.
-  const candidates = await enrichPolicyDetails(dedupe([...fixedPolicies, ...results]));
+  const prior = previous.candidates || previous.policies || [];
+  const priorById = new Map(prior.map(p => [p.id, p]));
+  for (const seed of policyWatchlist) if (!priorById.has(seed.id)) results.push(seed);
+  const fresh = results.map(p => {
+    const old = priorById.get(p.id), merged = {...old,...p,content:p.content || old?.content || ''};
+    merged.indexRevision = createHash('sha256').update(JSON.stringify([p.title,p.url,p.content || '',p.publishDate])).digest('hex');
+    if (old?.content && p.content && old.content !== p.content) merged.originalVerification = {verified:false,retrievalStatus:'not_checked',reason:'索引正文变化，原证据版本须重核'};
+    return merged;
+  });
+  const freshIds = new Set(fresh.map(p => p.id));
+  const candidates = dedupe([...fresh, ...prior.filter(p => !freshIds.has(p.id))]);
+  for (const p of candidates) {
+    p.indexRevision ||= createHash('sha256').update(JSON.stringify([p.title,p.url,p.content || '',p.publishDate])).digest('hex');
+    try {
+      const saved = JSON.parse(await readFile(path.resolve(`.policy-cache/details/${encodeURIComponent(p.id)}.json`),'utf8'));
+      if (saved.url === p.url && saved.indexRevision === p.indexRevision && (saved.lastAttemptAt || '') > (p.lastAttemptAt || '')) Object.assign(p,saved);
+    } catch { /* no resumable detail */ }
+    if (/年度/.test(p.region || '')) p.region = inferPolicyRegion(p.title, {name:p.sourceName,region:htmlSources.find(s=>s.id===p.sourceId)?.region || ''});
+    p.contentHash = candidateContentHash(p);
+    if (['parsed','partial'].includes(p.originalVerification?.retrievalStatus)) {
+      const bindingStatus = originalBinding(p.title,p.content || '');
+      p.originalVerification = {...p.originalVerification,bindingStatus,titleMatched:bindingStatus==='matched'};
+    }
+  }
+  await writeJsonAtomically(cachePath, { savedAt: new Date().toISOString(), sources: sourceStatus, candidates });
+  if (!cachedOnly) await enrichPolicyDetails(candidates);
   const companyProfile = await loadCompanyProfile();
-  await enrichVisibleReviewPolicies(candidates, sourceStatus, companyProfile);
-  const payload = assertViablePolicyFeed(buildPolicyFeed(candidates, sourceStatus, companyProfile, new Date()));
-  await assertSourceHealth(payload);
+  await writeJsonAtomically(cachePath, { savedAt: new Date().toISOString(), sources: sourceStatus, candidates });
+  const expanded = expandApplicationItems(candidates);
+  await writeJsonAtomically(path.resolve(".policy-cache/audit.json"), { generatedAt: new Date().toISOString(), policies: auditPolicies(expanded, new Date(), companyProfile) });
+  const payload = assertViablePolicyFeed(buildPolicyFeed(expanded, sourceStatus, companyProfile, new Date()));
+  // Every published link, including attachments, is checked independently of
+  // content/qualification parsing. Historical parsing is not proof of availability.
+  if (!process.argv.includes('--cached')) await auditPolicyLinks(payload, { candidates });
+  else payload.linkAudit = {status:'not_rechecked',reason:'缓存重算未请求外部链接；保留原读取时间，不能当作本轮网页核验'};
+  payload.refreshMode = cachedOnly ? 'cached_reassessment' : resume ? 'detail_resume' : 'source_and_detail';
+  await mkdir(path.resolve(".policy-cache/history"), { recursive: true });
+  await copyFile(outputPath, path.resolve(`.policy-cache/history/policies-${Date.now()}.json`)).catch(() => {});
   await writePolicyOutputs(payload);
-  console.log(`Policy sync complete: ${payload.policies.length} reviewable policies (${payload.decisionCounts.eligible} eligible, ${payload.decisionCounts.supplier_call} supplier calls, ${payload.decisionCounts.needs_review} needs review; ${payload.discardedCount} directly discarded), ${sourceStatus.filter((source) => source.ok).length}/${sourceStatus.length} sources available.`);
+  console.log(`Policy sync complete: ${payload.policies.length} confirmed project calls (${payload.decisionCounts.eligible} eligible; ${payload.coverage.pendingDocuments} documents pending), ${sourceStatus.filter((source) => source.ok).length}/${sourceStatus.length} sources available.`);
 }
 
-main().catch((error) => { console.error(error); process.exitCode = 1; });
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => { console.error(error); process.exitCode = 1; });

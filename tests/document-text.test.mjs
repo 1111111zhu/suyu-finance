@@ -48,3 +48,12 @@ test("HTML 响应不会因 URL 伪装成 PDF 而误解析", () => {
   const html = Buffer.from("<!doctype html><html><body>error page</body></html>");
   assert.equal(detectDocumentType("https://example.gov.cn/file.pdf", "text/html", html), "");
 });
+test('PDF 字数限额不得截断后冒充完整正文',async()=>{
+  await assert.rejects(extractDocumentText(minimalPdf('Long application guide for all items'),'pdf',{maxCharacters:10}),/额度/);
+});
+test('PDF 无文字页且未启用 OCR 必须保持未完整读取',async()=>{
+  const previous=process.env.POLICY_DOCUMENT_OCR;
+  process.env.POLICY_DOCUMENT_OCR='0';
+  try {await assert.rejects(extractDocumentText(minimalPdf(''),'pdf'),/无文字层/);}
+  finally {if(previous===undefined)delete process.env.POLICY_DOCUMENT_OCR;else process.env.POLICY_DOCUMENT_OCR=previous;}
+});
