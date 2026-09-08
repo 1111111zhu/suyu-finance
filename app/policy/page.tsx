@@ -220,7 +220,7 @@ export default function PolicyPage() {
       <nav className="side-nav">
         <a href="/"><Icon name="file" />研发费用</a>
         <a className="active" href="/policy" aria-current="page"><Icon name="folder" />项目申报</a>
-        <a href="/salary/"><Icon name="salary" />工资表</a>
+        <a href="/salary/index.html"><Icon name="salary" />工资表</a>
       </nav>
     </aside>
     <section className="app-content">

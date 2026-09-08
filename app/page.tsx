@@ -345,7 +345,7 @@ export default function Home() {
             </Icon>
             <span>项目申报</span>
           </a>
-          <a className="nav-item" href="/salary/">
+          <a className="nav-item" href="/salary/index.html">
             <Icon>
               <rect x="4" y="3" width="16" height="18" rx="2" />
               <circle cx="12" cy="9" r="2.2" />
