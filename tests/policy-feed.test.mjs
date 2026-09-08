@@ -7,6 +7,23 @@ import { selectPolicyItems, applicationFeedItems, canonicalSelections, safeSourc
 import { parseSushangIndex } from "../scripts/policy-collection.mjs";
 const now = new Date("2026-09-08T09:00:00+08:00");
 const base = { id: "p", title: "关于开展企业研发补助项目申报的通知", region: "国家", publishDate: "2026-09-01", url: "https://example.gov.cn/p", content: "现开展企业研发补助项目申报，申报单位须符合申报条件。申请企业请于2026年9月20日前登录申报系统提交申报材料，审核后按实际研发投入给予资金补助。", originalVerification: { retrievalStatus: "parsed", bindingStatus: "matched" } };
+test("工信部同文三栏目合并，保留来源、收藏关联且重复处理不变", () => {
+ const feed = JSON.parse(readFileSync(new URL('../public/policies.json', import.meta.url)));
+ const records = feed.policies.filter(p => p.title === '工业和信息化部办公厅关于开展第六批工业产品质量控制和技术评价实验室申报工作的通知');
+ assert.equal(records.length, 3);
+ const rows = applicationFeedItems({policies: records}, now);
+ assert.equal(rows.length, 1);
+ assert.deepEqual(canonicalSelections(rows, records.map(p => p.id)), [rows[0].id]);
+ assert.deepEqual(new Set([rows[0].url, ...rows[0].relatedDocuments.map(p => p.url)]), new Set(records.map(p => p.url)));
+ assert.deepEqual(applicationFeedItems({policies: rows}, now), rows);
+ for (const change of [
+   {batch: '第二批'}, {applicationItemId: '方向二'}, {region: '江苏省'},
+   {deadline: '2026-09-21'}, {companyAssessments: [{companyId: 'suzhou', status: 'eligible'}]},
+   {content: records[1].content.replace('412号', '413号')},
+   {content: records[1].content.replace('高端新材料', '新申报领域')},
+   {originalVerification: {retrievalStatus: 'failed'}},
+ ]) assert.equal(applicationFeedItems({policies: [records[0], {...records[1], ...change}]}, now).length, 2, JSON.stringify(change));
+});
 test("主列表只含真实事项，线索与补充通知分别进入审计分区", () => {
  const feed = assertViablePolicyFeed(buildPolicyFeed([base, { ...base, id: "supp", title: "企业研发补助补充通知", parentProjectId: "p" }, { ...base, id: "unread", content: "", originalVerification: { retrievalStatus: "failed" } }], [], null, now));
  assert.deepEqual(feed.policies.map(p => p.id), ["p"]);
