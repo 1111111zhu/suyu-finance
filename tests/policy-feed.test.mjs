@@ -140,6 +140,8 @@ test("申报页面仅保留两种视图，隐藏筛选不保留限制状态", ()
  assert.doesNotMatch(source, /className="scope-tabs"|className="coverage-panel"|本区未收藏|跨区收藏|清空筛选/);
  assert.doesNotMatch(source, /setCollection|setCompany|setDisposition|setFunding/);
  assert.ok(source.includes('地区筛选'));
+ assert.ok(source.includes('policy-radar-known-ids'));
+ assert.ok(source.includes('new-project-badge'));
  assert.doesNotMatch(source, /policy\/rules|规则口径|rules-link/);
 });
 test("规则文档进入后端读取口径，不生成前端规则页面", () => {

@@ -151,6 +151,7 @@ export default function PolicyPage() {
   const [tab, setTab] = useState<"all" | "selected">("all");
   const [loadError, setLoadError] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [newIds, setNewIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [clock, setClock] = useState(() => Date.now());
 
@@ -159,12 +160,30 @@ export default function PolicyPage() {
     Promise.resolve().then(() => {
       const saved = localStorage.getItem("policy-radar-selected-ids");
       if (active && saved) try { setSelected(canonicalSelections([], JSON.parse(saved))); } catch { /* ignore an invalid local selection */ }
+      const savedNew = localStorage.getItem("policy-radar-new-ids");
+      if (active && savedNew) try { setNewIds(JSON.parse(savedNew).filter((id: unknown): id is string => typeof id === "string")); } catch { /* ignore invalid local markers */ }
     });
     const refresh = () => fetch(`/policies.json?t=${Date.now()}`, { cache: "no-store" })
       .then(response => { if (!response.ok) throw new Error("读取失败"); return response.json() as Promise<Feed>; })
       .then(value => { if (active) {
         setFeed(value);
         setLoadError(false);
+        const currentIds = applicationFeedItems(value).map(item => item.id);
+        const knownRaw = localStorage.getItem("policy-radar-known-ids");
+        let known: string[] = [];
+        try { known = knownRaw ? JSON.parse(knownRaw).filter((id: unknown): id is string => typeof id === "string") : []; } catch { /* reset malformed local state */ }
+        // The first visit establishes a baseline; only later server refreshes
+        // receive the NEW marker, so an existing catalogue is not mislabelled.
+        if (knownRaw !== null) {
+          const knownSet = new Set(known);
+          const incoming = currentIds.filter(id => !knownSet.has(id));
+          if (incoming.length) setNewIds(current => {
+            const next = [...new Set([...current, ...incoming])];
+            localStorage.setItem("policy-radar-new-ids", JSON.stringify(next));
+            return next;
+          });
+        }
+        localStorage.setItem("policy-radar-known-ids", JSON.stringify([...new Set([...known, ...currentIds])]));
         setSelected(current => {
           const next = canonicalSelections(applicationFeedItems(value), current);
           localStorage.setItem("policy-radar-selected-ids", JSON.stringify(next));
@@ -222,7 +241,7 @@ export default function PolicyPage() {
             const notes = qualificationNotes(policy);
             return <article className={`project-row disposition-${policy.disposition}`} key={policy.id} title={sourceHref ? "双击查阅来源（未核实记录请先核对原文）" : "原文地址待定位"} onDoubleClick={() => { if (sourceHref) window.location.assign(sourceHref); }}>
               <div className="project-name"><div>
-                <div className="project-title-line"><h2>{policy.title}</h2></div>
+                <div className="project-title-line"><h2>{policy.title}</h2>{newIds.includes(policy.id) && <span className="new-project-badge" aria-label="新加入项目">新</span>}</div>
                 <span className="record-kind">{effective === 'eligible' ? '已核验可申报' : effective === 'upcoming' ? '即将开放 · 企业条件请核实' : '企业资格／申报窗口待核实'}</span>
                 {reasons.length > 0 && <div className="decision-reasons" aria-label="匹配依据">{reasons.map(reason => <span key={reason}>{reason}</span>)}</div>}
                 <details className="qualification-details" onDoubleClick={event => event.stopPropagation()}>
