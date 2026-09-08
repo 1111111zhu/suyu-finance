@@ -170,3 +170,94 @@ test('imported roster status drives calculation and exports after changing payro
  assert.equal(run('exportRow(employees[0])[28]'),13.75);
  assert.equal(run('exportRow(employees[1])[28]'),13.75);
 });
+
+test('six same-name leave fields and employer contributions map by name into 40-column payroll',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',是否入离职:'在职'},{姓名:'乙',是否入离职:'在职'}],salary:[{姓名:'甲',基本工资:2175},{姓名:'乙',基本工资:2175}],attendance:[{姓名:'乙',年假天数:9},{姓名:'甲',年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,'病假(天)':99}],social:[{姓名:'乙',公司总计:888},{姓名:'甲',个人总计:100,公司总计:700}],fund:[{姓名:'乙',公司缴纳:999},{姓名:'甲',个人缴纳:50,公司缴纳:300}]};state.liveImport=true;applyPayrollSettings('2026-09',22);");
+ const fields={年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,公司缴纳:300,公司总计:700};
+ assert.equal(run('exportHeaders().length'),40);
+ assert.equal(run('exportRow(employees[0]).length'),40);
+ for(const [field,value] of Object.entries(fields)) {
+  assert.equal(run(`exportRow(employees[0])[exportHeaders().indexOf('${field}')]`),value);
+  assert.equal(run(`mappingRows.some(r=>r[0]==='${field}' && r[2]==='${field}' && r[3]==='同名映射')`),true);
+ }
+ assert.equal(run('employees[0].deductDays'),1.75);
+ assert.equal(run('employees[0].net'),run('employees[0].gross-150'));
+ assert.equal(run('employees[1].companySocial'),888);
+ assert.equal(run('employees[1].companyFund'),999);
+ assert.equal(run('employees[1].annual'),9);
+ const gross=run('employees[0].gross'),net=run('employees[0].net');
+ run('sourceRows.social[1].公司总计=0;sourceRows.fund[1].公司缴纳=0;recalculateEmployees();');
+ assert.equal(run('employees[0].gross'),gross);assert.equal(run('employees[0].net'),net);
+});
+test('legacy leave aliases and employer-only source identification are supported',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲'}],attendance:[{姓名:'甲','年假（天）':.5,'弹性假(天)':1,'调休假（天）':2}]};state.liveImport=true;recalculateEmployees();");
+ assert.equal(run('employees[0].annual'),.5);assert.equal(run('employees[0].flexible'),1);assert.equal(run('employees[0].compensatory'),2);
+ for(const [field,key] of [['公司缴纳','fund'],['公司总计','social'],['年假天数','attendance'],['弹性假天数','attendance'],['调休假天数','attendance']]) assert.equal(run(`matchSource('导出.xlsx',[{姓名:'甲','${field}':1}]).key`),key);
+ assert.equal(run('exportRow(employees[0])[38]'),0);assert.equal(run('exportRow(employees[0])[39]'),0);
+});
+test('detail workbook and salary slip include mapped leave and employer contributions',()=>{
+ const run=app();
+ run("window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet)=>{globalThis.savedSheet=sheet;}}};downloadXlsx=()=>{};employees=[calcSalary({id:'X',name:'甲',status:'在职',annual:1.5,flexible:2,compensatory:3,companyFund:300,companySocial:700})];state.selectedId='X';");
+ assert.equal(run('detailSheet().rows[1].length'),40);
+ assert.equal(run("detailSheet()['!merges'].at(-1).e.c"),39);
+ run('downloadSlip()');
+ for(const [label,value] of [['年假天数',1.5],['弹性假天数',2],['调休假天数',3],['公司缴纳',300],['公司总计',700]]) assert.equal(run(`savedSheet.rows.find(r=>r[0]==='${label}')[1]`),value);
+ for(const view of ['renderMapping()','renderResults()','renderSlip()']) {
+  assert.match(run(view),/年假天数/);assert.match(run(view),/弹性假天数/);assert.match(run(view),/调休假天数/);assert.match(run(view),/公司缴纳/);assert.match(run(view),/公司总计/);
+ }
+});
+
+
+test('payable days are the exact difference without clamping, including export and slip',()=>{
+ const run=app();
+ for(const [workdays,personal,expected] of [[22,1.5,20.5],[18.5,18.5,0],[18.5,20,-1.5]]) {
+  run(`employees=[calcSalary({id:'X',name:'甲',status:'在职',personal:${personal}},'2026-09',${workdays})];state.selectedId='X';`);
+  assert.equal(run('employees[0].payableDays'),expected);
+  assert.equal(run('exportRow(employees[0])[10]'),expected);
+  run("window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet)=>{globalThis.savedSheet=sheet;}}};downloadXlsx=()=>{};downloadSlip();");
+  assert.equal(run("savedSheet.rows.find(r=>r[0]==='实发薪')[1]"),expected);
+ }
+ assert.match(run('payrollSettings()'),/实发薪＝应发薪－假勤扣薪天数/);
+});
+
+
+test('September screenshot examples include event day but never count weekends',()=>{
+ const run=app();
+ for(const [status,date,personal,expectedDays,expectedDeduct] of [
+  ['入职','2026-09-08',0,17,4.75],
+  ['离职','2026-09-08',0,6,15.75],
+  ['入职','2026-09-30',0,1,20.75],
+  ['入职','2026-09-17',1,10,12.75],
+  ['离职','2026-09-05',0,4,17.75],
+  ['离职','2026-09-06',0,4,17.75],
+  ['入职','2026-09-05',0,18,3.75],
+  ['入职','2026-09-06',0,18,3.75]
+ ]) {
+  const result=run(`calcSalary({status:'${status}',join:'${date}',leave:'${date}',personal:${personal}},'2026-09',22)`);
+  assert.equal(21.75+personal-result.deductDays,expectedDays);
+  assert.equal(result.deductDays,expectedDeduct);
+  assert.equal(result.payableDays,22-expectedDeduct);
+ }
+});
+test('performance cutoff includes the 15th and is limited to hires in payroll month',()=>{
+ const run=app();
+ for(const [status,date,score] of [['入职','2026-09-14',.9],['入职','2026-09-15',0],['入职','2026-09-17',0],['入职','2026-08-17',.9],['在职','2026-09-17',.9]]) {
+  const result=run(`calcSalary({status:'${status}',join:'${date}',score:.9,perfBase:1000},'2026-09',22)`);
+  assert.equal(result.effectiveScore,score);assert.equal(result.performancePay,1000*score);
+ }
+ assert.match(run('payrollSettings()'),/周六或周日不计工作天数/);
+});
+
+test('roster status and dates are preserved in exported rows while date calculations use local calendar dates',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲','是否入离职':'入职',入职日期:new Date(2026,7,17),离职日期:null}],salary:[{姓名:'甲',基本工资:1000}]};state.liveImport=true;recalculateEmployees();");
+ assert.equal(run('employees[0].join'),'2026-08-17');
+ assert.equal(run("exportRow(employees[0])[6]"),'入职');
+ assert.equal(run("exportRow(employees[0])[7]"),'2026-08-17');
+ assert.equal(run("exportRow(employees[0])[8]"),'');
+ run("sourceRows.roster[0]['是否入离职']=' 入职 ';sourceRows.roster[0]['入职日期']='2026/08/17';recalculateEmployees();");
+ assert.equal(run("exportRow(employees[0])[6]"),' 入职 ');
+ assert.equal(run("exportRow(employees[0])[7]"),'2026/08/17');
+});
