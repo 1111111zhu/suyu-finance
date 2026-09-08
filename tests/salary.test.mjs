@@ -61,3 +61,60 @@ test('all payroll views render with current parameters',()=>{
  const run=app();
  for(const view of ['Overview','Upload','Mapping','Results','Slip','Batches','Templates']) assert.equal(typeof run(`render${view}()`),'string');
 });
+
+test('all nine modules match dated filenames and fallback header aliases',()=>{
+ const run=app();
+ for(const [key,name,field] of [['roster','花名册','入职日期'],['salary','员工基本工资表','工资基数'],['performance','绩效考核表','绩效系数'],['attendance','考勤统计表','病假（天）'],['other','其他表','其他减'],['social','社保明细','个人总计'],['fund','公积金明细','个人缴纳'],['utility','人才公寓水电明细','水电费合计'],['meal','餐费明细','餐费合计']]){
+  assert.equal(run(`matchSource('2026年9月${name}.xlsx',[{姓名:'甲','${field}':1}]).key`),key);
+  assert.equal(run(`matchSource('导出.xlsx',[{姓名:'甲','${field}':1}]).key`),key);
+ }
+ for(const expression of ["matchSource('社保.xlsx',[{姓名:'甲',个人公积金:1}])","matchSource('社保公积金.xlsx',[{姓名:'甲'}])","matchSource('未知.xlsx',[{姓名:'甲'}])","matchSource('汇总.xlsx',[{姓名:'甲',基本工资:1,餐费合计:2}])"]){assert.equal(run(expression+'.key'),'');}
+});
+function importApp(){
+ const run=app();
+ run("parseXlsxFile=async file=>{if(file.error)throw new Error(file.error);return file.rows;};");
+ return run;
+}
+test('multi-file import replaces demo state, updates calculations, queues unknowns and failures',async()=>{
+ const run=importApp();
+ await run("importFiles([{name:'花名册.xlsx',rows:[{姓名:'甲'}]},{name:'员工基本工资表.xlsx',rows:[{姓名:'甲',基本工资:1000}]},{name:'未知.xlsx',rows:[{姓名:'甲'}]},{name:'坏文件.xlsx',error:'损坏'},{name:'file.xls'},{name:'大文件.xlsx',size:21*1024*1024}])");
+ assert.equal(run('employees.length'),1);assert.equal(run('employees[0].gross'),1000);
+ assert.equal(run('currentBatch().sources'),2);assert.equal(run('state.sourceStatus.social.uploaded'),false);
+ assert.equal(run('importSession().items.length'),4);assert.equal(run('state.calculated'),false);
+ assert.equal(run('importSession().busy'),false);
+});
+test('duplicate files and existing modules wait for explicit replacement; failures retain data',async()=>{
+ const run=importApp();
+ await run("importFiles([{name:'花名册.xlsx',rows:[{姓名:'甲'}]},{name:'社保1.xlsx',rows:[{姓名:'甲',个人总计:100}]},{name:'社保2.xlsx',rows:[{姓名:'甲',个人总计:200}]}])");
+ assert.equal(run('sourceRows.social'),undefined);assert.equal(run('importSession().items.length'),2);
+ run("resolveImport(1,'social')");assert.equal(run('sourceRows.social[0].个人总计'),200);
+ await run("importFiles([{name:'社保3.xlsx',rows:[{姓名:'甲',个人总计:300}]}])");
+ assert.equal(run('sourceRows.social[0].个人总计'),200);
+ await run("importFiles([{name:'社保坏.xlsx',error:'损坏'}],'social')");
+ assert.equal(run('sourceRows.social[0].个人总计'),200);assert.equal(run('state.sourceStatus.social.uploaded'),true);
+ run("resolveImport(1,'social')");assert.equal(run('sourceRows.social[0].个人总计'),300);
+});
+test('pending manual selection survives rerender and is isolated per batch',async()=>{
+ const run=importApp();
+ await run("importFiles([{name:'export.xlsx',rows:[{姓名:'甲',金额:1}]}])");
+ run("importSession().items[0].key='other';renderImportReview();globalThis.first=currentBatch();globalThis.second={name:'另一批次',month:'2026-03',workdays:22};state.batches.push(second);setCurrentBatch(second);");
+ assert.equal(run('importSession().items.length'),0);
+ run('setCurrentBatch(first)');assert.equal(run('importSession().items[0].key'),'other');
+ run("resolveImport(0,'other')");assert.equal(run('sourceRows.other.length'),1);
+});
+test('switching batches during parsing cancels import and concurrent requests are ignored',async()=>{
+ const run=app();
+ run("parseXlsxFile=()=>new Promise(resolve=>{globalThis.finish=resolve;});globalThis.first=currentBatch();globalThis.pending=importFiles([{name:'花名册.xlsx'}]);");
+ await run("importFiles([{name:'其他表.xlsx'}])");
+ run("globalThis.second={name:'另一批次',month:'2026-03',workdays:22};state.batches.push(second);setCurrentBatch(second);finish([{姓名:'甲'}]);");
+ await run('pending');assert.equal(run('sourceRows.roster'),undefined);
+ run('setCurrentBatch(first)');assert.equal(run('sourceRows.roster'),undefined);assert.equal(run('importSession().busy'),false);
+});
+test('uploaded filenames and errors render as text, and bulk input accepts multiple xlsx',async()=>{
+ const run=importApp();
+ await run("importFiles([{name:'<img src=x onerror=alert(1)>.xlsx',error:'<script>bad</script>'}])");
+ const rendered=run('renderUpload()');
+ assert.ok(rendered.includes('&lt;img'));assert.ok(rendered.includes('&lt;script&gt;'));
+ assert.ok(!rendered.includes('<img src=x'));assert.match(rendered,/accept=".xlsx" multiple/);
+ assert.ok(!rendered.includes('data-simulate-all'));
+});

@@ -37,6 +37,7 @@ jobs:
         run: |
           npm run test:policy
           npm run test:company-profile
+          node --test tests/salary.test.mjs
 
       - name: Set up Python
         uses: actions/setup-python@v7
