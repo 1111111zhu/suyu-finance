@@ -50,6 +50,17 @@ server {
 
 替换为新版本文件后，重新执行 `npm ci && npm run build` 并重启进程；Docker 部署则重新构建镜像并替换容器。
 
+## GitHub Actions 自动部署
+
+仓库的 `CI and production deploy` 工作流会在面向 `main` 的 Pull Request 上执行 lint、JavaScript/Python 测试和生产构建。PR 合并产生 `main` 分支 push 后，工作流才会通过 SSH 将该提交部署到服务器，并在切换正式容器前运行临时容器健康检查；正式健康检查失败时会恢复旧镜像。
+
+在 GitHub 的 `production` Environment 中配置：
+
+- Secrets：`SERVER_HOST`、`SERVER_USER`、`SERVER_SSH_KEY`、`SSH_KNOWN_HOSTS`
+- Variables：`DEPLOY_PATH`（如 `/opt/suyu-finance`）、`SITE_URL`（如 `https://example.com`）、可选 `SERVER_PORT`（默认 `22`）
+
+服务器需安装 Docker 和 curl；部署用户须能运行 Docker，并拥有 `DEPLOY_PATH` 的写权限。`SSH_KNOWN_HOSTS` 应保存经过人工核验的服务器主机公钥，不要关闭 SSH 主机校验。Nginx/Caddy 应将公网 HTTPS 地址反向代理至 `127.0.0.1:3000`，安全组无需开放 3000 端口。
+
 ## 政策申报雷达自动更新
 
 政策页面地址为 `/policy`。第一次部署及以后手动更新政策时执行：
