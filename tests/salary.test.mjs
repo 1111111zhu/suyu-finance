@@ -253,3 +253,13 @@ test('duplicate names block payroll until corrected, including whitespace-normal
   assert.equal(run('payrollExportReady()'),true);
  }
 });
+
+test('export diagnostics identify each blocked person, source and raw value safely',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲'},{姓名:'乙'},{姓名:'<丙>'}],attendance:[{姓名:'甲',实发薪天数:21.75},{姓名:'<丙>',实发薪天数:'<bad>'}],social:[{姓名:'甲'},{姓名:'甲'}]};state.liveImport=true;recalculateEmployees();");
+ const html=run('renderPayrollIssues()');
+ assert.match(html,/3 人需要核对/);assert.match(html,/社保明细存在重复姓名/);assert.match(html,/考勤统计表中未找到此姓名/);assert.match(html,/&lt;bad&gt;/);assert.match(html,/&lt;丙&gt;/);
+ assert.ok(!html.includes('<bad>'));assert.match(html,/<td>2<\/td>/);
+ run('delete sourceRows.attendance;recalculateEmployees();');assert.match(run('renderPayrollIssues()'),/未上传考勤统计表/);
+ run("sourceRows.attendance=[{姓名:'甲'},{姓名:'乙'},{姓名:'<丙>'}];recalculateEmployees();");assert.match(run('renderPayrollIssues()'),/单元格为空/);
+});
