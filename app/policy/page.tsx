@@ -163,7 +163,7 @@ export default function PolicyPage() {
       const savedNew = localStorage.getItem("policy-radar-new-ids");
       if (active && savedNew) try { setNewIds(JSON.parse(savedNew).filter((id: unknown): id is string => typeof id === "string")); } catch { /* ignore invalid local markers */ }
     });
-    const refresh = () => fetch(`/policies.json?t=${Date.now()}`, { cache: "no-store" })
+    const refresh = () => fetch(`/policy-applications.json?t=${Date.now()}`, { cache: "no-store" })
       .then(response => { if (!response.ok) throw new Error("读取失败"); return response.json() as Promise<Feed>; })
       .then(value => { if (active) {
         setFeed(value);

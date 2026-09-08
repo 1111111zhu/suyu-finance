@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "sync:policies": "node scripts/sync-policies.mjs",
+    "sync:policies": "node scripts/sync-policies.mjs && node scripts/write-policy-applications.mjs",
     "presync:policies": "npm run test:policy",
     "check:policy-integrity": "node scripts/check-policy-integrity.mjs",
     "check:policy-links": "node scripts/check-policy-links.mjs",
