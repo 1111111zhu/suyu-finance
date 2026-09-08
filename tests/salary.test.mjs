@@ -263,3 +263,12 @@ test('export diagnostics identify each blocked person, source and raw value safe
  run('delete sourceRows.attendance;recalculateEmployees();');assert.match(run('renderPayrollIssues()'),/未上传考勤统计表/);
  run("sourceRows.attendance=[{姓名:'甲'},{姓名:'乙'},{姓名:'<丙>'}];recalculateEmployees();");assert.match(run('renderPayrollIssues()'),/单元格为空/);
 });
+
+test('exception cards open a complete list including nonblocking warnings',()=>{
+ const run=app();
+ run("employees=[calcSalary({id:'A',name:'Alice',actualPaidDays:21,exception:'Review social insurance'}),calcSalary({id:'B',name:'Bob'})];");
+ for(const view of ['renderOverview()','renderResults()']) assert.match(run(view),/data-go="exceptions"/);
+ const details=run('renderExceptions()');
+ assert.match(details,/Alice/);assert.match(details,/Bob/);assert.match(details,/Review social insurance/);assert.match(details,/data-employee="A"/);assert.match(details,/data-employee="B"/);
+ run('employees=[];');assert.ok(run('renderExceptions()').includes('colspan="7"'));
+});
