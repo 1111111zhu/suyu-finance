@@ -48,18 +48,26 @@ test('batch switching restores days and imported source data',()=>{
  assert.equal(run('employees[0].name'),'甲');assert.equal(run('employees[0].workdays'),18);
  run('setCurrentBatch(second)');assert.equal(run('employees[0].name'),'乙');assert.equal(run('employees[0].workdays'),23);
 });
-test('entry and exit attendance formulas remain unchanged apart from manual workdays',()=>{
+test('entry deduction uses fixed 21.75 and retains late-hire performance treatment',()=>{
  const run=app();
  const result=run("calcSalary({status:'入职',join:'2025-01-18',base:6000,post:2000,perfBase:1000,score:.9},'2025-01',22)");
- assert.equal(result.deductDays,12);
+ assert.equal(result.deductDays,11.75);
  assert.equal(result.effectiveScore,0);
- assert.equal(result.payableDays,10);
- assert.match(run('payrollSettings()'),/待新规则确定后调整/);
+ assert.equal(result.payableDays,10.25);
+ assert.match(run('payrollSettings()'),/21.75－计薪月内/);
 });
 
 test('all payroll views render with current parameters',()=>{
  const run=app();
  for(const view of ['Overview','Upload','Mapping','Results','Slip','Batches','Templates']) assert.equal(typeof run(`render${view}()`),'string');
+});
+
+test('employment workday ranges include the event date and exclude weekends',()=>{
+ const run=app();
+ assert.equal(run("weekdaysBetween(parseDate('2026-09-01'),parseDate('2026-09-08'))"),6);
+ assert.equal(run("weekdaysBetween(parseDate('2026-09-08'),parseDate('2026-09-30'))"),17);
+ assert.equal(run("weekdaysBetween(parseDate('2026-09-05'),parseDate('2026-09-06'))"),0);
+ assert.equal(run("weekdaysBetween(parseDate('2026-09-30'),parseDate('2026-09-30'))"),1);
 });
 
 test('all nine modules match dated filenames and fallback header aliases',()=>{
@@ -117,4 +125,48 @@ test('uploaded filenames and errors render as text, and bulk input accepts multi
  assert.ok(rendered.includes('&lt;img'));assert.ok(rendered.includes('&lt;script&gt;'));
  assert.ok(!rendered.includes('<img src=x'));assert.match(rendered,/accept=".xlsx" multiple/);
  assert.ok(!rendered.includes('data-simulate-all'));
+});
+
+
+test('status formulas add all leave categories and use a fixed divisor independent of manual days',()=>{
+ const run=app();
+ for(const days of [18.5,22,23]) {
+  for(const [status,date,expected] of [['在职','',2],['入职','2026-09-17',13.75],['离职','2026-09-14',13.75]]) {
+   const result=run(`calcSalary({status:'${status}',join:'${date}',leave:'${date}',personal:.5,absent:.5,sick:1,base:2175},'2026-09',${days})`);
+   assert.equal(result.deductDays,expected);
+   assert.equal(result.attendanceDeduct,expected*100);
+   assert.equal(run(`exportRow(calcSalary({status:'${status}',join:'${date}',leave:'${date}',personal:.5,absent:.5,sick:1},'2026-09',${days}))[28]`),expected);
+  }
+ }
+});
+test('entry and exit count the boundary day, zero-workday ranges, and only days in payroll month',()=>{
+ const run=app();
+ for(const [status,date,month,expected] of [
+  ['离职','2026-09-01','2026-09',20.75],
+  ['入职','2026-09-30','2026-09',20.75],
+  ['入职','2026-01-31','2026-01',21.75],
+  ['离职','2026-08-01','2026-08',21.75],
+  ['入职','2026-10-01','2026-09',21.75],
+  ['离职','2026-08-31','2026-09',21.75],
+  ['入职','2026-08-31','2026-09',-.25],
+  ['离职','2026-10-01','2026-09',-.25],
+  ['入职','2026-09-01','2026-09',-.25]
+ ]) assert.equal(run(`calcSalary({status:'${status}',join:'${date}',leave:'${date}'},'${month}',22).deductDays`),expected);
+});
+test('missing or invalid event dates are flagged for review',()=>{
+ const run=app();
+ for(const status of ['入职','离职']) for(const date of ['', 'bad', '2026-02-30']) {
+  const result=run(`calcSalary({status:'${status}',join:'${date}',leave:'${date}'},'2026-09',22)`);
+  assert.equal(result.hasException,true);assert.match(result.exception,/日期缺失或无效/);
+ }
+});
+test('imported roster status drives calculation and exports after changing payroll settings',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',是否入离职:' 入职 ',入职日期:'2026-09-17'},{姓名:'乙',是否入离职:'离职',离职日期:'2026-09-14'},{姓名:'丙',是否入离职:'在职',入职日期:'2026-09-17'}],attendance:['甲','乙','丙'].map(姓名=>({姓名,'事假(天)':.5,'旷工(天)':.5,'病假(天)':1}))};state.liveImport=true;applyPayrollSettings('2026-09',23);");
+ assert.equal(run('employees[0].deductDays'),13.75);
+ assert.equal(run('employees[1].deductDays'),13.75);
+ assert.equal(run('employees[2].deductDays'),2);
+ run("applyPayrollSettings('2026-09',18.5)");
+ assert.equal(run('exportRow(employees[0])[28]'),13.75);
+ assert.equal(run('exportRow(employees[1])[28]'),13.75);
 });

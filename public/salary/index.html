@@ -434,12 +434,23 @@
       const monthStart = new Date(month + '-01T00:00:00');
       const [y,m] = month.split('-').map(Number);
       const monthEnd = new Date(y, m, 0);
-      let prorateDays = 0;
-      if (profile.status === '入职' && profile.join && profile.join.slice(0,7) === month) prorateDays = weekdaysBetween(parseDate(profile.join), monthEnd);
-      if (profile.status === '离职' && profile.leave && profile.leave.slice(0,7) === month) prorateDays = weekdaysBetween(monthStart, parseDate(profile.leave), false);
-      let deductDays = num(profile.personal) + num(profile.absent) + num(profile.sick);
-      if (profile.status === '入职' && prorateDays) deductDays += Math.max(0, workdays - prorateDays);
-      if (profile.status === '离职' && prorateDays) deductDays += Math.max(0, workdays - prorateDays);
+      let prorateDays = null;
+      const exceptions = profile.exception ? [profile.exception] : [];
+      if (profile.status === '入职' || profile.status === '离职') {
+        const dateText = profile.status === '入职' ? profile.join : profile.leave;
+        const eventDate = parseDate(dateText);
+        const validDate = /^\d{4}-\d{2}-\d{2}$/.test(dateText || '') && eventDate && Number.isFinite(eventDate.getTime()) &&
+          eventDate.getFullYear() === Number(dateText.slice(0,4)) && eventDate.getMonth() + 1 === Number(dateText.slice(5,7)) && eventDate.getDate() === Number(dateText.slice(8,10));
+        if (validDate) {
+          prorateDays = profile.status === '入职'
+            ? weekdaysBetween(new Date(Math.max(monthStart, eventDate)), monthEnd)
+            : weekdaysBetween(monthStart, new Date(Math.min(monthEnd, eventDate)));
+        } else {
+          exceptions.push(`${profile.status}日期缺失或无效，无法核算入离职扣薪天数`);
+        }
+      }
+      const leaveDays = num(profile.personal) + num(profile.absent) + num(profile.sick);
+      const deductDays = prorateDays === null ? leaveDays : 21.75 - prorateDays + leaveDays;
       const late = isLateHire(profile, month);
       const perfScore = late ? 0 : num(profile.score);
       const performancePay = num(profile.perfBase) * perfScore;
@@ -449,7 +460,7 @@
       const gross = subtotal + num(profile.meal) + num(profile.transit) + num(profile.otherAllow) + sickSubsidy + num(profile.otherAdd) - attendanceDeduct - num(profile.otherReduction);
       const social = num(profile.social), fund = num(profile.fund), otherDeduct = num(profile.otherDeduct), utility = num(profile.utility), mealDeduct = num(profile.mealDeduct);
       const net = gross - social - fund - otherDeduct - utility - mealDeduct;
-      return {...profile, otherReduction:num(profile.otherReduction), otherDeduct, workdays, payableDays: Math.max(0, workdays - deductDays), deductDays, effectiveScore: perfScore, performancePay, subtotal, sickSubsidy, attendanceDeduct, gross, social, fund, net, late, hasException: Boolean(profile.exception), exception: profile.exception || ''};
+      return {...profile, otherReduction:num(profile.otherReduction), otherDeduct, workdays, payableDays: Math.max(0, workdays - deductDays), deductDays, effectiveScore: perfScore, performancePay, subtotal, sickSubsidy, attendanceDeduct, gross, social, fund, net, late, hasException: exceptions.length > 0, exception: exceptions.join('；')};
     }
     const today = new Date();
     let currentMonth = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
@@ -648,7 +659,7 @@
       recalculateEmployees(); crumbBatch.textContent = batch.name;
     }
     function payrollSettings() {
-      return `<form id="payrollSettings" class="card section-body" style="margin-bottom:20px"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:end"><div class="form-field"><label for="payrollMonth">计薪月份</label><input class="input" id="payrollMonth" type="month" value="${currentMonth}" required></div><div class="form-field"><label for="payrollDays">应发薪天数（手动输入）</label><input class="input" id="payrollDays" type="number" min="0.01" max="31" step="any" value="${currentWorkdays}" required></div><button class="btn btn-primary" type="submit">应用并重算</button></div><div class="section-desc">请按实际计薪月填写应发薪天数；初始 22 天仅为示例。入离职假勤扣薪暂沿用现有规则，待新规则确定后调整。</div></form>`;
+      return `<form id="payrollSettings" class="card section-body" style="margin-bottom:20px"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:end"><div class="form-field"><label for="payrollMonth">计薪月份</label><input class="input" id="payrollMonth" type="month" value="${currentMonth}" required></div><div class="form-field"><label for="payrollDays">应发薪天数（手动输入）</label><input class="input" id="payrollDays" type="number" min="0.01" max="31" step="any" value="${currentWorkdays}" required></div><button class="btn btn-primary" type="submit">应用并重算</button></div><div class="section-desc">请按实际计薪月填写应发薪天数；初始 22 天仅为示例。按“是否入离职”计算：在职＝事假＋旷工＋病假；入职／离职＝21.75－计薪月内入职当天及之后／离职当天及之前的应工作天数＋事假＋旷工＋病假。应工作天数按周一至周五统计，含入离职当天，不含月外日期。</div></form>`;
     }
     function applyPayrollSettings(month, days) {
       if (!validPayrollSettings(month, days)) { showToast('请选择月份，并填写大于 0 且不超过当月日历天数的应发薪天数'); return false; }
