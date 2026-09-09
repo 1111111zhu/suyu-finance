@@ -58,7 +58,7 @@ test('roster alone allows preview; missing optional source values default to zer
  const run=app();
  run("state.sourceStatus=Object.fromEntries(sourceSheets.map(sheet=>[sheet.key,{uploaded:sheet.key==='roster'}]));sourceRows={roster:[{姓名:'甲',是否入离职:'在职'}]};state.liveImport=true;recalculateEmployees();");
  assert.equal(run('hasPayrollRoster()'),true);
- assert.equal(run('missingSourceSheets().length'),8);
+ assert.equal(run('missingSourceSheets().length'),9);
  for(const field of ['base','post','perfBase','score','meal','transit','otherAllow','otherAdd','annual','flexible','compensatory','companySocial','companyFund','sick','personal','absent','social','fund','otherReduction','otherDeduct','utility','mealDeduct']) assert.equal(run(`employees[0].${field}`),0,field);
  assert.match(run('renderUpload()'),/可启动规则运算/);
  assert.match(run('renderMapping()'),/除实发薪天数外对应字段按 0 计算/);
@@ -139,12 +139,12 @@ test('uploaded filenames and errors render as text, and bulk input accepts multi
 
 
 
-test('six same-name leave fields and employer contributions map by name into 40-column payroll',()=>{
+test('six same-name leave fields and employer contributions map by name into 41-column payroll',()=>{
  const run=app();
  run("sourceRows={roster:[{姓名:'甲',是否入离职:'在职'},{姓名:'乙',是否入离职:'在职'}],salary:[{姓名:'甲',基本工资:2175},{姓名:'乙',基本工资:2175}],attendance:[{姓名:'乙',实发薪天数:22,年假天数:9},{姓名:'甲',实发薪天数:20,年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,'病假(天)':99}],social:[{姓名:'乙',公司总计:888},{姓名:'甲',个人总计:100,公司总计:700}],fund:[{姓名:'乙',公司缴纳:999},{姓名:'甲',个人缴纳:50,公司缴纳:300}]};state.liveImport=true;applyPayrollSettings('2026-09',22);");
  const fields={年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,公司缴纳:300,公司总计:700};
- assert.equal(run('exportHeaders().length'),40);
- assert.equal(run('exportRow(employees[0]).length'),40);
+ assert.equal(run('exportHeaders().length'),41);
+ assert.equal(run('exportRow(employees[0]).length'),41);
  for(const [field,value] of Object.entries(fields)) {
   assert.equal(run(`exportRow(employees[0])[exportHeaders().indexOf('${field}')]`),value);
   assert.equal(run(`mappingRows.some(r=>r[0]==='${field}' && r[2]==='${field}' && r[3]==='同名映射')`),true);
@@ -163,13 +163,13 @@ test('legacy leave aliases and employer-only source identification are supported
  run("sourceRows={roster:[{姓名:'甲'}],attendance:[{姓名:'甲','年假（天）':.5,'弹性假(天)':1,'调休假（天）':2}]};state.liveImport=true;recalculateEmployees();");
  assert.equal(run('employees[0].annual'),.5);assert.equal(run('employees[0].flexible'),1);assert.equal(run('employees[0].compensatory'),2);
  for(const [field,key] of [['公司缴纳','fund'],['公司总计','social'],['年假天数','attendance'],['弹性假天数','attendance'],['调休假天数','attendance']]) assert.equal(run(`matchSource('导出.xlsx',[{姓名:'甲','${field}':1}]).key`),key);
- assert.equal(run('exportRow(employees[0])[38]'),0);assert.equal(run('exportRow(employees[0])[39]'),0);
+ assert.equal(run('exportRow(employees[0])[39]'),0);assert.equal(run('exportRow(employees[0])[40]'),0);
 });
 test('detail workbook and salary slip include mapped leave and employer contributions',()=>{
  const run=app();
  run("window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet)=>{globalThis.savedSheet=sheet;}}};downloadXlsx=()=>{};employees=[calcSalary({actualPaidDays:22,id:'X',name:'甲',status:'在职',annual:1.5,flexible:2,compensatory:3,companyFund:300,companySocial:700})];state.selectedId='X';");
- assert.equal(run('detailSheet().rows[1].length'),40);
- assert.equal(run("detailSheet()['!merges'].at(-1).e.c"),39);
+ assert.equal(run('detailSheet().rows[1].length'),41);
+ assert.equal(run("detailSheet()['!merges'].at(-1).e.c"),40);
  run('downloadSlip()');
  for(const [label,value] of [['年假天数',1.5],['弹性假天数',2],['调休假天数',3],['公司缴纳',300],['公司总计',700]]) assert.equal(run(`savedSheet.rows.find(r=>r[0]==='${label}')[1]`),value);
  for(const view of ['renderMapping()','renderResults()','renderSlip()']) {
@@ -314,4 +314,88 @@ test('mixed valid and invalid employees export the entire workbook with exceptio
  assert.match(run('renderExceptions()'),/第 3、4 行/);
  assert.equal(run('exported.sheets[1].sheet.rows.at(-1)[3]'),null);
  assert.ok(!run('renderResults()').includes('禁止导出'));
+});
+
+test('tax names take precedence and exact tax header wins over aliases',()=>{
+ const run=app();
+ for(const filename of ['2026年9月税.xlsx','工资税额.xlsx','社保个税汇总.xlsx']) assert.equal(run(`matchSource('${filename}',[{姓名:'甲',基本工资:999,税:40}]).key`),'tax');
+ assert.equal(run("matchSource('导出.xlsx',Object.assign([{姓名:'甲',金额:40}],{sheetName:'9月税表'})).key"),'tax');
+ assert.equal(run("matchSource('导出.xlsx',[{姓名:'甲',税:40}]).key"),'tax');
+ run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',个人所得税:999,税:40}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();");
+ assert.equal(run('employees[0].tax'),40);assert.equal(run('employees[0].net'),960);
+});
+
+test('tax matches by name, all personal deductions apply once, employer amounts do not reduce net',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲'},{姓名:'乙'}],salary:[{姓名:'乙',基本工资:2000},{姓名:'甲',基本工资:10000}],other:[{姓名:'甲',其他减:100,其他代扣:70}],social:[{姓名:'甲',个人总计:500,公司总计:3000}],fund:[{姓名:'甲',个人缴纳:400,公司缴纳:4000}],utility:[{姓名:'甲',水电费合计:120}],meal:[{姓名:'甲',餐费合计:200}],tax:[{姓名:'乙',税:20},{姓名:' 甲 ',税:'￥1,234.56'},{姓名:'范围外',税:999}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();");
+ assert.equal(run('employees.length'),2);
+ assert.equal(run('employees[0].gross'),9900);
+ assert.ok(Math.abs(run('employees[0].net')-7375.44)<1e-8);
+ assert.equal(run('employees[1].net'),1980);
+ assert.equal(run('exportRow(employees[0])[exportHeaders().indexOf("个税")]'),1234.56);
+ run('recalculateEmployees();recalculateEmployees();');
+ assert.ok(Math.abs(run('employees[0].net')-7375.44)<1e-8);
+});
+
+test('missing, invalid and duplicate tax rows are visible exceptions; missing table remains optional',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();");
+ assert.equal(run('employees[0].tax'),0);assert.equal(run('employees[0].gross'),1000);
+ assert.match(run('renderResults()'),/个税表.*尚未上传/);
+ for(const [rows,pattern] of [["[{姓名:'乙',税:50}]",/个税未找到匹配/],["[{姓名:'甲',金额:50}]",/个税税额缺失/],["[{姓名:'甲',税:''}]",/个税税额缺失/],["[{姓名:'甲',税:'abc'}]",/个税税额无效/],["[{姓名:'甲',税:'10%'}]",/个税税额无效/]]) {
+  run(`sourceRows.tax=${rows};recalculateEmployees();`);
+  assert.equal(run('employees[0].tax'),0);assert.equal(run('employees[0].net'),1000);assert.match(run('employees[0].exception'),pattern);
+ }
+ run("sourceRows.tax=[{姓名:'甲',税:0},{姓名:'甲',税:90}];recalculateEmployees();");
+ assert.match(run('employees[0].exception'),/个税存在重复姓名/);
+ assert.equal(run('employees[0].tax'),0);
+});
+
+function captureExports(run) {
+ run("window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet,name)=>{book[name]=sheet;}}};downloadXlsx=(book,name)=>{globalThis.savedBook=book;globalThis.savedName=name;};");
+}
+
+test('gross export precedes tax upload and remains unchanged; full detail, summary and slip reconcile',async()=>{
+ const run=importApp();captureExports(run);
+ await run("importFiles([{name:'花名册.xlsx',rows:[{姓名:'甲'}]},{name:'员工基本工资表.xlsx',rows:[{姓名:'甲',基本工资:1000}]},{name:'考勤统计表.xlsx',rows:[{姓名:'甲',实发薪天数:22}]}])");
+ run('downloadGross();globalThis.before=JSON.stringify(savedBook);');
+ assert.match(run('savedName'),/^应发工资表_.*\.xlsx$/);
+ assert.equal(run("savedBook['应发工资表'].rows[1].at(-1)"),'应发工资');
+ assert.equal(run("savedBook['应发工资表'].rows[2].at(-1)"),1000);
+ assert.equal(run("savedBook['应发工资表'].rows[1].includes('实发工资')"),false);
+ assert.equal(run("savedBook['应发工资表']['!merges'].every(m=>m.e.c<32)"),true);
+ await run("importFiles([{name:'9月税.xlsx',rows:[{姓名:'甲',税:125.25}]}])");
+ assert.equal(run('employees[0].tax'),125.25);assert.equal(run('employees[0].net'),874.75);
+ run('downloadGross()');assert.equal(run('JSON.stringify(savedBook)'),run('before'));
+ run('downloadCsv()');
+ assert.equal(run("savedBook['工资明细表'].rows[2][savedBook['工资明细表'].rows[1].indexOf('个税')]"),125.25);
+ assert.equal(run("savedBook['汇总统计'].rows.at(-1).at(-2)"),125.25);
+ assert.equal(run("savedBook['汇总统计'].rows.at(-1).at(-1)"),874.75);
+ run('downloadSlip()');assert.equal(run("savedBook['工资条'].rows.find(r=>r[0]==='个税')[1]"),125.25);
+ for(const view of ['renderUpload()','renderMapping()','renderResults()','renderSlip()']) assert.match(run(view),/个税/);
+ assert.match(run('renderResults()'),/data-export-gross/);
+ await run("importFiles([{name:'9月税修正.xlsx',rows:[{姓名:'甲',税:50}]}])");
+ assert.equal(run('employees[0].tax'),125.25);
+ run("resolveImport(0,'tax')");assert.equal(run('employees[0].net'),950);assert.equal(run('employees[0].gross'),1000);
+});
+
+test('tax source and deductions remain isolated when switching payroll batches',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',税:120}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();globalThis.first=currentBatch();globalThis.second={name:'下月',month:'2026-10',workdays:22};state.batches.push(second);setCurrentBatch(second);sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',税:80}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();setCurrentBatch(first);");
+ assert.equal(run('employees[0].net'),880);
+ run('setCurrentBatch(second)');assert.equal(run('employees[0].net'),920);
+});
+
+
+test('every uncertain net deduction defaults to zero with a warning and exports still succeed',()=>{
+ for(const [key,header,field] of [['social','个人总计','social'],['fund','个人缴纳','fund'],['utility','水电费合计','utility'],['meal','餐费合计','mealDeduct'],['other','其他代扣','otherDeduct'],['tax','税','tax']]) {
+  for(const rows of [[{姓名:'乙',[header]:80}],[{姓名:'甲',[header]:null}],[{姓名:'甲',[header]:'无效'}],[{姓名:'甲',[header]:80},{姓名:'甲',[header]:90}]]) {
+   const run=app();captureExports(run);
+   run(`sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],${key}:${JSON.stringify(rows)}};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();`);
+   assert.equal(run(`employees[0].${field}`),0,`${key}: ${JSON.stringify(rows)}`);
+   assert.equal(run('employees[0].net'),1000);
+   assert.match(run('employees[0].exception'),/按 0 计算/);
+   run('downloadCsv()');assert.equal(run("savedBook['工资明细表'].rows.length"),3);
+  }
+ }
 });
