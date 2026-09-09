@@ -128,7 +128,7 @@ test('six same-name leave fields and employer contributions map by name into pay
  const run=app();
  run("sourceRows={roster:[{姓名:'甲',是否入离职:'在职'},{姓名:'乙',是否入离职:'在职'}],salary:[{姓名:'甲',基本工资:2175},{姓名:'乙',基本工资:2175}],attendance:[{姓名:'乙',实发薪天数:22,年假天数:9},{姓名:'甲',实发薪天数:20,年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,'病假(天)':99}],social:[{姓名:'乙',公司总计:888},{姓名:'甲',个人总计:100,公司总计:700}],fund:[{姓名:'乙',公司缴纳:999},{姓名:'甲',个人缴纳:50,公司缴纳:300}]};state.liveImport=true;applyPayrollSettings('2026-09',22);");
  const fields={年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,公司缴纳公积金:300,公司缴纳社保:700};
- assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length'));
+ assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length-8'));
  assert.equal(run('exportRow(employees[0]).length'),run('exportHeaders().length'));
  for(const [field,value] of Object.entries(fields)) {
   assert.equal(run(`exportRow(employees[0])[exportHeaders().indexOf('${field}')]`),value);
@@ -428,7 +428,10 @@ test('intern mapping controls, export contract and salary slip show daily-rate c
  run("sourceRows={roster:[{姓名:'正式',是否实习:'否'},{姓名:'实习',是否实习生:'是'}],attendance:[{姓名:'正式',实发薪天数:22},{姓名:'实习',实发薪天数:7.5}],salary:[{姓名:'正式',基本工资:1000},{姓名:'实习',基本工资:9999}]};state.liveImport=true;setInternDailyRate('实习',300);state.payrollStage='gross';recalculateEmployees();");
  assert.match(run('renderMapping()'),/实习生日薪设置/);
  assert.match(run('renderMapping()'),/任一表头包含“实习”/);
- assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length'));
+ assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length-8'));
+ assert.equal(run("exportRow(employees.find(e=>e.name==='正式'))[exportHeaders().indexOf('是否实习生')]"),'');
+ assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[exportHeaders().indexOf('是否实习生')]"),'是');
+ for(const field of ['日薪','转正日期','转正前应出勤天数','转正后应出勤天数','转正前工资','转正后工资','转正前工资小计','转正后工资小计']) assert.equal(run(`exportHeaders().includes('${field}')`),false);
  assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[10]"),7.5);
  assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[exportHeaders().indexOf('实发工资')]"),2250);
  run("state.payrollStage='net';state.selectedId=employees.find(e=>e.name==='实习').id");
@@ -574,7 +577,7 @@ test('numeric export cells carry live formulas and cached results matching UI an
 test('generated grouped headers round-trip through grid parsing without importing total rows',()=>{
  const run=app();seedPayroll(run);captureExports(run);run('downloadGross()');
  run("globalThis.parsed=PayrollEngine.rowsFromGrid(savedBook['应发工资表'].rows);commitSource('grossUpload',{filename:'回读.xlsx',rows:parsed});switchPayrollStage('net');");
- assert.equal(run('parsed.length'),1);assert.equal(run('parsed[0].个人社保'),600);assert.equal(run('parsed[0].是否实习生'),'否');assert.equal(run('state.comparison.status'),'equal');
+ assert.equal(run('parsed.length'),1);assert.equal(run('parsed[0].个人社保'),600);assert.equal(run('parsed[0].是否实习生'),'');assert.equal(run('state.comparison.status'),'equal');
  assert.throws(()=>run("PayrollEngine.rowsFromGrid([['姓名','姓名'],['甲','乙']])"),/重复列/);
  assert.throws(()=>run("PayrollEngine.rowsFromGrid([['其他字段'],['甲']])"),/姓名/);
 });
@@ -606,11 +609,20 @@ test('regularization fields import from roster, salary and attendance sources an
  assert.equal(run('employees[0].probationSubtotal'),10000);
  assert.equal(run('employees[0].regularSubtotal'),20200);
  assert.equal(run('employees[0].gross'),15342.86);
- for (const field of ['转正日期','转正前应出勤天数','转正后应出勤天数','转正前工资小计','转正后工资小计']) assert.ok(run(`exportHeaders().includes('${field}')`));
+ for (const field of ['日薪','转正日期','转正前应出勤天数','转正后应出勤天数','转正前工资','转正后工资','转正前工资小计','转正后工资小计']) assert.equal(run(`exportHeaders().includes('${field}')`),false);
  run("sourceRows.attendance[0].转正后应出勤天数=11.75;recalculateEmployees();");
  assert.equal(run('employees[0].regularizationBlocked'),true);
  assert.match(run('employees[0].exception'),/之和必须等于当月应工作天数/);
  assert.equal(run('employees[0].gross'),0);
+});
+
+test('regularization columns and calculations stay absent when no employee has a current-month regularization date',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',是否入离职:'在职'},{姓名:'乙',是否入离职:'在职',转正日期:''}],salary:[{姓名:'甲',基本工资:10000},{姓名:'乙',基本工资:8000}],attendance:[{姓名:'甲',实发薪天数:21},{姓名:'乙',实发薪天数:21}]};state.liveImport=true;applyPayrollSettings('2026-08',21);");
+ assert.equal(run('employees.every(employee=>employee.regularizationActive===false)'),true);
+ assert.equal(run('employees[0].gross'),10000);
+ for (const field of ['转正日期','转正前应出勤天数','转正后应出勤天数','转正前工资','转正后工资','转正前工资小计','转正后工资小计']) assert.equal(run(`exportHeaders().includes('${field}')`),false);
+ assert.doesNotMatch(run('renderGrossResults()'),/转正前工资/);
 });
 
 test('regularization total salary headers are captured and workdays are derived from the transfer date',()=>{

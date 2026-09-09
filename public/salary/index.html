@@ -813,7 +813,7 @@
     function recalculateEmployees() {
       generatedEmployees=sortEmployeesInternLast(state.liveImport ? importedEmployees() : state.sourceStatus.roster?.uploaded ? profiles.map(p=>calcSalary(p)) : []);
       generatedEmployees=generatedEmployees.map(e=>({...e,gross:PayrollEngine.round(e.gross),net:PayrollEngine.round(e.gross),social:PayrollEngine.round(e.social),fund:PayrollEngine.round(e.fund)}));
-      state.comparison=PayrollEngine.compare(generatedEmployees.map(PayrollEngine.grossRecord),sourceRows.grossUpload);
+      state.comparison=PayrollEngine.compare(generatedEmployees.map(employee=>exportRecord(employee,true)),comparisonRows(sourceRows.grossUpload));
       state.grossSource=sourceRows.grossUpload?'uploaded':generatedEmployees.length?'generated':'none';
       employees=state.payrollStage==='net' ? sortEmployeesInternLast(PayrollEngine.calculateNet(sourceRows.grossUpload?PayrollEngine.uploadedEmployees(sourceRows.grossUpload):generatedEmployees,sourceRows)) : generatedEmployees;
       currentBatch().employees=employees.length;
@@ -968,8 +968,12 @@
     function renderResults() { return state.payrollStage==='net'?renderNetResults():renderGrossResults(); }
     function renderSlip() { return state.payrollStage==='net'?renderNetSlip():renderGrossResults(); }
     function renderGrossResults() {
-      const fields=['name','dept','regularizationDate','probationWorkdays','regularWorkdays','probationSalary','regularSalary','base','post','performancePay','subtotal','meal','transit','otherAllow','sickSubsidy','otherAdd','deductDays','attendanceDeduct','otherReduction','gross','social','fund'];
-      const labels=['姓名','部门','转正日期','转正前工作日','转正后工作日','转正前工资','转正后工资','基本工资','岗位工资','绩效工资','工资小计','餐饮津贴','交通津贴','其他津贴','病假补贴','其他加','假勤扣薪天数','假勤扣款','其他减','应发工资','个人社保','个人公积金'];
+      const descriptors=[
+        ['姓名','name','text'],['部门','dept','text'],
+        ...(hasActiveRegularization(employees)?[['转正日期','regularizationDate','date'],['转正前工作日','probationWorkdays','number'],['转正后工作日','regularWorkdays','number'],['转正前工资','probationSalary','money'],['转正后工资','regularSalary','money']]:[]),
+        ['基本工资','base','money'],['岗位工资','post','money'],['绩效工资','performancePay','money'],['工资小计','subtotal','money'],['餐饮津贴','meal','money'],['交通津贴','transit','money'],['其他津贴','otherAllow','money'],['病假补贴','sickSubsidy','money'],['其他加','otherAdd','money'],['假勤扣薪天数','deductDays','number'],['假勤扣款','attendanceDeduct','money'],['其他减','otherReduction','money'],['应发工资','gross','money'],['个人社保','social','money'],['个人公积金','fund','money']
+      ];
+      const fields=descriptors.map(([,field])=>field), labels=descriptors.map(([label])=>label);
       const formatResult = (field, value) => {
         if (field === 'regularizationDate') return escapeHtml(value || '—');
         if (['probationWorkdays','regularWorkdays','deductDays'].includes(field)) return integer(value);
@@ -1083,12 +1087,31 @@
     }
     function workbookReady() { if (!payrollExportReady()) return false; if (!window.XLSX) { showToast('Excel 组件尚未加载，请稍候重试'); return false; } return true; }
     function downloadXlsx(workbook, filename) { const bytes=window.XLSX.write(workbook,{bookType:'xlsx',type:'array'}); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
-    function exportHeaders() { return [...PayrollEngine.fields,...PayrollEngine.netFields].map(field=>field[0]); }
-    function exportRow(e,grossOnly=false) {
+    const regularizationFields=new Set(['regularizationDate','probationWorkdays','regularWorkdays','probationSalary','regularSalary','probationSubtotal','regularSubtotal']);
+    const outputExcludedFields=new Set(['dailyRate',...regularizationFields]);
+    function hasActiveRegularization(list=employees) { return list.some(employee=>employee.regularizationActive===true || isRegularizationMonth(employee,currentMonth)); }
+    function exportDescriptors(grossOnly=false) {
+      const grossFields=PayrollEngine.fields.filter(([,field])=>!outputExcludedFields.has(field));
+      return grossOnly?grossFields:[...grossFields,...PayrollEngine.netFields];
+    }
+    function exportHeaders(grossOnly=false) { return exportDescriptors(grossOnly).map(field=>field[0]); }
+    function exportRecord(e,grossOnly=false) {
       const gross=PayrollEngine.grossRecord(e);
-      const values=PayrollEngine.fields.map(([label])=>gross[label]);
-      if(grossOnly) return values;
-      return [...values,...PayrollEngine.netFields.map(([,field,type])=>type==='money'?PayrollEngine.round(num(e[field])):e[field] ?? '')];
+      return Object.fromEntries(exportDescriptors(grossOnly).map(([label,field,type])=>{
+        const isGrossField=PayrollEngine.fields.some(([,grossField])=>grossField===field);
+        return [label,field==='isIntern'?(e.isIntern?'是':''):isGrossField?gross[label]:type==='money'?PayrollEngine.round(num(e[field])):e[field] ?? ''];
+      }));
+    }
+    function comparisonRows(rows) {
+      if (!rows) return rows;
+      const excludedLabels=new Set(PayrollEngine.fields.filter(([,field])=>outputExcludedFields.has(field)).map(([label])=>label));
+      return rows.map(row=>Object.fromEntries(Object.entries(row).flatMap(([label,value])=>{
+        if (excludedLabels.has(label)) return [];
+        return [[label,label==='是否实习生' && String(value ?? '').trim()==='否'?'':value]];
+      })));
+    }
+    function exportRow(e,grossOnly=false) {
+      return Object.values(exportRecord(e,grossOnly));
     }
     function excelColumn(index) {
       let result='';for(index++;index>0;index=Math.floor((index-1)/26))result=String.fromCharCode(65+(index-1)%26)+result;return result;
@@ -1102,7 +1125,7 @@
     }
     function detailSheet(grossOnly=false) {
       const list=grossOnly?generatedEmployees:employees;
-      const descriptors=grossOnly?PayrollEngine.fields:[...PayrollEngine.fields,...PayrollEngine.netFields];
+      const descriptors=exportDescriptors(grossOnly);
       const headers=descriptors.map(field=>field[0]),groups=new Array(headers.length).fill('');
       groups[0]='第 1 组 · 基础人事信息';groups[9]='第 2 组 · 薪资基准天数';groups[11]='第 3 组 · 工资类核算';groups[17]='第 4 组 · 津贴补贴';groups[22]='第 5 组 · 假期';groups[28]='第 6 组 · 扣减';groups[31]='第 7 组 · 最终核算';
       const data=list.map(e=>exportRow(e,grossOnly));
