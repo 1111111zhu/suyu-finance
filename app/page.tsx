@@ -4,6 +4,7 @@
 
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import Image from "next/image";
+import * as XLSX from "xlsx";
 import brandMark from "../design_mockups/brand/seeextech-symbol-user.png";
 
 type PyodideLike = {
@@ -20,6 +21,16 @@ declare global {
   }
 }
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const SUPPORTED_EXTENSIONS = new Set([
+  "xlsx",
+  "xlsm",
+  "xls",
+  "xlsb",
+  "ods",
+  "csv",
+]);
+const ENGINE_READY_EXTENSIONS = new Set(["xlsx", "xlsm"]);
+const FILE_ACCEPT = ".xlsx,.xlsm,.xls,.xlsb,.ods,.csv";
 const REVISION = "20260902-application-candidates-v22";
 const PYODIDE_INDEXES = [
   "https://unpkg.com/pyodide@0.28.2/",
@@ -98,6 +109,31 @@ function kinds(files: File[]) {
 }
 function filesFor(kind: Kind, files: File[]) {
   return files.filter((file) => patterns[kind].test(file.name.toLowerCase()));
+}
+function extensionOf(filename: string) {
+  return filename.split(".").pop()?.toLowerCase() ?? "";
+}
+async function bytesForEngine(file: File) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (ENGINE_READY_EXTENSIONS.has(extensionOf(file.name))) return bytes;
+  try {
+    const workbook = XLSX.read(bytes, {
+      type: "array",
+      cellDates: true,
+      cellStyles: true,
+    });
+    if (!workbook.SheetNames.length) throw new Error("未找到可读取的工作表");
+    return new Uint8Array(
+      XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+        cellStyles: true,
+      }),
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? `：${error.message}` : "";
+    throw new Error(`${file.name} 无法转换为可计算的工作簿${detail}`);
+  }
 }
 function ensureLoader(indexUrl: string) {
   return new Promise<void>((resolve, reject) => {
@@ -209,6 +245,16 @@ export default function Home() {
     return enginePromise.current;
   }
   function choose(next: File[]) {
+    const unsupported = next.find(
+      (file) => !SUPPORTED_EXTENSIONS.has(extensionOf(file.name)),
+    );
+    if (unsupported) {
+      setPhase("error");
+      setMessage(
+        `${unsupported.name} 不是可读取的表格格式。请上传 .xlsx、.xlsm、.xls、.xlsb、.ods 或 .csv。`,
+      );
+      return;
+    }
     const over = next.find((file) => file.size > MAX_FILE_BYTES);
     if (over) {
       setPhase("error");
@@ -276,7 +322,7 @@ export default function Home() {
       const paths: string[] = [];
       for (const [index, file] of files.entries()) {
         const target = `/work/input_${index + 1}.xlsx`;
-        runtime.FS.writeFile(target, new Uint8Array(await file.arrayBuffer()));
+        runtime.FS.writeFile(target, await bytesForEngine(file));
         paths.push(`Path(${JSON.stringify(target)})`);
       }
       await runtime.runPythonAsync(
@@ -379,7 +425,7 @@ export default function Home() {
             <input
               ref={input}
               type="file"
-              accept=".xlsx"
+              accept={FILE_ACCEPT}
               multiple
               onChange={onChange}
             />
@@ -413,7 +459,7 @@ export default function Home() {
               <>
                 <CloudIcon />
                 <strong>点击选择或将文件拖入此处</strong>
-                <span>支持多个 .xlsx 文件，单个文件 ≤ 20MB</span>
+                <span>支持 .xlsx、.xlsm、.xls、.xlsb、.ods、.csv，单个文件 ≤ 20MB</span>
               </>
             )}
           </label>
@@ -485,6 +531,9 @@ export default function Home() {
             </button>
           </div>
           {message && <div className={`notice ${phase}`}>{message}</div>}
+          <p className="upload-compatibility-note">
+            传统 Excel 与二进制工作簿会仅在浏览器内转换后读取；含宏文件不会运行宏。
+          </p>
           {complete && (
             <div className="result">
               研发费用测算已完成，结果文件已保存至浏览器下载目录。
