@@ -435,19 +435,22 @@
 
     function parseDate(value) { return value ? new Date(value + 'T00:00:00') : null; }
     function isWeekday(date) { const d = date.getDay(); return d !== 0 && d !== 6; }
-    function weekdaysBetween(start, end) {
+    function isoDate(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
+    function normalizedMakeupDates(dates=[]) { return new Set((Array.isArray(dates)?dates:String(dates).split(/[，,\s]+/)).map(value=>excelDate(value)).filter(value=>/^\d{4}-\d{2}-\d{2}$/.test(value))); }
+    function weekdaysBetween(start, end, makeupDates=[]) {
       if (!start || !end) return 0;
+      const makeup=normalizedMakeupDates(makeupDates);
       let count = 0, cursor = new Date(start);
       const last = new Date(end);
-      while (cursor <= last) { if (isWeekday(cursor)) count++; cursor.setDate(cursor.getDate() + 1); }
+      while (cursor <= last) { if (isWeekday(cursor) || makeup.has(isoDate(cursor))) count++; cursor.setDate(cursor.getDate() + 1); }
       return count;
     }
     function validPayrollSettings(month, days) {
       return /^\d{4}-(0[1-9]|1[0-2])$/.test(month) && Number(month.slice(0,4)) > 0 && String(days).trim() !== '' && Number.isFinite(Number(days)) && Number(days) > 0 && Number(days) <= new Date(Number(month.slice(0,4)), Number(month.slice(5)), 0).getDate();
     }
-    function monthWorkdays(month) {
+    function monthWorkdays(month, makeupDates=[]) {
       const [year, monthNumber] = month.split('-').map(Number);
-      return weekdaysBetween(new Date(year, monthNumber - 1, 1), new Date(year, monthNumber, 0));
+      return weekdaysBetween(new Date(year, monthNumber - 1, 1), new Date(year, monthNumber, 0), makeupDates);
     }
     function isLateHire(profile, month) { return profile.status === '入职' && profile.join && profile.join.slice(0,7) === month && Number(profile.join.slice(8,10)) >= 15; }
     function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
@@ -457,6 +460,13 @@
     }
     function isRegularizationMonth(profile, month) {
       return Boolean(profile.regularizationDate) && excelDate(profile.regularizationDate).slice(0,7) === month;
+    }
+    function derivedProbationWorkdays(profile, month) {
+      const dateText=excelDate(profile.regularizationDate);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText) || dateText.slice(0,7)!==month) return null;
+      const date=parseDate(dateText), start=new Date(date.getFullYear(),date.getMonth(),1), before=new Date(date);
+      before.setDate(before.getDate()-1);
+      return weekdaysBetween(start,before,makeupWorkdays);
     }
     function calcSalary(profile, month=currentMonth, workdays=currentWorkdays) {
       if (!validPayrollSettings(month, workdays)) throw new Error('请选择计薪月份，并输入大于 0 且不超过当月日历天数的应发薪天数');
@@ -486,55 +496,79 @@
       const late = isLateHire(profile, month);
       const perfScore = late ? 0 : num(profile.score);
       let base = num(profile.base), post = num(profile.post), perfBase = num(profile.perfBase);
-      let probationWorkdays = null, regularWorkdays = null, probationSubtotal = null, regularSubtotal = null, regularizationBlocked = false;
+      let probationWorkdays = null, regularWorkdays = null, probationSalary = null, regularSalary = null, probationSubtotal = null, regularSubtotal = null, regularizationBlocked = false;
       const regularizationActive = isRegularizationMonth(profile, month);
+      const hasRegularizationDate = Boolean(profile.regularizationDate);
+      if (hasRegularizationDate && !regularizationActive) exceptions.push('转正日期不在当前计薪月份，本月不做转正分段');
       if (regularizationActive) {
         const suppliedProbationDays = hasNumber(profile.probationWorkdays) ? Number(profile.probationWorkdays) : null;
         const suppliedRegularDays = hasNumber(profile.regularWorkdays) ? Number(profile.regularWorkdays) : null;
         if (suppliedProbationDays !== null && suppliedProbationDays < 0 || suppliedRegularDays !== null && suppliedRegularDays < 0) {
           regularizationBlocked = true;
           exceptions.push('转正前、后应出勤天数必须为非负数');
-        } else if (suppliedProbationDays === null && suppliedRegularDays === null) {
+        } else if (suppliedProbationDays === null && suppliedRegularDays === null && derivedProbationWorkdays(profile, month) === null) {
           regularizationBlocked = true;
-          exceptions.push('转正当月缺少“转正前应出勤天数”或“转正后应出勤天数”，无法按当月应工作天数分段折算');
+          exceptions.push('转正日期无效，无法按工作日历计算转正前工作日');
         } else {
-          probationWorkdays = suppliedProbationDays === null ? workdays - suppliedRegularDays : suppliedProbationDays;
-          regularWorkdays = suppliedRegularDays === null ? workdays - suppliedProbationDays : suppliedRegularDays;
+          probationWorkdays = suppliedProbationDays !== null ? suppliedProbationDays : suppliedRegularDays !== null ? workdays - suppliedRegularDays : derivedProbationWorkdays(profile, month);
+          regularWorkdays = suppliedRegularDays === null ? workdays - probationWorkdays : suppliedRegularDays;
           if (probationWorkdays < 0 || regularWorkdays < 0 || Math.abs(probationWorkdays + regularWorkdays - workdays) > 0.000001) {
             regularizationBlocked = true;
             exceptions.push(`转正前、后应出勤天数之和必须等于当月应工作天数（${workdays} 天）`);
           }
         }
         if (!regularizationBlocked) {
-          const probationBase = salarySegmentValue(profile, 'probationBase', 'base');
-          const regularBase = salarySegmentValue(profile, 'regularBase', 'base');
-          const probationPost = salarySegmentValue(profile, 'probationPost', 'post');
-          const regularPost = salarySegmentValue(profile, 'regularPost', 'post');
-          const probationPerfBase = salarySegmentValue(profile, 'probationPerfBase', 'perfBase');
-          const regularPerfBase = salarySegmentValue(profile, 'regularPerfBase', 'perfBase');
-          probationSubtotal = probationBase + probationPost + probationPerfBase * perfScore;
-          regularSubtotal = regularBase + regularPost + regularPerfBase * perfScore;
-          base = probationBase * probationWorkdays / workdays + regularBase * regularWorkdays / workdays;
-          post = probationPost * probationWorkdays / workdays + regularPost * regularWorkdays / workdays;
-          perfBase = probationPerfBase * probationWorkdays / workdays + regularPerfBase * regularWorkdays / workdays;
+          const totalBefore = profile.probationTotal, totalAfter = profile.regularTotal;
+          const hasTotalBefore = hasNumber(totalBefore), hasTotalAfter = hasNumber(totalAfter);
+          const componentPairs = [['基本工资','probationBase','regularBase','base'],['岗位工资','probationPost','regularPost','post'],['绩效基数','probationPerfBase','regularPerfBase','perfBase']];
+          const hasAnyComponent = componentPairs.some(([,before,after]) => hasNumber(profile[before]) || hasNumber(profile[after]));
+          if (hasTotalBefore || hasTotalAfter) {
+            if (!hasTotalBefore || !hasTotalAfter) {
+              regularizationBlocked = true;
+              exceptions.push('缺少转正前或转正后工资，无法按当月应出勤天数分段折算');
+            } else {
+              probationSubtotal = Number(totalBefore); regularSubtotal = Number(totalAfter);
+              probationSalary = probationSubtotal * probationWorkdays / workdays;
+              regularSalary = regularSubtotal * regularWorkdays / workdays;
+              base = 0; post = 0; perfBase = 0;
+            }
+          } else if (!hasAnyComponent) {
+            regularizationBlocked = true;
+            exceptions.push('缺少转正前或转正后工资，无法按当月应出勤天数分段折算');
+          } else if (componentPairs.some(([label,before,after]) => hasNumber(profile[before]) !== hasNumber(profile[after]))) {
+            regularizationBlocked = true;
+            exceptions.push('缺少转正前或转正后工资，无法按当月应出勤天数分段折算');
+          } else {
+            const probationBase = salarySegmentValue(profile, 'probationBase', 'base'), regularBase = salarySegmentValue(profile, 'regularBase', 'base');
+            const probationPost = salarySegmentValue(profile, 'probationPost', 'post'), regularPost = salarySegmentValue(profile, 'regularPost', 'post');
+            const probationPerfBase = salarySegmentValue(profile, 'probationPerfBase', 'perfBase'), regularPerfBase = salarySegmentValue(profile, 'regularPerfBase', 'perfBase');
+            probationSubtotal = probationBase + probationPost + probationPerfBase * perfScore;
+            regularSubtotal = regularBase + regularPost + regularPerfBase * perfScore;
+            probationSalary = probationSubtotal * probationWorkdays / workdays;
+            regularSalary = regularSubtotal * regularWorkdays / workdays;
+            base = probationBase * probationWorkdays / workdays + regularBase * regularWorkdays / workdays;
+            post = probationPost * probationWorkdays / workdays + regularPost * regularWorkdays / workdays;
+            perfBase = probationPerfBase * probationWorkdays / workdays + regularPerfBase * regularWorkdays / workdays;
+          }
         } else {
-          // Do not quietly substitute 21.75 or a whole-month salary when a required segment is missing.
+          // Do not quietly substitute another denominator or a whole-month salary when a required segment is missing.
           base = 0; post = 0; perfBase = 0;
         }
       }
       const performancePay = perfBase * perfScore;
-      const subtotal = base + post + performancePay;
+      const subtotal = regularizationActive && !regularizationBlocked && hasNumber(profile.probationTotal) && hasNumber(profile.regularTotal) ? probationSalary + regularSalary : base + post + performancePay;
       const sickSubsidy = 2660 / 21.75 * num(profile.sick) * .8;
       const attendanceDeduct = payrollBlocked ? null : subtotal / 21.75 * deductDays;
       const gross = subtotal + num(profile.meal) + num(profile.transit) + num(profile.otherAllow) + sickSubsidy + num(profile.otherAdd) - num(attendanceDeduct) - num(profile.otherReduction);
       const social = num(profile.social), fund = num(profile.fund), otherDeduct = num(profile.otherDeduct), utility = num(profile.utility), mealDeduct = num(profile.mealDeduct);
       const tax = num(profile.tax);
       const net = gross;
-      return {...profile, base, post, perfBase, otherReduction:num(profile.otherReduction), otherDeduct, workdays, payableDays, payrollBlocked, deductDays, effectiveScore: perfScore, performancePay, subtotal, sickSubsidy, attendanceDeduct, gross, social, fund, tax, net, late, regularizationActive, regularizationBlocked, probationWorkdays, regularWorkdays, probationSubtotal, regularSubtotal, hasException: exceptions.length > 0, exception: exceptions.join('；')};
+      return {...profile, base, post, perfBase, probationSalary, regularSalary, otherReduction:num(profile.otherReduction), otherDeduct, workdays, payableDays, payrollBlocked, deductDays, effectiveScore: perfScore, performancePay, subtotal, sickSubsidy, attendanceDeduct, gross, social, fund, tax, net, late, regularizationActive, regularizationBlocked, probationWorkdays, regularWorkdays, probationSubtotal, regularSubtotal, hasException: exceptions.length > 0, exception: exceptions.join('；')};
     }
     const today = new Date();
     let currentMonth = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
     let currentWorkdays = 22; // 初始示例天数；实际算薪由用户填写。
+    let makeupWorkdays = [];
     let employees = profiles.map(p => calcSalary(p, currentMonth));
     let sourceRows = {};
     const state = {
@@ -590,6 +624,13 @@
       if (!Number.isFinite(parsed)) return 0;
       return percent ? parsed / 100 : parsed;
     }
+    function parseOptionalNumber(value) {
+      if (value === null || value === undefined || String(value).trim() === '') return null;
+      const raw=String(value).trim().replace(/[￥¥,，\s]/g,'');
+      if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)%?$/.test(raw)) return null;
+      const parsed=Number(raw.replace(/%$/,''));
+      return Number.isFinite(parsed) ? (raw.endsWith('%') ? parsed / 100 : parsed) : null;
+    }
     function excelDate(value) {
       if (!value) return '';
       if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
@@ -624,8 +665,9 @@
       const rosterRows = sourceRows.roster || [];
       const tables = Object.fromEntries(Object.keys(sourceRows).map(key => [key, tableFor(key)]));
       const link = (key, name, aliases, fallback=0) => { const table=tables[key]; if (!table) return {value:fallback, found:false, source:false, duplicate:false}; const normalized=canonicalKey(name), duplicate=table.duplicates.has(normalized), matched=table.map.get(normalized); const column=aliases.map(alias=>Object.keys(matched || {}).find(key=>canonicalKey(key)===canonicalKey(alias))).find(key=>key!==undefined); return {column, value:table.map.has(normalized) ? rowValue(table.map.get(normalized), aliases) : fallback, found:table.map.has(normalized), source:true, duplicate}; };
+      const firstPresent = (...values) => values.find(value => value !== null && value !== undefined && String(value).trim() !== '') ?? null;
       return sortEmployeesInternLast(rosterRows.map((row, index) => {
-        const name=String(rowValue(row,['姓名']) ?? '').trim(), isIntern=isInternValue(internFlagValue(row)), salary=link('salary',name,['基本工资','工资基数']), post=link('salary',name,['岗位工资']), perfBase=link('salary',name,['绩效基数']), performance=link('performance',name,['绩效系数','绩效分数']), attendance=link('attendance',name,['餐补合计']), transit=link('attendance',name,['交通补贴']), otherAllow=link('other',name,['其他津贴']), otherAdd=link('other',name,['其他加']), annual=link('attendance',name,['年假天数','年假(天)','年假（天）']), flexible=link('attendance',name,['弹性假天数','弹性假(天)','弹性假（天）']), compensatory=link('attendance',name,['调休假天数','调休假(天)','调休假（天）']), sick=link('attendance',name,['病假天数','病假（天）','病假(天)']), personal=link('attendance',name,['事假天数','事假（天）','事假(天)']), absent=link('attendance',name,['旷工天数','旷工（天）','旷工(天)']), companySocial=link('social',name,['公司总计']), companyFund=link('fund',name,['公司缴纳']), social=link('social',name,['个人总计','个人社保']), fund=link('fund',name,['个人缴纳','个人公积金']), otherReduction=link('other',name,['其他减']), otherDeduct=link('other',name,['其他代扣']), utility=link('utility',name,['水电费合计']), mealDeduct=link('meal',name,['餐费合计']), tax=link('tax',name,['税','个税','个人所得税','税额']);
+        const name=String(rowValue(row,['姓名']) ?? '').trim(), isIntern=isInternValue(internFlagValue(row)), salary=link('salary',name,['基本工资','工资基数']), post=link('salary',name,['岗位工资']), perfBase=link('salary',name,['绩效基数']), probationTotal=link('salary',name,['转正前工资','试用期工资','转正前月薪','试用期月薪','转正前'],null), regularTotal=link('salary',name,['转正后工资','正式工资','转正后月薪','正式月薪','转正后'],null), probationBase=link('salary',name,['转正前基本工资','试用期基本工资']), regularBase=link('salary',name,['转正后基本工资','转正基本工资','正式基本工资']), probationPost=link('salary',name,['转正前岗位工资','试用期岗位工资']), regularPost=link('salary',name,['转正后岗位工资','转正岗位工资','正式岗位工资']), probationPerfBase=link('salary',name,['转正前绩效基数','试用期绩效基数']), regularPerfBase=link('salary',name,['转正后绩效基数','转正绩效基数','正式绩效基数']), regularizationSalaryDate=link('salary',name,['转正日期','转正日','转正时间'],null), probationDays=link('attendance',name,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数'],null), regularDays=link('attendance',name,['转正后应出勤天数','转正后出勤天数','转正后计薪天数'],null), performance=link('performance',name,['绩效系数','绩效分数']), attendance=link('attendance',name,['餐补合计']), transit=link('attendance',name,['交通补贴']), otherAllow=link('other',name,['其他津贴']), otherAdd=link('other',name,['其他加']), annual=link('attendance',name,['年假天数','年假(天)','年假（天）']), flexible=link('attendance',name,['弹性假天数','弹性假(天)','弹性假（天）']), compensatory=link('attendance',name,['调休假天数','调休假(天)','调休假（天）']), sick=link('attendance',name,['病假天数','病假（天）','病假(天)']), personal=link('attendance',name,['事假天数','事假（天）','事假(天)']), absent=link('attendance',name,['旷工天数','旷工（天）','旷工(天)']), companySocial=link('social',name,['公司总计']), companyFund=link('fund',name,['公司缴纳']), social=link('social',name,['个人总计','个人社保']), fund=link('fund',name,['个人缴纳','个人公积金']), otherReduction=link('other',name,['其他减']), otherDeduct=link('other',name,['其他代扣']), utility=link('utility',name,['水电费合计']), mealDeduct=link('meal',name,['餐费合计']), tax=link('tax',name,['税','个税','个人所得税','税额']);
         if (tax.found) { const taxRow=tables.tax.map.get(canonicalKey(name)), exact=Object.keys(taxRow).find(key=>canonicalKey(key)==='税'); if (exact!==undefined) tax.value=taxRow[exact]; }
         const paidDays=link('attendance',name,['实发薪天数'],null);
         const duplicateSources=Object.entries(tables).filter(([key,table])=>!netSourceKeys.includes(key) && table.duplicates.has(canonicalKey(name))).map(([key])=>sourceSheets.find(sheet=>sheet.key===key)?.name || key);
@@ -654,11 +696,13 @@
           else if (!['string','number'].includes(typeof raw) || !Number.isFinite(Number(raw))) reason='金额不是有效数字';
           if (reason) { deductionIssues.push(`${label}${reason}，按 0 计算`);item.value=0; }
         }
-        (isIntern?[paidDays]:[salary,post,perfBase,performance,attendance,transit,otherAllow,otherAdd,annual,flexible,compensatory,sick,personal,absent,otherReduction]).forEach(item=>{if(item.duplicate) exceptions.push('源表存在重复姓名');});
+        (isIntern?[paidDays]:[salary,post,perfBase,probationTotal,regularTotal,probationBase,regularBase,probationPost,regularPost,probationPerfBase,regularPerfBase,regularizationSalaryDate,probationDays,regularDays,performance,attendance,transit,otherAllow,otherAdd,annual,flexible,compensatory,sick,personal,absent,otherReduction]).forEach(item=>{if(item.duplicate) exceptions.push('源表存在重复姓名');});
         if (isIntern && !Object.prototype.hasOwnProperty.call(internDailyRates(),canonicalKey(name))) exceptions.push('日薪未设置');
         const status=String(rowValue(row,['是否入离职']) ?? '在职').trim() || '在职';
         const joinValue = rowValue(row,['入职日期']), leaveValue = rowValue(row,['离职日期']), statusValue = rowValue(row,['是否入离职']);
-        return {id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
+        const regularizationValue=firstPresent(rowValue(row,['转正日期','转正日','转正时间']),regularizationSalaryDate.value), regularizationDate=excelDate(regularizationValue);
+        if (regularizationValue !== null && !/^\d{4}-\d{2}-\d{2}$/.test(regularizationDate)) exceptions.push('转正日期无效，请填写 YYYY-MM-DD 格式日期');
+        return {id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), regularizationDate, probationWorkdays:firstPresent(rowValue(row,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数']),probationDays.value), regularWorkdays:firstPresent(rowValue(row,['转正后应出勤天数','转正后出勤天数','转正后计薪天数']),regularDays.value), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), probationTotal:parseOptionalNumber(probationTotal.value), regularTotal:parseOptionalNumber(regularTotal.value), probationBase:parseOptionalNumber(probationBase.value), regularBase:parseOptionalNumber(regularBase.value), probationPost:parseOptionalNumber(probationPost.value), regularPost:parseOptionalNumber(regularPost.value), probationPerfBase:parseOptionalNumber(probationPerfBase.value), regularPerfBase:parseOptionalNumber(regularPerfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
       }).map(profile => calcSalary(profile, currentMonth)));
     }
     function rebuildImportedEmployees() {
@@ -668,10 +712,10 @@
     function hasPayrollRoster() { return Boolean(state.sourceStatus.roster?.uploaded); }
     function missingSourceSheets() { return sourceSheets.filter(sheet => !state.sourceStatus[sheet.key]?.uploaded); }
     const sourceRules = {
-      roster: {names:['花名册','人员名册','员工名册'], fields:['公司','一级部门','一级部门名称','二级部门','入职日期','离职日期','是否入离职','银行卡号','是否实习','是否实习生','实习']},
-      salary: {names:['员工基本工资','基本工资表','基本薪资'], fields:['基本工资','工资基数','岗位工资','绩效基数']},
+      roster: {names:['花名册','人员名册','员工名册'], fields:['公司','一级部门','一级部门名称','二级部门','入职日期','离职日期','转正日期','是否入离职','银行卡号','是否实习','是否实习生','实习']},
+      salary: {names:['员工基本工资','基本工资表','基本薪资'], fields:['基本工资','工资基数','岗位工资','绩效基数','转正前工资','转正后工资','试用期工资','正式工资','转正前月薪','转正后月薪','正式月薪','转正前','转正后','转正前基本工资','转正后基本工资','试用期基本工资','转正基本工资','正式基本工资','转正前岗位工资','转正后岗位工资','试用期岗位工资','转正岗位工资','正式岗位工资','转正前绩效基数','转正后绩效基数','试用期绩效基数','转正绩效基数','正式绩效基数']},
       performance: {names:['绩效考核','绩效表'], fields:['绩效系数','绩效分数']},
-      attendance: {names:['考勤'], fields:['实发薪天数','年假天数','年假(天)','弹性假天数','弹性假(天)','调休假天数','调休假(天)','餐补合计','交通补贴','病假(天)','病假天数','事假(天)','事假天数','旷工天数','旷工(天)']},
+      attendance: {names:['考勤'], fields:['实发薪天数','转正前应出勤天数','转正后应出勤天数','年假天数','年假(天)','弹性假天数','弹性假(天)','调休假天数','调休假(天)','餐补合计','交通补贴','病假(天)','病假天数','事假(天)','事假天数','旷工天数','旷工(天)']},
       other: {names:['其他表','其他加减','其他津贴'], fields:['其他津贴','其他加','其他减']},
       social: {names:['社保','社会保险'], fields:['个人总计','个人社保','公司总计']},
       fund: {names:['公积金'], fields:['个人缴纳','个人公积金','公司缴纳']},
@@ -776,12 +820,12 @@
     }
     function saveBatchData() {
       const rates=structuredClone(currentBatch().data?.internDailyRates || {});
-      Object.assign(currentBatch(), {workdays:currentWorkdays, data:{schemaVersion:2,grossSource:state.grossSource,comparison:structuredClone(state.comparison),payrollStage:state.payrollStage,sourceRows:structuredClone(sourceRows), sourceStatus:structuredClone(state.sourceStatus), liveImport:state.liveImport, internDailyRates:rates}});
+      Object.assign(currentBatch(), {workdays:currentWorkdays, data:{schemaVersion:2,grossSource:state.grossSource,comparison:structuredClone(state.comparison),payrollStage:state.payrollStage,sourceRows:structuredClone(sourceRows), sourceStatus:structuredClone(state.sourceStatus), liveImport:state.liveImport, internDailyRates:rates, makeupWorkdays:structuredClone(makeupWorkdays)}});
     }
     function setCurrentBatch(batch) {
       saveBatchData();
       state.batches.forEach(b => b.active = false); batch.active = true;
-      currentMonth = batch.month; currentWorkdays = batch.workdays ?? 22;
+      currentMonth = batch.month; currentWorkdays = batch.workdays ?? 22; makeupWorkdays=Array.isArray(batch.data?.makeupWorkdays)?structuredClone(batch.data.makeupWorkdays):[];
       sourceRows = structuredClone(batch.data?.sourceRows || {});
       state.liveImport = batch.data?.liveImport || false;
       state.sourceStatus = structuredClone(batch.data?.sourceStatus || Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}])));
@@ -789,11 +833,25 @@
       recalculateEmployees(); crumbBatch.textContent = batch.name;
     }
     function payrollSettings() {
-      return `<form id="payrollSettings" class="card section-body" style="margin-bottom:20px"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:end"><div class="form-field"><label for="payrollMonth">计薪月份</label><div style="display:flex;gap:8px"><select class="select" id="payrollYear" aria-label="计薪年份" required>${Array.from({length:Math.max(today.getFullYear()+10,Number(currentMonth.slice(0,4)))-Math.min(2000,Number(currentMonth.slice(0,4)))+1},(_,i)=>Math.min(2000,Number(currentMonth.slice(0,4)))+i).map(y=>`<option value="${y}" ${y===Number(currentMonth.slice(0,4))?'selected':''}>${y}年</option>`).join('')}</select><select class="select" id="payrollMonth" aria-label="计薪月份" required>${Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')).map(m=>`<option value="${m}" ${m===currentMonth.slice(5)?'selected':''}>${Number(m)}月</option>`).join('')}</select></div></div><div class="form-field"><label for="payrollDays">当月应工作天数（可修改）</label><input class="input" id="payrollDays" type="number" min="0.01" max="31" step="any" value="${currentWorkdays}" required></div><button class="btn btn-primary" type="submit">应用并重算</button></div><details style="margin-top:12px"><summary>查看计薪规则</summary><div class="section-desc">选择计薪年月，并填写当月应工作天数（支持小数），作为应发薪天数；点击“应用并重算”生效。实发薪天数仅取考勤表中按姓名匹配的同名字段。离职人员：应发薪天数与实发薪天数相等时，假勤扣薪天数及假勤扣款均为 0；不相等时，假勤扣薪天数＝21.75－实发薪天数。在职：应发薪天数与实发薪天数相等时不扣款；不相等时，假勤扣薪天数＝病假＋事假＋旷工。入职等其他状态：无上述假期不扣款，有假期时按 21.75－实发薪天数计算。假勤扣款＝工资小计÷21.75×假勤扣薪天数。实发薪天数允许 0 和小数；入职、在职等非离职人员无病假、事假、旷工时，即使实发薪天数缺失或无效，假勤扣薪天数及扣款仍为 0，工资继续计算；离职或有上述假勤时，如实发薪天数缺失或无效，仅将实发薪天数、假勤扣薪天数和假勤扣款留空并提示异常，其余工资项目继续生成。其他减始终取其他表中的对应金额。异常及姓名重复均记录提示，不限制导出，不用入离职日期补算。当月 15 日及以后入职，绩效分数按 0 计算。</div></details></form>`;
+      const yearOptions=Array.from({length:Math.max(today.getFullYear()+10,Number(currentMonth.slice(0,4)))-Math.min(2000,Number(currentMonth.slice(0,4)))+1},(_,i)=>Math.min(2000,Number(currentMonth.slice(0,4)))+i).map(y=>`<option value="${y}" ${y===Number(currentMonth.slice(0,4))?'selected':''}>${y}年</option>`).join('');
+      const monthOptions=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')).map(m=>`<option value="${m}" ${m===currentMonth.slice(5)?'selected':''}>${Number(m)}月</option>`).join('');
+      return `<form id="payrollSettings" class="card section-body" style="margin-bottom:20px">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:end">
+          <div class="form-field"><label for="payrollMonth">计薪月份</label><div style="display:flex;gap:8px"><select class="select" id="payrollYear" aria-label="计薪年份" required>${yearOptions}</select><select class="select" id="payrollMonth" aria-label="计薪月份" required>${monthOptions}</select></div></div>
+          <div class="form-field"><label for="payrollDays">当月应出勤天数（转正折算分母，可修改）</label><input class="input" id="payrollDays" type="number" min="0.01" max="31" step="any" value="${currentWorkdays}" required></div>
+          <div class="form-field"><label for="makeupWorkdays">调休出勤日期（可选）</label><input class="input" id="makeupWorkdays" placeholder="如 2026-08-08,2026-08-15" value="${makeupWorkdays.join(',')}" /></div>
+          <button class="btn btn-primary" type="submit">应用并重算</button>
+        </div>
+        <details style="margin-top:12px"><summary>查看计薪规则</summary><div class="section-desc">填写当月应出勤天数（例如 21 天），它既是本月应发薪天数，也是转正分段的统一分母。转正当月：转正前工资＝转正前月薪÷当月应出勤天数×转正前应出勤天数；转正后工资＝转正后月薪÷当月应出勤天数×转正后应出勤天数；前后应出勤天数必须合计等于当月值。转正前工作日默认按当前月份周一至周五统计；调休出勤日期可用逗号分隔填写，系统会将周末调休日计入。转正分段不使用 21.75。实发薪天数仅取考勤表中按姓名匹配的同名字段。离职人员：应发薪天数与实发薪天数相等时，假勤扣薪天数及假勤扣款均为 0；不相等时，假勤扣薪天数＝21.75－实发薪天数。在职：应发薪天数与实发薪天数相等时不扣款；不相等时，假勤扣薪天数＝病假＋事假＋旷工。入职等其他状态：无上述假期不扣款，有假期时按 21.75－实发薪天数计算。假勤扣款＝工资小计÷21.75×假勤扣薪天数。当月 15 日及以后入职，绩效分数按 0 计算。</div></details>
+      </form>`;
     }
-    function applyPayrollSettings(month, days) {
+    function applyPayrollSettings(month, days, makeupDates=makeupWorkdays) {
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || (days !== undefined && !validPayrollSettings(month, days))) { showToast(days === undefined ? '请选择计薪年月' : '应发薪天数参数无效'); return false; }
-      currentMonth=month; currentWorkdays=days === undefined || days === '' ? monthWorkdays(month) : Number(days);
+      const parsedMakeup=Array.isArray(makeupDates)?makeupDates:String(makeupDates ?? '').split(/[，,\s]+/).filter(Boolean);
+      const validMakeup=normalizedMakeupDates(parsedMakeup), invalidMakeup=parsedMakeup.filter(value=>!/^\d{4}-\d{2}-\d{2}$/.test(excelDate(value)));
+      if (invalidMakeup.length) { showToast('调休出勤日期格式无效，请使用 YYYY-MM-DD'); return false; }
+      makeupWorkdays=[...validMakeup];
+      currentMonth=month; currentWorkdays=days === undefined || days === '' ? monthWorkdays(month,makeupWorkdays) : Number(days);
       Object.assign(currentBatch(), {month,workdays:currentWorkdays,name:monthLabel(month)+'工资批次'});
       recalculateEmployees(); saveBatchData(); state.calculated=true; currentBatch().status='已计算';
       render(); showToast('计薪参数已应用，计算结果已更新'); return true;
@@ -910,9 +968,14 @@
     function renderResults() { return state.payrollStage==='net'?renderNetResults():renderGrossResults(); }
     function renderSlip() { return state.payrollStage==='net'?renderNetSlip():renderGrossResults(); }
     function renderGrossResults() {
-      const fields=['name','dept','base','post','performancePay','subtotal','meal','transit','otherAllow','sickSubsidy','otherAdd','deductDays','attendanceDeduct','otherReduction','gross','social','fund'];
-      const labels=['姓名','部门','基本工资','岗位工资','绩效工资','工资小计','餐饮津贴','交通津贴','其他津贴','病假补贴','其他加','假勤扣薪天数','假勤扣款','其他减','应发工资','个人社保','个人公积金'];
-      return `<div class="page-head"><div><h1 class="page-title">应发工资结果</h1><p class="page-subtitle">${escapeHtml(currentBatch().name)} · ${employees.length} 人</p></div><div class="page-actions"><button class="btn" data-go="upload">修改应发源表</button><button class="btn" data-export-gross>导出应发工资表</button><button class="btn btn-primary" data-payroll-stage="net">下一步：补充扣款，计算实发</button></div></div>${stepper()}<div class="grid grid-2"><div class="card stat-card"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(payrollTotal('gross'))}<em>元</em></div><div>个人社保合计：${money(payrollTotal('social'))} · 个人公积金合计：${money(payrollTotal('fund'))}</div></div><button class="card stat-card" data-go="exceptions" style="text-align:left"><div class="stat-label">异常记录</div><div class="stat-value">${employees.filter(hasVisibleException).length}<em>人</em></div><div>查看需核对的应发数据 →</div></button></div>${renderPayrollIssues()}<div class="card section-body" style="margin-top:20px"><div class="table-wrap"><table class="data-table"><thead><tr>${labels.map(label=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${employees.map(e=>`<tr class="${hasVisibleException(e)?'exception-row':''}">${fields.map((field,i)=>`<td>${i<2?escapeHtml(e[field]):money(e[field])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+      const fields=['name','dept','regularizationDate','probationWorkdays','regularWorkdays','probationSalary','regularSalary','base','post','performancePay','subtotal','meal','transit','otherAllow','sickSubsidy','otherAdd','deductDays','attendanceDeduct','otherReduction','gross','social','fund'];
+      const labels=['姓名','部门','转正日期','转正前工作日','转正后工作日','转正前工资','转正后工资','基本工资','岗位工资','绩效工资','工资小计','餐饮津贴','交通津贴','其他津贴','病假补贴','其他加','假勤扣薪天数','假勤扣款','其他减','应发工资','个人社保','个人公积金'];
+      const formatResult = (field, value) => {
+        if (field === 'regularizationDate') return escapeHtml(value || '—');
+        if (['probationWorkdays','regularWorkdays','deductDays'].includes(field)) return integer(value);
+        return money(value);
+      };
+      return `<div class="page-head"><div><h1 class="page-title">应发工资结果</h1><p class="page-subtitle">${escapeHtml(currentBatch().name)} · ${employees.length} 人</p></div><div class="page-actions"><button class="btn" data-go="upload">修改应发源表</button><button class="btn" data-export-gross>导出应发工资表</button><button class="btn btn-primary" data-payroll-stage="net">下一步：补充扣款，计算实发</button></div></div>${stepper()}<div class="grid grid-2"><div class="card stat-card"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(payrollTotal('gross'))}<em>元</em></div><div>个人社保合计：${money(payrollTotal('social'))} · 个人公积金合计：${money(payrollTotal('fund'))}</div></div><button class="card stat-card" data-go="exceptions" style="text-align:left"><div class="stat-label">异常记录</div><div class="stat-value">${employees.filter(hasVisibleException).length}<em>人</em></div><div>查看需核对的应发数据 →</div></button></div>${renderPayrollIssues()}<div class="card section-body" style="margin-top:20px"><div class="table-wrap"><table class="data-table"><thead><tr>${labels.map(label=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${employees.map(e=>`<tr class="${hasVisibleException(e)?'exception-row':''}">${fields.map(field=>`<td>${formatResult(field,e[field])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
     }
     function filterEmployees() {
       const q=state.search.trim().toLowerCase();
@@ -963,7 +1026,7 @@
     function bindView() {
       content.querySelector('[data-remove-gross]')?.addEventListener('click',removeUploadedGross);
       content.querySelectorAll('[data-payroll-stage]').forEach(button=>button.addEventListener('click',()=>switchPayrollStage(button.dataset.payrollStage)));
-      content.querySelector('#payrollSettings')?.addEventListener('submit', event=>{event.preventDefault();applyPayrollSettings(content.querySelector('#payrollYear').value+'-'+content.querySelector('#payrollMonth').value,content.querySelector('#payrollDays').value);});
+      content.querySelector('#payrollSettings')?.addEventListener('submit', event=>{event.preventDefault();applyPayrollSettings(content.querySelector('#payrollYear').value+'-'+content.querySelector('#payrollMonth').value,content.querySelector('#payrollDays').value,content.querySelector('#makeupWorkdays')?.value || '');});
       content.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.go==='mapping'&&state.payrollStage==='gross'&&!hasPayrollRoster()){showToast('请先上传花名册以确定员工范围');return;}render(el.dataset.go);}));
       content.querySelectorAll('[data-step-view]').forEach(el=>el.addEventListener('click',()=>render(el.dataset.stepView)));
       content.querySelectorAll('[data-upload]').forEach(btn=>btn.addEventListener('click',()=>document.getElementById('file-'+btn.dataset.upload).click()));

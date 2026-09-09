@@ -18,6 +18,7 @@ globalThis.PayrollEngine = (() => {
     ['转正日期','regularizationDate','date',['转正日','转正时间']],
     ['转正前应出勤天数','probationWorkdays','number',['试用期应出勤天数','转正前出勤天数','试用期计薪天数']],
     ['转正后应出勤天数','regularWorkdays','number',['转正后出勤天数','转正后计薪天数']],
+    ['转正前工资','probationSalary','money'],['转正后工资','regularSalary','money'],
     ['转正前工资小计','probationSubtotal','money'],['转正后工资小计','regularSubtotal','money']
   ];
   const netFields = [

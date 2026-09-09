@@ -578,3 +578,67 @@ test('generated grouped headers round-trip through grid parsing without importin
  assert.throws(()=>run("PayrollEngine.rowsFromGrid([['姓名','姓名'],['甲','乙']])"),/重复列/);
  assert.throws(()=>run("PayrollEngine.rowsFromGrid([['其他字段'],['甲']])"),/姓名/);
 });
+
+test('regularization uses current-month expected workdays rather than a fixed 21.75 weight',()=>{
+ const run=app();
+ const employee=`{name:'乙',status:'在职',actualPaidDays:21,regularizationDate:'2026-08-25',probationWorkdays:16,probationBase:9000,regularBase:10000}`;
+ run(`globalThis.result=calcSalary(${employee},'2026-08',21)`);
+ assert.equal(run('result.regularizationActive'),true);
+ assert.equal(run('result.regularizationBlocked'),false);
+ assert.equal(run('result.probationWorkdays'),16);
+ assert.equal(run('result.regularWorkdays'),5);
+ assert.equal(run('result.probationSubtotal'),9000);
+ assert.equal(run('result.regularSubtotal'),10000);
+ assert.equal(run('PayrollEngine.round(result.gross)'),9238.10);
+ assert.equal(run('PayrollEngine.round(result.gross)'),run('PayrollEngine.round(9000/21*16+10000/21*(21-16))'));
+ assert.notEqual(run('PayrollEngine.round(result.gross)'),run('PayrollEngine.round(9000/21.75*16+10000/21.75*(21.75-16))'));
+ run(`globalThis.differentMonth=calcSalary(${employee},'2026-08',22)`);
+ assert.equal(run('differentMonth.regularWorkdays'),6);
+ assert.equal(run('PayrollEngine.round(differentMonth.gross)'),run('PayrollEngine.round(9000/22*16+10000/22*6)'));
+});
+
+test('regularization fields import from roster, salary and attendance sources and validate the day split',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',转正日期:'2026-08-17'}],salary:[{姓名:'甲',转正前基本工资:10000,转正后基本工资:20200}],attendance:[{姓名:'甲',实发薪天数:21,转正前应出勤天数:10}]};state.liveImport=true;applyPayrollSettings('2026-08',21);");
+ assert.equal(run('employees.length'),1);
+ assert.equal(run('employees[0].regularizationDate'),'2026-08-17');
+ assert.equal(run('employees[0].regularWorkdays'),11);
+ assert.equal(run('employees[0].probationSubtotal'),10000);
+ assert.equal(run('employees[0].regularSubtotal'),20200);
+ assert.equal(run('employees[0].gross'),15342.86);
+ for (const field of ['转正日期','转正前应出勤天数','转正后应出勤天数','转正前工资小计','转正后工资小计']) assert.ok(run(`exportHeaders().includes('${field}')`));
+ run("sourceRows.attendance[0].转正后应出勤天数=11.75;recalculateEmployees();");
+ assert.equal(run('employees[0].regularizationBlocked'),true);
+ assert.match(run('employees[0].exception'),/之和必须等于当月应工作天数/);
+ assert.equal(run('employees[0].gross'),0);
+});
+
+test('regularization total salary headers are captured and workdays are derived from the transfer date',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',转正日期:'2026-08-17'}],salary:[{姓名:'甲',转正前工资:10000,转正后工资:20200}],attendance:[{姓名:'甲',实发薪天数:21}]};state.liveImport=true;applyPayrollSettings('2026-08',21);");
+ assert.equal(run('employees[0].regularizationActive'),true);
+ assert.equal(run('employees[0].probationWorkdays'),10);
+ assert.equal(run('employees[0].regularWorkdays'),11);
+ assert.equal(run('PayrollEngine.round(employees[0].probationSalary)'),run('PayrollEngine.round(10000/21*10)'));
+ assert.equal(run('PayrollEngine.round(employees[0].regularSalary)'),run('PayrollEngine.round(20200/21*11)'));
+ assert.equal(run('employees[0].gross'),15342.86);
+});
+
+test('weekend makeup workdays are included when deriving the pre-regularization segment',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',转正日期:'2026-08-10'}],salary:[{姓名:'甲',转正前工资:10000,转正后工资:20000}],attendance:[{姓名:'甲',实发薪天数:21}]};state.liveImport=true;applyPayrollSettings('2026-08',21,'2026-08-08');");
+ assert.equal(run('employees[0].probationWorkdays'),6);
+ assert.equal(run('employees[0].regularWorkdays'),15);
+ assert.equal(run('employees[0].gross'),run('PayrollEngine.round(10000/21*6+20000/21*15)'));
+});
+
+test('out-of-month transfer dates and incomplete transition salaries warn without blocking output',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',转正日期:'2026-07-17'},{姓名:'乙',转正日期:'2026-08-17'}],salary:[{姓名:'甲',转正前工资:10000,转正后工资:20200},{姓名:'乙',转正前工资:10000}],attendance:[{姓名:'甲',实发薪天数:21},{姓名:'乙',实发薪天数:21}]};state.liveImport=true;applyPayrollSettings('2026-08',21);");
+ assert.equal(run('employees[0].regularizationActive'),false);
+ assert.match(run('employees[0].exception'),/不在当前计薪月份/);
+ assert.equal(run('employees[0].gross'),0);
+ assert.equal(run('employees[1].regularizationBlocked'),true);
+ assert.match(run('employees[1].exception'),/缺少转正前或转正后工资/);
+ assert.equal(run('payrollExportReady()'),true);
+});
