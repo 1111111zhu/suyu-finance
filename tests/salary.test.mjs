@@ -7,6 +7,7 @@ function app(){
  const element={addEventListener(){},classList:{add(){},remove(){},toggle(){}},textContent:''};
  const context=vm.createContext({document:{getElementById:()=>({...element}),querySelectorAll:()=>[],addEventListener(){}},window:{},structuredClone,setTimeout:()=>0,clearTimeout(){}});
  const source=html.match(/<script>\s*([\s\S]*?)<\/script>/)[1].replace("    render('overview');\n  ", '');
+ vm.runInContext(fs.readFileSync(new URL('../public/salary/payroll-engine.js',import.meta.url),'utf8'),context);
  vm.runInContext(source,context);
  vm.runInContext('render=()=>{};showToast=()=>{};',context);
  return code=>vm.runInContext(code,context);
@@ -24,16 +25,7 @@ test('manual month and fractional days update results and export without losing 
  assert.equal(run('employees[0].workdays'),23);
  assert.equal(run('employees[0].name'),'测试');
 });
-test('other reduction and withholding map and deduct exactly once',()=>{
- for(const [reduction,withholding] of [[100,70],[100,0],[0,70],[0,0]]){
-  const run=app();
-  run(`sourceRows={roster:[{姓名:'测试'}],salary:[{姓名:'测试',基本工资:1000}],attendance:[{姓名:'测试',实发薪天数:21.75}],other:[{姓名:'测试',其他减:${reduction},其他代扣:${withholding}}]};state.liveImport=true;recalculateEmployees();`);
-  assert.equal(run('employees[0].gross'),1000-reduction);
-  assert.equal(run('employees[0].net'),1000-reduction-withholding);
-  assert.equal(run('exportRow(employees[0])[30]'),reduction);
-  assert.equal(run('exportRow(employees[0])[34]'),withholding);
- }
-});
+
 test('invalid manual parameters are rejected without changing results',()=>{
  const run=app();const old=run('currentMonth');
  for(const [month,days] of [['2026-02',''],['2026-02','NaN'],['2026-02','0'],['2026-02','-1'],['2026-02','29'],['2026-13','20']]) assert.equal(run(`applyPayrollSettings('${month}','${days}')`),false);
@@ -58,7 +50,7 @@ test('roster alone allows preview; missing optional source values default to zer
  const run=app();
  run("state.sourceStatus=Object.fromEntries(sourceSheets.map(sheet=>[sheet.key,{uploaded:sheet.key==='roster'}]));sourceRows={roster:[{姓名:'甲',是否入离职:'在职'}]};state.liveImport=true;recalculateEmployees();");
  assert.equal(run('hasPayrollRoster()'),true);
- assert.equal(run('missingSourceSheets().length'),9);
+ assert.equal(run('missingSourceSheets().length'),11);
  for(const field of ['base','post','perfBase','score','meal','transit','otherAllow','otherAdd','annual','flexible','compensatory','companySocial','companyFund','sick','personal','absent','social','fund','otherReduction','otherDeduct','utility','mealDeduct']) assert.equal(run(`employees[0].${field}`),0,field);
  assert.match(run('renderUpload()'),/计算应发工资/);
  assert.match(run('renderMapping()'),/其余缺失数值按 0 计算/);
@@ -80,14 +72,7 @@ test('employment workday ranges include the event date and exclude weekends',()=
  assert.equal(run("weekdaysBetween(parseDate('2026-09-30'),parseDate('2026-09-30'))"),1);
 });
 
-test('all nine modules match dated filenames and fallback header aliases',()=>{
- const run=app();
- for(const [key,name,field] of [['roster','花名册','入职日期'],['salary','员工基本工资表','工资基数'],['performance','绩效考核表','绩效系数'],['attendance','考勤统计表','病假（天）'],['other','其他表','其他减'],['social','社保明细','个人总计'],['fund','公积金明细','个人缴纳'],['utility','人才公寓水电明细','水电费合计'],['meal','餐费明细','餐费合计']]){
-  assert.equal(run(`matchSource('2026年9月${name}.xlsx',[{姓名:'甲','${field}':1}]).key`),key);
-  assert.equal(run(`matchSource('导出.xlsx',[{姓名:'甲','${field}':1}]).key`),key);
- }
- for(const expression of ["matchSource('社保.xlsx',[{姓名:'甲',个人公积金:1}])","matchSource('社保公积金.xlsx',[{姓名:'甲'}])","matchSource('未知.xlsx',[{姓名:'甲'}])","matchSource('汇总.xlsx',[{姓名:'甲',基本工资:1,餐费合计:2}])"]){assert.equal(run(expression+'.key'),'');}
-});
+
 function importApp(){
  const run=app();
  run("parseXlsxFile=async file=>{if(file.error)throw new Error(file.error);return file.rows;};");
@@ -139,18 +124,18 @@ test('uploaded filenames and errors render as text, and bulk input accepts multi
 
 
 
-test('six same-name leave fields and employer contributions map by name into 41-column payroll',()=>{
+test('six same-name leave fields and employer contributions map by name into payroll export',()=>{
  const run=app();
  run("sourceRows={roster:[{姓名:'甲',是否入离职:'在职'},{姓名:'乙',是否入离职:'在职'}],salary:[{姓名:'甲',基本工资:2175},{姓名:'乙',基本工资:2175}],attendance:[{姓名:'乙',实发薪天数:22,年假天数:9},{姓名:'甲',实发薪天数:20,年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,'病假(天)':99}],social:[{姓名:'乙',公司总计:888},{姓名:'甲',个人总计:100,公司总计:700}],fund:[{姓名:'乙',公司缴纳:999},{姓名:'甲',个人缴纳:50,公司缴纳:300}]};state.liveImport=true;applyPayrollSettings('2026-09',22);");
- const fields={年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,公司缴纳:300,公司总计:700};
- assert.equal(run('exportHeaders().length'),41);
- assert.equal(run('exportRow(employees[0]).length'),41);
+ const fields={年假天数:1.5,弹性假天数:2,调休假天数:3,病假天数:.5,事假天数:.25,旷工天数:1,公司缴纳公积金:300,公司缴纳社保:700};
+ assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length'));
+ assert.equal(run('exportRow(employees[0]).length'),run('exportHeaders().length'));
  for(const [field,value] of Object.entries(fields)) {
   assert.equal(run(`exportRow(employees[0])[exportHeaders().indexOf('${field}')]`),value);
-  assert.equal(run(`mappingRows.some(r=>r[0]==='${field}' && r[2]==='${field}' && r[3]==='同名映射')`),true);
+  assert.ok(run(`exportHeaders().includes('${field}')`));
  }
  assert.equal(run('employees[0].deductDays'),1.75);
- assert.equal(run('employees[0].net'),run('employees[0].gross-150'));
+ assert.equal(run('employees[0].net'),run('employees[0].gross'));
  assert.equal(run('employees[1].companySocial'),888);
  assert.equal(run('employees[1].companyFund'),999);
  assert.equal(run('employees[1].annual'),9);
@@ -163,13 +148,13 @@ test('legacy leave aliases and employer-only source identification are supported
  run("sourceRows={roster:[{姓名:'甲'}],attendance:[{姓名:'甲','年假（天）':.5,'弹性假(天)':1,'调休假（天）':2}]};state.liveImport=true;recalculateEmployees();");
  assert.equal(run('employees[0].annual'),.5);assert.equal(run('employees[0].flexible'),1);assert.equal(run('employees[0].compensatory'),2);
  for(const [field,key] of [['公司缴纳','fund'],['公司总计','social'],['年假天数','attendance'],['弹性假天数','attendance'],['调休假天数','attendance']]) assert.equal(run(`matchSource('导出.xlsx',[{姓名:'甲','${field}':1}]).key`),key);
- assert.equal(run('exportRow(employees[0])[39]'),0);assert.equal(run('exportRow(employees[0])[40]'),0);
+ assert.equal(run("exportRow(employees[0])[exportHeaders().indexOf('公司缴纳公积金')]"),0);assert.equal(run("exportRow(employees[0])[exportHeaders().indexOf('公司缴纳社保')]"),0);
 });
 test('detail workbook and salary slip include mapped leave and employer contributions',()=>{
  const run=app();
  run("window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet)=>{globalThis.savedSheet=sheet;}}};downloadXlsx=()=>{};employees=[calcSalary({actualPaidDays:22,id:'X',name:'甲',status:'在职',annual:1.5,flexible:2,compensatory:3,companyFund:300,companySocial:700})];state.selectedId='X';");
- assert.equal(run('detailSheet().rows[1].length'),41);
- assert.equal(run("detailSheet()['!merges'].at(-1).e.c"),40);
+ assert.equal(run('detailSheet().rows[1].length'),run('exportHeaders().length'));
+ assert.equal(run("detailSheet()['!merges'].at(-1).e.c"),run('exportHeaders().length-1'));
  run('downloadSlip()');
  for(const [label,value] of [['年假天数',1.5],['弹性假天数',2],['调休假天数',3],['公司缴纳',300],['公司总计',700]]) assert.equal(run(`savedSheet.rows.find(r=>r[0]==='${label}')[1]`),value);
  run("state.payrollStage='net'");
@@ -212,7 +197,7 @@ test('attendance days remain the sole payable-days source while zero leave bypas
   assert.equal(run(`exportRow(employees[${i}])[10]`),paid);
  }
  assert.equal(run('employees[0].effectiveScore'),0);
- assert.equal(run('employees[0].gross'),run('2175-325+2660/21.75*.8'));
+ assert.equal(run('employees[0].gross'),run('PayrollEngine.round(2175-325+2660/21.75*.8)'));
  run("applyPayrollSettings('2026-09',21.75)");
  assert.equal(run('employees[0].payableDays'),18.5);assert.equal(run('employees[0].deductDays'),3.25);run("applyPayrollSettings('2026-09',18)");assert.equal(run('employees[0].deductDays'),3.25);
  assert.equal(run('payrollExportReady()'),true);
@@ -271,7 +256,7 @@ test('zero-leave paid days survive detail and slip export without clamping or de
   assert.equal(run('savedDetail.rows[2][28]'),0);
   assert.equal(run('savedDetail.rows[2][29]'),0);
  }
- assert.match(run('payrollSettings()'),/病假、事假、旷工均为 0 或空白时，假勤扣薪天数＝0/);
+ assert.match(run('payrollSettings()'),/假勤扣薪天数＝病假＋事假＋旷工/);
  run("state.payrollStage='net'");
  assert.match(run('renderSlip()'),/实发薪天数保留考勤表原值/);
 });
@@ -292,7 +277,7 @@ test('export diagnostics identify each blocked person, source and raw value safe
  run("sourceRows={roster:[{姓名:'甲'},{姓名:'乙'},{姓名:'<丙>'}],attendance:[{姓名:'甲',实发薪天数:21.75},{姓名:'<丙>',实发薪天数:'<bad>'}],social:[{姓名:'甲'},{姓名:'甲'}]};state.liveImport=true;recalculateEmployees();");
  run("state.payrollStage='net'");
  const html=run('renderPayrollIssues()');
- assert.match(html,/3 人需要核对/);assert.match(html,/社保明细存在重复姓名/);assert.match(html,/考勤统计表中未找到此姓名/);assert.match(html,/&lt;bad&gt;/);assert.match(html,/&lt;丙&gt;/);
+ assert.match(html,/3 人需要核对/);assert.match(html,/社保表存在重复姓名/);assert.match(html,/考勤统计表中未找到此姓名/);assert.match(html,/&lt;bad&gt;/);assert.match(html,/&lt;丙&gt;/);
  assert.ok(!html.includes('<bad>'));assert.match(html,/<td>2<\/td>/);
  run('delete sourceRows.attendance;recalculateEmployees();');assert.match(run('renderPayrollIssues()'),/未上传考勤统计表/);
  run("sourceRows.attendance=[{姓名:'甲'},{姓名:'乙'},{姓名:'<丙>'}];recalculateEmployees();");assert.match(run('renderPayrollIssues()'),/单元格为空/);
@@ -309,8 +294,8 @@ test('exception cards open a complete list including nonblocking warnings',()=>{
 
 test('mixed valid and invalid employees export the entire workbook with exception notes',()=>{
  const run=app();
- run("sourceRows={roster:[{姓名:'正常'},{姓名:'缺失'},{姓名:'重复'}],attendance:[{姓名:'正常',实发薪天数:20},{姓名:'重复',实发薪天数:21},{姓名:'重复',实发薪天数:19}],salary:['正常','缺失','重复'].map(姓名=>({姓名,基本工资:2175}))};state.liveImport=true;recalculateEmployees();window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({sheets:[]}),book_append_sheet:(book,sheet,name)=>book.sheets.push({sheet,name})}};downloadXlsx=(book)=>{globalThis.exported=book;};downloadCsv();");
- assert.equal(run('exported.sheets[0].sheet.rows.length'),5);
+ run("sourceRows={roster:[{姓名:'正常'},{姓名:'缺失'},{姓名:'重复'}],attendance:[{姓名:'正常',实发薪天数:20},{姓名:'重复',实发薪天数:21},{姓名:'重复',实发薪天数:19}],salary:['正常','缺失','重复'].map(姓名=>({姓名,基本工资:2175}))};state.liveImport=true;recalculateEmployees();window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({sheets:[]}),book_append_sheet:(book,sheet,name)=>book.sheets.push({sheet,name})}};downloadXlsx=(book)=>{globalThis.exported=book;};state.payrollStage='net';downloadCsv();");
+ assert.equal(run('exported.sheets[0].sheet.rows.length'),6);
  assert.equal(run('employees[0].net'),2175);
  assert.equal(run('employees[1].net'),2175);
  assert.equal(run('employees[2].net'),2175);
@@ -325,132 +310,35 @@ test('tax names take precedence and exact tax header wins over aliases',()=>{
  for(const filename of ['2026年9月税.xlsx','工资税额.xlsx','社保个税汇总.xlsx']) assert.equal(run(`matchSource('${filename}',[{姓名:'甲',基本工资:999,税:40}]).key`),'tax');
  assert.equal(run("matchSource('导出.xlsx',Object.assign([{姓名:'甲',金额:40}],{sheetName:'9月税表'})).key"),'tax');
  assert.equal(run("matchSource('导出.xlsx',[{姓名:'甲',税:40}]).key"),'tax');
- run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',个人所得税:999,税:40}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();");
+ run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',个人所得税:999,税:40}]};state.payrollStage='net';sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();");
  assert.equal(run('employees[0].tax'),40);assert.equal(run('employees[0].net'),960);
 });
 
-test('tax matches by name, all personal deductions apply once, employer amounts do not reduce net',()=>{
- const run=app();
- run("sourceRows={roster:[{姓名:'甲'},{姓名:'乙'}],salary:[{姓名:'乙',基本工资:2000},{姓名:'甲',基本工资:10000}],other:[{姓名:'甲',其他减:100,其他代扣:70}],social:[{姓名:'甲',个人总计:500,公司总计:3000}],fund:[{姓名:'甲',个人缴纳:400,公司缴纳:4000}],utility:[{姓名:'甲',水电费合计:120}],meal:[{姓名:'甲',餐费合计:200}],tax:[{姓名:'乙',税:20},{姓名:' 甲 ',税:'￥1,234.56'},{姓名:'范围外',税:999}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();");
- assert.equal(run('employees.length'),2);
- assert.equal(run('employees[0].gross'),9900);
- assert.ok(Math.abs(run('employees[0].net')-7375.44)<1e-8);
- assert.equal(run('employees[1].net'),1980);
- assert.equal(run('exportRow(employees[0])[exportHeaders().indexOf("个税")]'),1234.56);
- run('recalculateEmployees();recalculateEmployees();');
- assert.ok(Math.abs(run('employees[0].net')-7375.44)<1e-8);
-});
 
-test('deduction warnings only appear in the net stage, blank tax does not warn',()=>{
- const run=app();
- run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],attendance:[{姓名:'甲',实发薪天数:22}]};state.liveImport=true;state.sourceStatus={roster:{uploaded:true}};recalculateEmployees();");
- assert.equal(run('deductionNotice()'),'');
- run("state.payrollStage='net'");assert.match(run('deductionNotice()'),/个税表.*尚未上传/);
- for(const [rows,pattern] of [["[{姓名:'乙',税:50}]",/个税未找到匹配姓名/],["[{姓名:'甲',金额:50}]",/个税缺少金额列/],["[{姓名:'甲',税:'abc'}]",/个税金额不是有效数字/],["[{姓名:'甲',税:'10%'}]",/个税金额不是有效数字/]]) {
-  run(`sourceRows.tax=${rows};recalculateEmployees();`);
-  assert.equal(run('employees[0].tax'),0);assert.equal(run('employees[0].net'),1000);assert.match(run("visibleIssues(employees[0]).join('；')"),pattern);
-  assert.equal(run("visibleIssues(employees[0],'gross').length"),0);
- }
- for(const blank of [null,'','  ']) {
-  run(`sourceRows.tax=[{姓名:'甲',税:${JSON.stringify(blank)}}];recalculateEmployees();`);
-  assert.equal(run('employees[0].tax'),0);assert.equal(run('visibleIssues(employees[0]).length'),0);
- }
- run("sourceRows.tax=[{姓名:'甲',税:40},{姓名:'甲',税:90}];recalculateEmployees();");
- assert.match(run("visibleIssues(employees[0]).join('；')"),/个税存在重复姓名/);assert.equal(run('employees[0].tax'),40);
-});
+
+
 
 function captureExports(run) {
- run("window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet,name)=>{book[name]=sheet;}}};downloadXlsx=(book,name)=>{globalThis.savedBook=book;globalThis.savedName=name;};");
+ run("window.XLSX={utils:{aoa_to_sheet:rows=>{const sheet={rows};rows.forEach((row,r)=>row.forEach((v,c)=>{if(v!=null)sheet[excelColumn(c)+(r+1)]={t:typeof v==='number'?'n':'s',v};}));return sheet;},book_new:()=>({}),book_append_sheet:(book,sheet,name)=>{book[name]=sheet;}}};downloadXlsx=(book,name)=>{globalThis.savedBook=book;globalThis.savedName=name;};");
 }
 
-test('gross export precedes tax upload and remains unchanged; full detail, summary and slip reconcile',async()=>{
- const run=importApp();captureExports(run);
- await run("importFiles([{name:'花名册.xlsx',rows:[{姓名:'甲'}]},{name:'员工基本工资表.xlsx',rows:[{姓名:'甲',基本工资:1000}]},{name:'考勤统计表.xlsx',rows:[{姓名:'甲',实发薪天数:22}]}])");
- run('downloadGross();globalThis.before=JSON.stringify(savedBook);');
- assert.match(run('savedName'),/^应发工资表_.*\.xlsx$/);
- assert.equal(run("savedBook['应发工资表'].rows[1].at(-1)"),'应发工资');
- assert.equal(run("savedBook['应发工资表'].rows[2].at(-1)"),1000);
- assert.equal(run("savedBook['应发工资表'].rows[1].includes('实发工资')"),false);
- assert.equal(run("savedBook['应发工资表']['!merges'].every(m=>m.e.c<32)"),true);
- await run("importFiles([{name:'9月税.xlsx',rows:[{姓名:'甲',税:125.25}]}])");
- assert.equal(run('employees[0].tax'),125.25);assert.equal(run('employees[0].net'),874.75);
- run('downloadGross()');assert.equal(run('JSON.stringify(savedBook)'),run('before'));
- run('downloadCsv()');
- assert.equal(run("savedBook['工资明细表'].rows[2][savedBook['工资明细表'].rows[1].indexOf('个税')]"),125.25);
- assert.equal(run("savedBook['汇总统计'].rows.at(-1).at(-2)"),125.25);
- assert.equal(run("savedBook['汇总统计'].rows.at(-1).at(-1)"),874.75);
- run('downloadSlip()');assert.equal(run("savedBook['工资条'].rows.find(r=>r[0]==='个税')[1]"),125.25);
- run("state.payrollStage='net'");
- for(const view of ['renderUpload()','renderMapping()','renderResults()','renderSlip()']) assert.match(run(view),/个税/);
- assert.match(run('renderResults()'),/data-export-gross/);
- await run("importFiles([{name:'9月税修正.xlsx',rows:[{姓名:'甲',税:50}]}])");
- assert.equal(run('employees[0].tax'),125.25);
- run("resolveImport(0,'tax')");assert.equal(run('employees[0].net'),950);assert.equal(run('employees[0].gross'),1000);
-});
+
 
 test('tax source and deductions remain isolated when switching payroll batches',()=>{
  const run=app();
- run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',税:120}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();globalThis.first=currentBatch();globalThis.second={name:'下月',month:'2026-10',workdays:22};state.batches.push(second);setCurrentBatch(second);sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',税:80}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;recalculateEmployees();setCurrentBatch(first);");
+ run("sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',税:120}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;state.payrollStage='net';recalculateEmployees();globalThis.first=currentBatch();globalThis.second={name:'下月',month:'2026-10',workdays:22};state.batches.push(second);setCurrentBatch(second);sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],tax:[{姓名:'甲',税:80}]};sourceRows.attendance=(sourceRows.roster||[]).map(r=>({姓名:r.姓名,实发薪天数:22}));state.liveImport=true;state.payrollStage='net';recalculateEmployees();setCurrentBatch(first);");
  assert.equal(run('employees[0].net'),880);
  run('setCurrentBatch(second)');assert.equal(run('employees[0].net'),920);
 });
 
 
-test('all deduction tables distinguish blank, missing, invalid and duplicate rows without changing gross',()=>{
- for(const [key,header,field] of [['social','个人总计','social'],['fund','个人缴纳','fund'],['utility','水电费合计','utility'],['meal','餐费合计','mealDeduct'],['other','其他代扣','otherDeduct'],['tax','税','tax']]) {
-  for(const [rows,expected,warning] of [ [[{姓名:'乙',[header]:80}],0,true], [[{姓名:'甲',[header]:null}],0,false], [[{姓名:'甲',[header]:'   '}],0,false], [[{姓名:'甲'}],0,true], [[{姓名:'甲',[header]:'无效'}],0,true], [[{姓名:'甲',[header]:80},{姓名:'甲',[header]:90}],80,true] ]) {
-   const run=app();captureExports(run);
-   run(`sourceRows={roster:[{姓名:'甲'}],salary:[{姓名:'甲',基本工资:1000}],attendance:[{姓名:'甲',实发薪天数:22}],${key}:${JSON.stringify(rows)}};state.liveImport=true;recalculateEmployees();`);
-   assert.equal(run(`employees[0].${field}`),expected,`${key}: ${JSON.stringify(rows)}`);
-   assert.equal(run('employees[0].gross'),1000);assert.equal(run('employees[0].net'),1000-expected);
-   assert.equal(run('(employees[0].deductionIssues||[]).length>0'),warning);
-   if(key!=='other') assert.equal(run("visibleIssues(employees[0],'gross').length"),0);
-   run('downloadCsv()');assert.equal(run("savedBook['工资明细表'].rows.length"),3);
-  }
- }
-});
 
-test('PR10 attendance behavior reconciles across employment states, export, tax and withholding',()=>{
- const run=app();run("state.payrollStage='net'");
- for(const status of ['在职','入职','离职']) for(const paid of [0,20,21.75,22]) for(const leaves of [[0,0,0],[0.5,0,0],[0,1,0],[0,0,2],[0.5,1,2]]) {
-  const [sick,personal,absent]=leaves;
-  const expected=(status==='离职'?paid!==22:leaves.some(v=>v!==0))?21.75-paid:0;
-  run(`employees=[calcSalary({id:'A',name:'甲',status:'${status}',actualPaidDays:${paid},sick:${sick},personal:${personal},absent:${absent},base:2175,tax:80,otherReduction:30,otherDeduct:20},'2026-09',22)];state.selectedId='A';window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet)=>{globalThis.savedSheet=sheet;}}};downloadXlsx=()=>{};downloadSlip();`);
-  const e=run('employees[0]');assert.equal(e.payableDays,paid);assert.equal(e.deductDays,expected);assert.equal(e.attendanceDeduct,expected*100);
-  assert.equal(e.gross,2175+2660/21.75*sick*.8-expected*100-30);assert.equal(e.net,e.gross-100);
-  assert.equal(run('exportRow(employees[0])[28]'),expected);assert.equal(run("savedSheet.rows.find(r=>r[0]==='假勤扣薪天数')[1]"),expected);
- }
-});
 
-test('two-stage upload and correction preserve all sources, gross export and batch stage',async()=>{
- const run=importApp();captureExports(run);
- await run("importFiles([{name:'税.xlsx',rows:[{姓名:'甲',税:30}]},{name:'花名册.xlsx',rows:[{姓名:'甲'}]},{name:'员工基本工资表.xlsx',rows:[{姓名:'甲',基本工资:1000}]},{name:'考勤统计表.xlsx',rows:[{姓名:'甲',实发薪天数:22}]}])");
- assert.match(run('renderUpload()'),/已接收扣款表：个税/);
- for(const key of ['roster','salary','performance','attendance','other']) assert.match(run('renderUpload()'),new RegExp('id="file-'+key+'"'));
- for(const key of ['social','fund','utility','meal','tax']) assert.ok(!run('renderUpload()').includes('id="file-'+key+'"'));
- assert.ok(!run('renderResults()').includes('data-export>'));assert.ok(!run('renderResults()').includes('<th>实发工资</th>'));
- run("calculateStage();downloadGross();globalThis.before=JSON.stringify(savedBook);switchPayrollStage('net')");
- assert.equal(run('state.payrollStage'),'net');assert.equal(run('employees[0].net'),970);
- for(const key of ['social','fund','utility','meal','tax']) assert.match(run('renderUpload()'),new RegExp('id="file-'+key+'"'));
- assert.match(run('renderUpload()'),/社保明细.*尚未上传/);
- await run("importFiles([{name:'税修正.xlsx',rows:[{姓名:'甲',税:50}]}])");run("resolveImport(0,'tax');calculateStage();downloadGross()");
- assert.equal(run('JSON.stringify(savedBook)'),run('before'));assert.equal(run('employees[0].net'),950);
- run("switchPayrollStage('gross')");
- await run("importFiles([{name:'员工基本工资修正.xlsx',rows:[{姓名:'甲',基本工资:1200}]}],'salary')");run("resolveImport(0,'salary');calculateStage();switchPayrollStage('net')");
- assert.equal(run('employees[0].gross'),1200);assert.equal(run('employees[0].net'),1150);assert.equal(run('sourceRows.tax[0].税'),50);
- run("globalThis.first=currentBatch();globalThis.second={name:'next',month:'2026-10',workdays:22};state.batches.push(second);setCurrentBatch(second)");
- assert.equal(run('state.payrollStage'),'gross');run('setCurrentBatch(first)');assert.equal(run('state.payrollStage'),'net');assert.equal(run('employees[0].net'),1150);
-});
 
-test('gross exports never include deduction warnings or change after invalid deduction upload',async()=>{
- const run=importApp();captureExports(run);
- await run("importFiles([{name:'花名册.xlsx',rows:[{姓名:'甲'}]},{name:'考勤.xlsx',rows:[{姓名:'甲',实发薪天数:22}]},{name:'员工基本工资表.xlsx',rows:[{姓名:'甲',基本工资:1000}]}])");
- run('downloadGross();globalThis.before=JSON.stringify(savedBook)');
- await run("importFiles([{name:'税.xlsx',rows:[{姓名:'甲',税:'无效'}]},{name:'社保.xlsx',rows:[{姓名:'乙',个人总计:80}]}])");
- run('downloadGross()');assert.equal(run('JSON.stringify(savedBook)'),run('before'));assert.equal(run('renderPayrollIssues()'),'');
- run("switchPayrollStage('net')");assert.match(run('renderPayrollIssues()'),/个税金额不是有效数字/);assert.match(run('renderPayrollIssues()'),/社保明细未找到匹配姓名/);
- run('downloadCsv()');assert.match(run("savedBook['工资明细表'].A3.c[0].t"),/个税/);
-});
+
+
+
+
 
 
 test('departed employees compare expected and actual paid days regardless of leave',()=>{
@@ -487,7 +375,7 @@ test('missing or invalid paid days only block calculations that need paid days',
   assert.equal(run('employees[0].payrollBlocked'),blocked);
   assert.equal(run('employees[0].hasException'),true);
   for(const i of [28,29]) assert.equal(run(`exportRow(employees[0])[${i}]`),blocked?null:0);
-  for(const i of [31,38]) assert.equal(run(`exportRow(employees[0])[${i}]`),2175);
+  for(const i of [31,run("exportHeaders().indexOf('实发工资')")]) assert.equal(run(`exportRow(employees[0])[${i}]`),2175);
  }
 });
 
@@ -540,11 +428,153 @@ test('intern mapping controls, export contract and salary slip show daily-rate c
  run("sourceRows={roster:[{姓名:'正式',是否实习:'否'},{姓名:'实习',是否实习生:'是'}],attendance:[{姓名:'正式',实发薪天数:22},{姓名:'实习',实发薪天数:7.5}],salary:[{姓名:'正式',基本工资:1000},{姓名:'实习',基本工资:9999}]};state.liveImport=true;setInternDailyRate('实习',300);state.payrollStage='gross';recalculateEmployees();");
  assert.match(run('renderMapping()'),/实习生日薪设置/);
  assert.match(run('renderMapping()'),/任一表头包含“实习”/);
- assert.equal(run('exportHeaders().length'),41);
+ assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length'));
  assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[10]"),7.5);
- assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[38]"),2250);
+ assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[exportHeaders().indexOf('实发工资')]"),2250);
  run("state.payrollStage='net';state.selectedId=employees.find(e=>e.name==='实习').id");
  assert.match(run('renderSlip()'),/300.00 × 7.5/);
  run('downloadSlip()');
  assert.equal(run("savedBook['工资条'].rows.find(r=>r[0]==='计算公式')[1]"),'300 × 7.5');
+});
+
+// Revised workflow: stage-owned sources, optional gross override, complete comparison.
+function seedPayroll(run) {
+ run("sourceRows={roster:[{姓名:'甲',是否入离职:'在职',一级部门:'研发'}],salary:[{姓名:'甲',基本工资:10000}],attendance:[{姓名:'甲',实发薪天数:22}],social:[{姓名:'甲',个人总计:600,公司总计:9999}],fund:[{姓名:'甲',个人缴纳:400,公司缴纳:9999}],other:[{姓名:'甲',其他代扣:999}],utility:[{姓名:'甲',水电费合计:999}],meal:[{姓名:'甲',餐费合计:999}]};state.liveImport=true;state.payrollStage='gross';applyPayrollSettings('2026-09',22);");
+}
+function netSources(run) {
+ run("sourceRows.netSocial=[{姓名:'甲',个人总计:500,公司总计:1000}];sourceRows.netFund=[{姓名:'甲',个人缴纳:300,公司缴纳:300}];sourceRows.tax=[{姓名:'甲',税:200}];sourceRows.afterTax=[{姓名:'甲',水电代扣:20,餐费代扣:30,其它代扣:50,备注:'核对通过'}];switchPayrollStage('net');");
+}
+test('active employees compare days first and sum sick, personal and absent leave only',()=>{
+ const run=app();
+ for(const [expected,paid,sick,personal,absent,days] of [[22,22,1,2,3,0],[22,20,1,.5,.25,1.75],[22,20,0,0,0,0],[22,23,0,1,0,1],[18.5,18,0,.5,0,.5]]) {
+  const value=run(`calcSalary({status:'在职',actualPaidDays:${paid},base:2175,sick:${sick},personal:${personal},absent:${absent}},'2026-09',${expected})`);
+  assert.equal(value.deductDays,days);assert.equal(value.attendanceDeduct,days*100);
+ }
+});
+test('both stages expose their own social and fund inputs with exactly five second-stage slots',()=>{
+ const run=app();
+ assert.deepEqual(Array.from(run('stageSheets().map(s=>s.key)')),['roster','salary','performance','attendance','other','social','fund']);
+ run("switchPayrollStage('net')");
+ assert.deepEqual(Array.from(run('stageSheets().map(s=>s.key)')),['grossUpload','tax','netSocial','netFund','afterTax']);
+ for(const [file,row,key] of [['社保.xlsx',{姓名:'甲',个人总计:1},'netSocial'],['公积金.xlsx',{姓名:'甲',个人缴纳:1},'netFund'],['税后代扣.xlsx',{姓名:'甲',其它代扣:1},'afterTax'],['应发工资.xlsx',{姓名:'甲',应发工资:1},'grossUpload'],['税.xlsx',{姓名:'甲',税:1},'tax']]) assert.equal(run(`matchSource(${JSON.stringify(file)},[${JSON.stringify(row)}]).key`),key);
+ assert.equal(run("matchSource('导出.xlsx',Object.assign([{姓名:'甲',备注:''}],{sheetName:'税后代扣表'})).key"),'afterTax');
+});
+test('gross contribution columns are informative, second-stage deductions use their own uploads exactly once',()=>{
+ const run=app();seedPayroll(run);captureExports(run);
+ assert.equal(run('employees[0].gross'),10000);assert.equal(run('employees[0].social'),600);assert.equal(run('employees[0].fund'),400);
+ run('downloadGross()');
+ assert.equal(run("savedBook['应发工资表'].AG3.t"),'n');assert.equal(run("savedBook['应发工资表'].AG3.v"),600);
+ assert.equal(run("savedBook['应发工资表'].AH4.v"),400);
+ netSources(run);
+ assert.equal(run('employees[0].net'),8900);assert.equal(run('employees[0].companyCost'),11300);
+ assert.equal(run('employees[0].afterTaxTotal'),100);assert.equal(run('employees[0].remark'),'核对通过');
+ assert.equal(run('sourceRows.social[0].个人总计'),600);
+ run("sourceRows.netSocial[0].个人总计=700;recalculateEmployees();switchPayrollStage('gross');");
+ assert.equal(run('employees[0].social'),600);assert.equal(run('employees[0].gross'),10000);
+});
+test('missing second-stage contributions do not fall back to the first stage and never block export',()=>{
+ const run=app();seedPayroll(run);captureExports(run);run("switchPayrollStage('net');downloadCsv();");
+ assert.equal(run('employees[0].net'),10000);assert.equal(run('employees[0].companyCost'),10000);
+ assert.match(run("visibleIssues(employees[0]).join('；')"),/个人社保未上传/);
+ assert.ok(run("savedBook['工资明细表'].A3.c[0].t.includes('未上传')"));
+});
+test('uploaded gross is authoritative, regenerated gross cannot overwrite it, removal restores latest generated gross',()=>{
+ const run=app();seedPayroll(run);netSources(run);
+ run("commitSource('grossUpload',{filename:'调整应发.xlsx',rows:[{姓名:'甲',应发工资:12000,是否实习生:'否'}]});");
+ assert.equal(run('state.grossSource'),'uploaded');assert.equal(run('employees[0].net'),10900);
+ assert.equal(run('state.comparison.status'),'different');
+ run("sourceRows.salary[0].基本工资=11000;recalculateEmployees();");
+ assert.equal(run('generatedEmployees[0].gross'),11000);assert.equal(run('employees[0].gross'),12000);
+ assert.equal(run("state.comparison.differences.find(d=>d.field==='应发工资').delta"),1000);
+ run('removeUploadedGross()');
+ assert.equal(run('state.grossSource'),'generated');assert.equal(run('employees[0].net'),9900);
+ assert.equal(run('state.comparison.status'),'not-needed');
+});
+test('net stage operates on an uploaded gross table without a roster or generated result',()=>{
+ const run=importApp();captureExports(run);
+ run("globalThis.empty={name:'独立实发',month:'2026-09',workdays:22};state.batches.push(empty);setCurrentBatch(empty);switchPayrollStage('net');");
+ assert.equal(run('stageReady()'),false);
+ run("commitSource('grossUpload',{filename:'应发.xlsx',rows:[{姓名:'独立员工',应发工资:'￥2,000.50'}]});calculateStage();downloadCsv();");
+ assert.equal(run('stageReady()'),true);assert.equal(run('employees[0].net'),2000.5);
+ assert.equal(run('state.comparison.status'),'unavailable');
+ assert.match(run('renderComparison()'),/未校验：缺少第一阶段生成结果/);
+ assert.match(run("savedBook['工资明细表'].A3.c[0].t"),/缺少实习生标识/);
+});
+test('failed uploads keep the last usable source, show errors and allow calculations and exports',async()=>{
+ const run=importApp();seedPayroll(run);netSources(run);captureExports(run);
+ run("commitSource('grossUpload',{filename:'正常.xlsx',rows:[{姓名:'甲',应发工资:12000,是否实习生:'否'}]});");
+ await run("importFiles([{name:'损坏应发工资.xlsx',error:'无法解析文件'}],'grossUpload')");
+ run('calculateStage();downloadCsv()');
+ assert.equal(run('employees[0].gross'),12000);assert.equal(run("savedBook['工资明细表'][excelColumn(exportHeaders().indexOf('实发工资'))+'3'].v"),10900);
+ assert.match(run('renderResults()'),/无法解析文件/);
+ assert.match(run("savedBook['工资明细表'].A2.c[0].t"),/无法解析文件/);
+ await run("importFiles([{name:'新应发工资.xlsx',rows:[{姓名:'甲',应发工资:13000,是否实习生:'否'}]}],'grossUpload')");
+ assert.equal(run('employees[0].gross'),13000);
+});
+test('full comparison ignores ordering and display format but distinguishes blank from explicit zero',()=>{
+ const run=app();
+ run("globalThis.a=[{姓名:'甲',应发工资:1000,个人社保:100,入职日期:'2026-09-01',是否实习生:'否'},{姓名:'乙',应发工资:2000,个人社保:0,入职日期:'2026-09-02',是否实习生:'是'}];globalThis.b=[{姓名:' 乙 ',个人总计:'0.00',应发工资:'2,000.00',入职日期:'2026/9/2',是否实习:'Y'},{是否实习:'否',入职日期:'2026年9月1日',个人社保:'￥100.00',姓名:'甲',应发工资:'1,000.004'}];");
+ assert.equal(run('PayrollEngine.compare(a,b).status'),'equal');
+ run("b[0].个人总计=''");
+ assert.equal(run('PayrollEngine.compare(a,b).differences.length'),1);
+ assert.equal(run('PayrollEngine.compare(a,b).differences[0].field'),'个人社保');
+});
+test('comparison detects personnel, duplicate names, all business fields and schema changes',()=>{
+ const run=app();
+ run("globalThis.a=[{姓名:'甲',应发工资:1000,岗位工资:100,个人公积金:30},{姓名:'乙',应发工资:2000,岗位工资:200,个人公积金:50},{姓名:'重名',应发工资:1}];globalThis.b=[{姓名:'甲',应发工资:1100,岗位工资:150,新增列:1},{姓名:'丙',应发工资:3000},{姓名:'重名',应发工资:1},{姓名:'重名',应发工资:2}];globalThis.compared=PayrollEngine.compare(a,b);");
+ for(const reason of ['上传表新增字段','上传表缺失字段','上传表新增人员','上传表缺失人员','姓名为空或重复，无法唯一比对']) assert.equal(run(`compared.differences.some(d=>d.reason==='${reason}')`),true);
+ assert.equal(run("compared.differences.find(d=>d.name==='甲'&&d.field==='岗位工资').delta"),50);
+ assert.equal(run("compared.differences.find(d=>d.name==='甲'&&d.field==='应发工资').delta"),100);
+});
+test('comparison is recalculated on any source update and does not block output; missing people remain traceable',()=>{
+ const run=app();seedPayroll(run);netSources(run);captureExports(run);
+ run("sourceRows.roster.push({姓名:'乙'});sourceRows.salary.push({姓名:'乙',基本工资:200});sourceRows.attendance.push({姓名:'乙',实发薪天数:22});recalculateEmployees();commitSource('grossUpload',{filename:'应发.xlsx',rows:[{...PayrollEngine.grossRecord(generatedEmployees[0]),应发工资:12000}]});downloadCsv();");
+ assert.match(run("savedBook['工资明细表'].A3.c[0].t"),/应发工资.*第一阶段 10000.*上传表 12000/);
+ assert.match(run("savedBook['工资明细表'].A2.c[0].t"),/乙：上传表缺失人员/);
+ run("commitSource('grossUpload',{filename:'一致.xlsx',rows:generatedEmployees.map(PayrollEngine.grossRecord)});downloadCsv();");
+ assert.equal(run('state.comparison.status'),'equal');
+ assert.equal(run("(savedBook['工资明细表'].A3.c||[]).some(c=>c.t.includes('上传表 12000'))"),false);
+});
+test('all second-stage malformed, missing and duplicate amounts warn and retain first numeric entry',()=>{
+ const run=app();seedPayroll(run);netSources(run);
+ run("sourceRows.netSocial=[{姓名:'甲',个人总计:'坏金额',公司总计:'￥1,000.00'}];sourceRows.netFund=[{姓名:'甲',个人缴纳:'',公司缴纳:300}];sourceRows.tax=[{姓名:'甲',税:40},{姓名:'甲',税:100}];sourceRows.afterTax=[{姓名:'乙',水电代扣:9}];recalculateEmployees();");
+ assert.equal(run('employees[0].social'),0);assert.equal(run('employees[0].fund'),0);assert.equal(run('employees[0].tax'),40);assert.equal(run('employees[0].net'),9960);
+ const issues=run("visibleIssues(employees[0]).join('；')");
+ assert.match(issues,/个人社保金额缺失或无效/);assert.match(issues,/个税姓名重复/);assert.match(issues,/水电代扣未找到匹配/);
+});
+test('intern marker survives export/reimport and all employee withholding is ignored for interns',()=>{
+ const run=app();seedPayroll(run);netSources(run);captureExports(run);
+ run("sourceRows.grossUpload=[{姓名:'甲',应发工资:3700,是否实习生:'是',日薪:200,实发薪天数:18.5}];recalculateEmployees();downloadCsv();");
+ assert.equal(run('employees[0].net'),3700);assert.equal(run('employees[0].afterTaxTotal'),0);assert.equal(run('employees[0].tax'),0);
+ assert.equal(run('employees[0].companyCost'),5000);
+ assert.equal(run("savedBook['工资明细表'][excelColumn(exportHeaders().indexOf('实发工资'))+'3'].v"),3700);
+ assert.match(run("savedBook['工资明细表'][excelColumn(exportHeaders().indexOf('实发工资'))+'3'].f"),/^IF\(AI3="是"/);
+});
+test('batch switching restores both stage-owned contributions, authoritative gross source and comparison',()=>{
+ const run=app();seedPayroll(run);netSources(run);
+ run("commitSource('grossUpload',{filename:'调整.xlsx',rows:[{姓名:'甲',应发工资:12000,是否实习生:'否'}]});globalThis.first=currentBatch();globalThis.second={name:'十月',month:'2026-10',workdays:22};state.batches.push(second);setCurrentBatch(second);switchPayrollStage('net');");
+ assert.equal(run('state.grossSource'),'none');assert.equal(run('employees.length'),0);
+ run("commitSource('grossUpload',{filename:'十月.xlsx',rows:[{姓名:'乙',应发工资:900,是否实习生:'否'}]});setCurrentBatch(first);");
+ assert.equal(run('employees[0].net'),10900);assert.equal(run('state.grossSource'),'uploaded');assert.equal(run('state.comparison.status'),'different');
+ assert.equal(run('sourceRows.social[0].个人总计'),600);assert.equal(run('sourceRows.netSocial[0].个人总计'),500);
+ run('setCurrentBatch(second)');assert.equal(run('employees[0].name'),'乙');assert.equal(run('employees[0].net'),900);
+});
+test('numeric export cells carry live formulas and cached results matching UI and summaries',()=>{
+ const run=app();seedPayroll(run);netSources(run);captureExports(run);run('downloadCsv()');
+ const ref=label=>run(`excelColumn(exportHeaders().indexOf('${label}'))+'3'`);
+ const cell=label=>run(`savedBook['工资明细表'][${JSON.stringify(ref(label))}]`);
+ for(const [label,value] of [['应发工资',10000],['个人社保',500],['个人公积金',300],['税后代扣合计',100],['实发工资',8900],['公司总成本',11300]]) {
+  assert.equal(cell(label).t,'n');assert.equal(cell(label).v,value);assert.equal(cell(label).z,'0.00');
+ }
+ assert.equal(cell('税后代扣合计').f,`ROUND(${ref('其它代扣')}+${ref('水电代扣')}+${ref('餐费代扣')},2)`);
+ assert.equal(cell('公司总成本').f,`ROUND(${ref('应发工资')}+${ref('公司缴纳社保')}+${ref('公司缴纳公积金')},2)`);
+ assert.equal(run("savedBook['汇总统计'].K2.v"),8900);assert.equal(run("savedBook['汇总统计'].O2.v"),11300);
+ assert.match(run("savedBook['工资明细表'][excelColumn(exportHeaders().indexOf('实发工资'))+'4'].f"),/SUM\(/);
+});
+test('generated grouped headers round-trip through grid parsing without importing total rows',()=>{
+ const run=app();seedPayroll(run);captureExports(run);run('downloadGross()');
+ run("globalThis.parsed=PayrollEngine.rowsFromGrid(savedBook['应发工资表'].rows);commitSource('grossUpload',{filename:'回读.xlsx',rows:parsed});switchPayrollStage('net');");
+ assert.equal(run('parsed.length'),1);assert.equal(run('parsed[0].个人社保'),600);assert.equal(run('parsed[0].是否实习生'),'否');assert.equal(run('state.comparison.status'),'equal');
+ assert.throws(()=>run("PayrollEngine.rowsFromGrid([['姓名','姓名'],['甲','乙']])"),/重复列/);
+ assert.throws(()=>run("PayrollEngine.rowsFromGrid([['其他字段'],['甲']])"),/姓名/);
 });
