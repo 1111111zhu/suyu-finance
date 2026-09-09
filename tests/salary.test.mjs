@@ -503,3 +503,48 @@ test('gross payroll export keeps other reduction independent and only leaves unc
  assert.deepEqual(Array.from(run(`${columnList}.map(name=>savedBook['应发工资表'].rows[4][savedBook['应发工资表'].rows[1].indexOf(name)])`)),[null,null,66,2109]);
  assert.match(run("savedBook['应发工资表'].A5.c[0].t"),/其他工资项目继续生成/);
 });
+
+test('intern roster headers match whenever the header contains internship text',()=>{
+ const run=app();
+ for(const header of ['是否实习','是否实习生','本月是否为实习生','实习标识']) {
+  run(`sourceRows={roster:[{姓名:'正式甲','${header}':'否'},{姓名:'实习甲','${header}':' 是 '}],attendance:[{姓名:'正式甲',实发薪天数:22},{姓名:'实习甲',实发薪天数:18.5}],salary:[{姓名:'正式甲',基本工资:1000},{姓名:'实习甲',基本工资:9999}],other:[{姓名:'实习甲',其他减:500,其他代扣:400}],tax:[{姓名:'实习甲',税:300}]};state.liveImport=true;setInternDailyRate('实习甲',200);recalculateEmployees();`);
+  assert.deepEqual(Array.from(run('employees.map(e=>e.name)')),['正式甲','实习甲']);
+  assert.equal(run('employees[1].isIntern'),true);
+  assert.equal(run('employees[1].net'),3700);
+  assert.equal(run('employees[1].base'),0);
+  assert.equal(run('employees[1].tax'),0);
+ }
+});
+
+test('intern daily rates support bulk updates, single override and batch isolation',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',是否实习:'是'},{姓名:'乙',是否实习:'Y'}],attendance:[{姓名:'甲',实发薪天数:10},{姓名:'乙',实发薪天数:12}]};state.liveImport=true;recalculateEmployees();");
+ assert.equal(run("applyBulkInternRate(['甲','乙'],180)"),true);
+ assert.equal(run("setInternDailyRate('乙',220);employees.find(e=>e.name==='乙').net"),2640);
+ assert.equal(run("employees.find(e=>e.name==='甲').net"),1800);
+ run("globalThis.first=currentBatch();globalThis.second={name:'下月',month:'2026-10',workdays:22,data:{internDailyRates:{}}};state.batches.push(second);setCurrentBatch(second);sourceRows={roster:[{姓名:'甲',是否实习:'是'}],attendance:[{姓名:'甲',实发薪天数:8}]};state.liveImport=true;recalculateEmployees();");
+ assert.equal(run("employees.find(e=>e.name==='甲').net"),0);
+ run("setCurrentBatch(first)");
+ assert.equal(run("employees.find(e=>e.name==='甲').net"),1800);
+});
+
+test('reimporting roster prunes only removed or non-intern daily-rate entries',()=>{
+ const run=app();
+ run("sourceRows={roster:[{姓名:'甲',是否实习:'是'},{姓名:'乙',是否实习:'是'}],attendance:[{姓名:'甲',实发薪天数:10},{姓名:'乙',实发薪天数:10}]};state.liveImport=true;applyBulkInternRate(['甲','乙'],100);");
+ run("pruneInternDailyRates([{姓名:'甲',是否实习:'是'},{姓名:'乙',是否实习:'否'},{姓名:'丙',是否实习:'是'}]);");
+ assert.equal(run("Object.keys(internDailyRates()).sort().join(',')"),'甲');
+});
+
+test('intern mapping controls, export contract and salary slip show daily-rate calculation basis',()=>{
+ const run=app();captureExports(run);
+ run("sourceRows={roster:[{姓名:'正式',是否实习:'否'},{姓名:'实习',是否实习生:'是'}],attendance:[{姓名:'正式',实发薪天数:22},{姓名:'实习',实发薪天数:7.5}],salary:[{姓名:'正式',基本工资:1000},{姓名:'实习',基本工资:9999}]};state.liveImport=true;setInternDailyRate('实习',300);state.payrollStage='gross';recalculateEmployees();");
+ assert.match(run('renderMapping()'),/实习生日薪设置/);
+ assert.match(run('renderMapping()'),/任一表头包含“实习”/);
+ assert.equal(run('exportHeaders().length'),41);
+ assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[10]"),7.5);
+ assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[38]"),2250);
+ run("state.payrollStage='net';state.selectedId=employees.find(e=>e.name==='实习').id");
+ assert.match(run('renderSlip()'),/300.00 × 7.5/);
+ run('downloadSlip()');
+ assert.equal(run("savedBook['工资条'].rows.find(r=>r[0]==='计算公式')[1]"),'300 × 7.5');
+});
