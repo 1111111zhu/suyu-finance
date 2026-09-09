@@ -12,6 +12,7 @@
 .card-file-panel{max-height:82px;overflow:auto;padding:6px 8px;border:1px solid #d7eadf;border-radius:7px;background:#f7fcf8}
 .card-file-row{display:flex;align-items:center;gap:8px;min-height:26px;color:#36517e;font-size:12px}
 .card-file-row+.card-file-row{border-top:1px solid #e5f1e9}.card-file-row span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.remove-file-button{flex:0 0 auto;border:0;background:transparent;color:#59836c;font-size:12px;cursor:pointer}.remove-file-button:hover{color:#c74436;text-decoration:underline}.card-file.has-file .replace-button{align-self:center}
+.upload-compatibility-note{margin:12px 0 0;color:#6582ae;font-size:13px;line-height:1.55;text-align:center}
 
 @media(max-width:560px){
   .topbar{height:auto!important}.workspace{padding-top:16px!important}.dropzone:has(.upload-file-panel){height:160px!important;padding:12px}.upload-file-panel>strong{font-size:14px}.upload-file-row{min-height:26px!important;font-size:12px}.upload-file-panel small{font-size:11px}
