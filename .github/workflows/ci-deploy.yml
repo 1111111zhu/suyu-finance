@@ -115,7 +115,7 @@ jobs:
             -o IdentitiesOnly=yes \
             "$archive" "${SERVER_USER}@${SERVER_HOST}:/tmp/"
 
-      - name: Activate release with Docker
+      - name: Activate release on Tencent Cloud
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -124,7 +124,7 @@ jobs:
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             "${SERVER_USER}@${SERVER_HOST}" \
-            'bash -s' -- "$DEPLOY_PATH" "$GITHUB_SHA" < ops/deploy-release.sh
+            'bash -s' -- "$DEPLOY_PATH" "$GITHUB_SHA" < ops/deploy-node-release.sh
 
       - name: Verify public website
         if: env.SITE_URL != ''
