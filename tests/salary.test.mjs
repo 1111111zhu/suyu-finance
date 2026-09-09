@@ -201,10 +201,10 @@ test('roster status and dates are preserved in exported rows while date calculat
  assert.equal(run("exportRow(employees[0])[7]"),'2026/08/17');
 });
 
-test('attendance days are the sole source by name for all statuses and recalculation',()=>{
+test('attendance days remain the sole payable-days source while zero leave bypasses deduction',()=>{
  const run=app();
  run("sourceRows={roster:[{姓名:'甲',是否入离职:'入职',入职日期:'2026-09-17',实发薪天数:99},{姓名:'乙',是否入离职:'离职',离职日期:'2026-09-05'},{姓名:'丙',是否入离职:'在职'}],salary:['甲','乙','丙'].map(姓名=>({姓名,基本工资:2175})),attendance:[{姓名:'丙',实发薪天数:0},{姓名:'甲',实发薪天数:'18.5',病假天数:1,事假天数:8,旷工天数:2},{姓名:'乙',实发薪天数:20}]};state.liveImport=true;applyPayrollSettings('2026-09',22);");
- for (const [i,paid,deduct] of [[0,18.5,3.25],[1,20,1.75],[2,0,21.75]]) {
+ for (const [i,paid,deduct] of [[0,18.5,3.25],[1,20,0],[2,0,0]]) {
   assert.equal(run(`employees[${i}].payableDays`),paid);
   assert.equal(run(`employees[${i}].deductDays`),deduct);
   assert.equal(run(`employees[${i}].attendanceDeduct`),deduct*100);
@@ -217,6 +217,28 @@ test('attendance days are the sole source by name for all statuses and recalcula
  assert.equal(run('payrollExportReady()'),true);
  assert.equal(run("matchSource('导出.xlsx',[{姓名:'甲',实发薪天数:18.5}]).key"),'attendance');
  assert.match(run('renderMapping()'),/实发薪天数/);
+});
+test('zero, zero-like and blank leave cells bypass deduction for every employment status',()=>{
+ const run=app();
+ for (const [status,dateField] of [['在职',''],['入职',",join:'2026-09-17'"],['离职',",leave:'2026-09-05'"]]) {
+  const result=run(`calcSalary({status:'${status}'${dateField},actualPaidDays:18,sick:0,personal:'0.0',absent:'',annual:5,flexible:2,compensatory:3,base:2175},'2026-09',22)`);
+  assert.equal(result.payableDays,18);
+  assert.equal(result.deductDays,0);
+  assert.equal(result.attendanceDeduct,0);
+  assert.equal(result.gross,2175);
+ }
+ run("sourceRows={roster:[{姓名:'甲'}],attendance:[{姓名:'甲',实发薪天数:'18.5',病假天数:'',事假天数:'0.0',旷工天数:null}]};state.liveImport=true;recalculateEmployees();");
+ assert.equal(run('employees[0].payableDays'),18.5);
+ assert.equal(run('employees[0].deductDays'),0);
+});
+test('each nonzero deductible leave field activates the fixed 21.75 formula',()=>{
+ const run=app();
+ for (const field of ['sick','personal','absent']) {
+  const result=run(`calcSalary({actualPaidDays:20,base:2175,${field}:0.5},'2026-09',22)`);
+  assert.equal(result.payableDays,20);
+  assert.equal(result.deductDays,1.75);
+  assert.equal(result.attendanceDeduct,175);
+ }
 });
 test('invalid or missing paid days never fall back and allow exports while retaining missing amounts',()=>{
  for(const raw of [null,undefined,'','  ','abc','50%','—',-1,NaN,Infinity,true,[],{}]) {
@@ -234,14 +256,21 @@ test('invalid or missing paid days never fall back and allow exports while retai
  run("sourceRows.attendance=[{姓名:'乙',实发薪天数:22}];recalculateEmployees();");
  assert.equal(run('payrollExportReady()'),true);
 });
-test('zero and fractional paid days survive detail and slip export without clamping',()=>{
+test('zero-leave paid days survive detail and slip export without clamping or deduction',()=>{
  const run=app();
  for(const paid of [0,0.5,18.5,23]) {
-  run(`employees=[calcSalary({id:'X',name:'甲',actualPaidDays:${paid},base:2175},'2026-09',22)];state.selectedId='X';window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet)=>{globalThis.savedSheet=sheet;}}};downloadXlsx=()=>{};downloadSlip();`);
+  run(`employees=[calcSalary({id:'X',name:'甲',actualPaidDays:${paid},base:2175},'2026-09',22)];state.selectedId='X';window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({}),book_append_sheet:(book,sheet)=>{globalThis.savedSheet=sheet;}}};downloadXlsx=()=>{};globalThis.savedDetail=detailSheet();downloadSlip();`);
   assert.equal(run("savedSheet.rows.find(r=>r[0]==='实发薪天数')[1]"),paid);
-  assert.equal(run('employees[0].deductDays'),21.75-paid);
+  assert.equal(run('employees[0].deductDays'),0);
+  assert.equal(run('employees[0].attendanceDeduct'),0);
   assert.equal(run('exportRow(employees[0])[10]'),paid);
+  assert.equal(run('savedDetail.rows[2][10]'),paid);
+  assert.equal(run('savedDetail.rows[2][28]'),0);
+  assert.equal(run('savedDetail.rows[2][29]'),0);
  }
+ assert.match(run('payrollSettings()'),/病假、事假、旷工均为 0 或空白时，假勤扣薪天数＝0/);
+ assert.match(run('renderOverview()'),/均为 0 或空白时取 0/);
+ assert.match(run('renderSlip()'),/实发薪天数保留考勤表原值/);
 });
 test('duplicate names warn without blocking payroll, including whitespace-normalized names',()=>{
  for(const key of ['roster','attendance','salary']) {
@@ -278,9 +307,9 @@ test('mixed valid and invalid employees export the entire workbook with exceptio
  const run=app();
  run("sourceRows={roster:[{姓名:'正常'},{姓名:'缺失'},{姓名:'重复'}],attendance:[{姓名:'正常',实发薪天数:20},{姓名:'重复',实发薪天数:21},{姓名:'重复',实发薪天数:19}],salary:['正常','缺失','重复'].map(姓名=>({姓名,基本工资:2175}))};state.liveImport=true;recalculateEmployees();window.XLSX={utils:{aoa_to_sheet:rows=>({rows}),book_new:()=>({sheets:[]}),book_append_sheet:(book,sheet,name)=>book.sheets.push({sheet,name})}};downloadXlsx=(book)=>{globalThis.exported=book;};downloadCsv();");
  assert.equal(run('exported.sheets[0].sheet.rows.length'),5);
- assert.equal(run('employees[0].net'),2000);
+ assert.equal(run('employees[0].net'),2175);
  assert.equal(run('employees[1].net'),null);
- assert.equal(run('employees[2].net'),2100);
+ assert.equal(run('employees[2].net'),2175);
  assert.match(run("exported.sheets[0].sheet.A4.c[0].t"),/考勤统计表中未找到此姓名/);
  assert.match(run('renderExceptions()'),/第 3、4 行/);
  assert.equal(run('exported.sheets[1].sheet.rows.at(-1)[3]'),null);
