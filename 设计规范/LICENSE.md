@@ -14,9 +14,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## 不在上述 MIT 范围内的内容
 
-- Inter 字体：适用 `assets/fonts/OFL.txt`。
+- Inter 字体：适用 `设计资产/字体/OFL.txt`。
 - Fernand 樱花背景：第三方原图；本次未发现开放许可声明。保留来源，不由本项目授予该素材的版权许可。
 - Fernand 网页及演示证据截图、品牌与标识：归相应权利人，本包仅记录设计研究来源。
 - 用户提供的品牌材料及 AI 评审稿：不应被误认为 Fernand 官方资源。
 
-完整资产来源与哈希见 `assets/manifest.json` 和 `docs/assets.md`。
+完整资产来源与哈希见 `设计资产/manifest.json` 和 `说明文档/assets.md`。

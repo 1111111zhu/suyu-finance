@@ -1,3 +1,3 @@
 # Design review screenshots are not needed in production release archives.
-# Keep the nested brand assets because the application imports them at build time.
-/design_mockups/*.png export-ignore
+# Keep the nested Chinese brand assets because the application imports them at build time.
+/界面设计稿/*.png export-ignore

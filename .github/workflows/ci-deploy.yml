@@ -37,7 +37,7 @@ jobs:
         run: |
           npm run test:policy
           npm run test:company-profile
-          node --test tests/salary.test.mjs
+          node --test 自动化测试/salary.test.mjs
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -48,7 +48,7 @@ jobs:
         run: python -m pip install openpyxl pyyaml
 
       - name: Run Python regression tests
-        run: python -m unittest tests/test_platform_regressions.py
+        run: python -m unittest 自动化测试/test_platform_regressions.py
 
       - name: Build production application
         run: npm run build
@@ -124,7 +124,7 @@ jobs:
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             "${SERVER_USER}@${SERVER_HOST}" \
-            'bash -s' -- "$DEPLOY_PATH" "$GITHUB_SHA" < ops/deploy-node-release.sh
+            'bash -s' -- "$DEPLOY_PATH" "$GITHUB_SHA" < 运维脚本/deploy-node-release.sh
 
       - name: Verify public website
         if: env.SITE_URL != ''

@@ -69,11 +69,11 @@ server {
 npm run sync:policies
 ```
 
-要实现每天自动推送到政策页面，请把 `ops/policy-radar.cron` 中的部署目录改成腾讯云服务器实际目录，再加入服务器的 `crontab`。默认每天早上 06:00（Asia/Shanghai）读取一次免费政府公开来源，并用文件锁避免两次同步重叠。
+要实现每天自动推送到政策页面，请把 `运维脚本/policy-radar.cron` 中的部署目录改成腾讯云服务器实际目录，再加入服务器的 `crontab`。默认每天早上 06:00（Asia/Shanghai）读取一次免费政府公开来源，并用文件锁避免两次同步重叠。
 
 直接 Node.js 部署时，同步程序会原子替换 `public/policies.json`，并在已构建的项目中同步更新 `dist/client/policies.json`，因此无需每天重新 build。Docker 部署若需长期更新，可由宿主机 cron 执行 `docker exec rd-cost-console npm run sync:policies`；重建容器前应先执行一次同步，避免回到镜像内的旧数据。政策数据不包含企业 Excel、人员或财务数据。
 
-长期官方来源、判定顺序、PDF/Word 解析、可调参数及防归零保护见 [`docs/policy-radar.md`](docs/policy-radar.md)。
+长期官方来源、判定顺序、PDF/Word 解析、可调参数及防归零保护见 [`项目文档/policy-radar.md`](项目文档/policy-radar.md)。
 
 ### 扫描版 PDF 的 OCR（推荐）
 
@@ -94,7 +94,7 @@ sudo apt-get install -y poppler-utils tesseract-ocr tesseract-ocr-chi-sim
 npm run sync:company-profile
 ```
 
-将 `ops/company-profile.cron` 中的部署目录改为实际目录后加入服务器 crontab，可在每月 1 日 06:15（Asia/Shanghai）刷新。数据写入 `public/company-profile.json`，其中每个字段附有来源 URL / 文件、抓取时间、证据片段和可信等级；`matcherProfile` 是规则引擎可读取的稳定入口。完整字段与来源约定见 `docs/company-profile.md`。
+将 `运维脚本/company-profile.cron` 中的部署目录改为实际目录后加入服务器 crontab，可在每月 1 日 06:15（Asia/Shanghai）刷新。数据写入 `public/company-profile.json`，其中每个字段附有来源 URL / 文件、抓取时间、证据片段和可信等级；`matcherProfile` 是规则引擎可读取的稳定入口。完整字段与来源约定见 `项目文档/company-profile.md`。
 
 ## 说明
 

@@ -4,9 +4,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import brandMark from "../../design_mockups/brand/seeextech-symbol-user.png";
-import { displayPolicyTime } from "../../scripts/policy-time.mjs";
-import { selectPolicyItems, applicationFeedItems, canonicalSelections, paginatePolicies, effectiveDisposition, safeSourceHref } from "../../scripts/policy-view.mjs";
+import brandMark from "../../界面设计稿/品牌资产/seeextech-symbol-user.png";
+import { displayPolicyTime } from "../../自动化脚本/policy-time.mjs";
+import { selectPolicyItems, applicationFeedItems, canonicalSelections, paginatePolicies, effectiveDisposition, safeSourceHref } from "../../自动化脚本/policy-view.mjs";
 import { cardReasons, companyFitItems, qualificationNotes } from "./presentation.mjs";
 import "./policy.css";
 import "./policy-overrides.css";
