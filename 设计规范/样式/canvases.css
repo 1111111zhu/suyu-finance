@@ -1,0 +1,8 @@
+/* The original cherry image is intentionally local and unmodified. */
+.ui-canvas { position: relative; isolation: isolate; background: var(--ui-canvas); }
+.ui-canvas--floral::before { content: ''; position: absolute; inset: 0; z-index: -2; background: url('../设计资产/背景图/fernand-cherry-blossom.png') center / cover no-repeat; opacity: var(--ui-floral-opacity); pointer-events: none; }
+.ui-canvas--floral::after { content: ''; position: absolute; inset: 0; z-index: -1; background: radial-gradient(ellipse at 48% 20%, var(--ui-canvas) 0%, color-mix(in srgb, var(--ui-canvas) 96%, transparent) 35%, color-mix(in srgb, var(--ui-canvas) 70%, transparent) 66%, transparent 100%); pointer-events: none; }
+.ui-canvas--blossom { background: url('../设计资产/背景图/fernand-cherry-blossom.png') center / cover no-repeat; }
+.ui-canvas--dots { background-color: var(--ui-canvas); background-image: radial-gradient(var(--ui-line-strong) .7px, transparent .7px); background-size: 16px 16px; }
+.ui-canvas--quiet { background: var(--ui-canvas); }
+.ui-canvas--mist { background: radial-gradient(ellipse at 0 80%, #fae8ea80, transparent 55%), radial-gradient(ellipse at 100% 10%, #d5ecf450, transparent 50%), var(--ui-canvas); }

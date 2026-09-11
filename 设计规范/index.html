@@ -4,11 +4,11 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="规范设计：以连续画布、轻量控件和樱花背景构成的可复用 UI 规范与交互示例。">
   <title>规范设计 · Calm UI</title>
-  <link rel="icon" href="assets/icons/flower.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles/foundations.css"><link rel="stylesheet" href="styles/components.css">
-  <link rel="stylesheet" href="styles/canvases.css"><link rel="stylesheet" href="styles/motion.css">
-  <link rel="stylesheet" href="styles/gallery.css"><link rel="stylesheet" href="styles/widget.css">
-  <script type="module" src="components/gallery.js"></script>
+  <link rel="icon" href="设计资产/图标/flower.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="样式/foundations.css"><link rel="stylesheet" href="样式/components.css">
+  <link rel="stylesheet" href="样式/canvases.css"><link rel="stylesheet" href="样式/motion.css">
+  <link rel="stylesheet" href="样式/gallery.css"><link rel="stylesheet" href="样式/widget.css">
+  <script type="module" src="组件/gallery.js"></script>
 </head>
 <body class="kit-page ui-canvas ui-canvas--floral">
   <a class="ui-skip" href="#main">跳到内容</a>
@@ -27,8 +27,8 @@
       <a href="#docs"><span data-icon="book"></span>使用规范</a>
     </nav>
     <div class="kit-sidebar-footer">
-      <a href="examples/payroll.html"><span data-icon="arrowUp"></span>打开薪资示例</a>
-      <a href="docs/research.md"><span data-icon="link"></span>研究与来源</a>
+      <a href="示例/payroll.html"><span data-icon="arrowUp"></span>打开薪资示例</a>
+      <a href="说明文档/research.md"><span data-icon="link"></span>研究与来源</a>
       <span class="ui-caption">连续画布 · 轻量交互</span>
     </div>
   </aside>
@@ -50,9 +50,9 @@
         <h1>轻一点，刚刚好。</h1>
         <p>让内容自然落在画布上。用细线梳理关系，用轻巧的控件承载操作，<br class="kit-desktop-break">把樱花与光留在边缘，让每一步都有清晰的回应。</p>
         <div class="ui-row">
-          <a class="ui-button ui-button--primary ui-button--pill" href="examples/payroll.html">体验完整页面 <span data-icon="arrow"></span></a>
+          <a class="ui-button ui-button--primary ui-button--pill" href="示例/payroll.html">体验完整页面 <span data-icon="arrow"></span></a>
           <a class="ui-button ui-button--pill" href="#canvases"><span data-icon="flower"></span>樱花画布</a>
-          <a class="ui-text-action" href="docs/usage.md">使用指南 <span data-icon="arrowUp"></span></a>
+          <a class="ui-text-action" href="说明文档/usage.md">使用指南 <span data-icon="arrowUp"></span></a>
         </div>
         <div class="kit-hero-meta"><span><span data-icon="check"></span>本地字体与素材</span><span><span data-icon="check"></span>可操作的组件状态</span><span><span data-icon="check"></span>浅色 / 深色 / 减少动态</span></div>
       </section>
@@ -218,7 +218,7 @@ flow.invalidate(0); // 资料变化，清除当前及后续完成状态</code></
       <section class="kit-section" id="docs">
         <div class="kit-section-head"><h2>带走这套规范</h2><span class="ui-eyebrow">08 / Handoff</span></div>
         <p class="kit-section-intro">样式、行为、素材与研究分开存放。没有构建依赖，静态托管即可运行。</p>
-        <div class="kit-docs-links"><a href="docs/usage.md">接入与复用指南 <span data-icon="arrowUp"></span></a><a href="docs/components.md">组件清单与状态约定 <span data-icon="arrowUp"></span></a><a href="docs/design-rules.md">布局、字体和动效规则 <span data-icon="arrowUp"></span></a><a href="docs/research.md">Fernand 研究与来源 <span data-icon="arrowUp"></span></a><a href="tokens/tokens.json">JSON 设计变量 <span data-icon="arrowUp"></span></a><a href="docs/assets.md">素材来源与授权说明 <span data-icon="arrowUp"></span></a></div>
+        <div class="kit-docs-links"><a href="说明文档/usage.md">接入与复用指南 <span data-icon="arrowUp"></span></a><a href="说明文档/components.md">组件清单与状态约定 <span data-icon="arrowUp"></span></a><a href="说明文档/design-rules.md">布局、字体和动效规则 <span data-icon="arrowUp"></span></a><a href="说明文档/research.md">Fernand 研究与来源 <span data-icon="arrowUp"></span></a><a href="设计令牌/tokens.json">JSON 设计变量 <span data-icon="arrowUp"></span></a><a href="说明文档/assets.md">素材来源与授权说明 <span data-icon="arrowUp"></span></a></div>
       </section>
       <footer class="kit-footer"><span>规范设计 · 1.0 · 2026.09</span><span>Inspired by Fernand. Crafted for SEEEX.</span></footer>
     </div>
@@ -227,6 +227,6 @@ flow.invalidate(0); // 资料变化，清除当前及后续完成状态</code></
   <dialog class="ui-dialog" id="sample-dialog" aria-labelledby="sample-title"><div class="ui-dialog-head"><h2 id="sample-title">保存这次调整？</h2><button class="ui-button ui-button--ghost ui-button--icon" data-close-dialog aria-label="关闭对话框"><span data-icon="close"></span></button></div><div class="ui-dialog-body"><p class="ui-muted">调整会保留在当前示例中。你可以继续查看其他组件。</p></div><div class="ui-dialog-footer"><button class="ui-button ui-button--ghost" data-close-dialog>取消</button><button class="ui-button ui-button--primary" data-close-dialog data-toast="示例调整已保存">保存调整</button></div></dialog>
   <dialog class="ui-dialog" id="delete-dialog" aria-labelledby="delete-title"><div class="ui-dialog-head"><h2 id="delete-title">删除这条示例记录？</h2></div><div class="ui-dialog-body"><p class="ui-muted">这是删除确认组件的演示，不影响任何真实数据。</p></div><div class="ui-dialog-footer"><button class="ui-button" data-close-dialog autofocus>取消</button><button class="ui-button ui-button--danger" data-close-dialog data-toast="已演示删除确认">删除示例</button></div></dialog>
   <dialog class="ui-dialog ui-drawer" id="detail-drawer" aria-labelledby="detail-title"><div class="ui-dialog-head"><h2 id="detail-title">林晓</h2><button class="ui-button ui-button--ghost ui-button--icon" data-close-dialog aria-label="关闭员工详情"><span data-icon="close"></span></button></div><div class="ui-dialog-body"><p class="ui-caption">研发部 · SY001 · 示例数据</p><hr><dl class="ui-keyvalue"><div><dt>应发工资</dt><dd class="ui-number">11,500.00</dd></div><div><dt>扣款合计</dt><dd class="ui-number">1,500.00</dd></div><div><dt>实发工资</dt><dd class="ui-number">10,000.00</dd></div></dl><hr><span class="ui-pill ui-pill--success">已核对</span></div></dialog>
-  <dialog class="ui-dialog ui-command" id="command-dialog" data-command aria-label="快捷操作"><div class="ui-command-search"><span data-icon="search"></span><input placeholder="搜索操作、组件或页面…" aria-label="搜索快捷操作" autofocus><kbd class="ui-key">esc</kbd></div><ul class="ui-command-list"><li><button data-go="examples/payroll.html"><span data-icon="calendar"></span>打开薪资示例<kbd class="ui-key">↵</kbd></button></li><li><button data-go="#actions"><span data-icon="cursor"></span>查看按钮与操作</button></li><li><button data-go="#canvases"><span data-icon="flower"></span>查看樱花画布</button></li><li><button data-go="#workflow"><span data-icon="route"></span>查看步骤进度</button></li></ul><div class="ui-empty" data-command-empty hidden>没有找到操作</div><div class="ui-command-hint">↑ ↓ 选择 &nbsp; ↵ 打开 &nbsp; esc 关闭</div></dialog>
+  <dialog class="ui-dialog ui-command" id="command-dialog" data-command aria-label="快捷操作"><div class="ui-command-search"><span data-icon="search"></span><input placeholder="搜索操作、组件或页面…" aria-label="搜索快捷操作" autofocus><kbd class="ui-key">esc</kbd></div><ul class="ui-command-list"><li><button data-go="示例/payroll.html"><span data-icon="calendar"></span>打开薪资示例<kbd class="ui-key">↵</kbd></button></li><li><button data-go="#actions"><span data-icon="cursor"></span>查看按钮与操作</button></li><li><button data-go="#canvases"><span data-icon="flower"></span>查看樱花画布</button></li><li><button data-go="#workflow"><span data-icon="route"></span>查看步骤进度</button></li></ul><div class="ui-empty" data-command-empty hidden>没有找到操作</div><div class="ui-command-hint">↑ ↓ 选择 &nbsp; ↵ 打开 &nbsp; esc 关闭</div></dialog>
 </body>
 </html>

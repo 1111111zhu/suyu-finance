@@ -5,7 +5,7 @@
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import Image from "next/image";
 import * as XLSX from "xlsx";
-import brandMark from "../design_mockups/brand/seeextech-symbol-user.png";
+import brandMark from "../界面设计稿/品牌资产/seeextech-symbol-user.png";
 
 type PyodideLike = {
   FS: {

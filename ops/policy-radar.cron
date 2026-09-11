@@ -1,3 +1,0 @@
-# Every day at 06:00 Asia/Shanghai. Install from the 项目申报 branch.
-CRON_TZ=Asia/Shanghai
-0 6 * * * POLICY_APP_DIR=/opt/suyu-finance POLICY_BRANCH='项目申报' /opt/suyu-finance/ops/policy-radar-docker.sh >> /var/log/policy-radar.log 2>&1

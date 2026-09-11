@@ -5,10 +5,10 @@
   "type": "module",
   "description": "规范设计 — 可复用的连续画布、组件与交互示例",
   "scripts": {
-    "start": "node scripts/serve.mjs",
-    "tokens": "node scripts/build-tokens.mjs",
-    "check": "node scripts/check.mjs",
-    "test": "node tests/ui.test.mjs"
+    "start": "node 构建脚本/serve.mjs",
+    "tokens": "node 构建脚本/build-tokens.mjs",
+    "check": "node 构建脚本/check.mjs",
+    "test": "node 自动化测试/ui.test.mjs"
   },
   "engines": { "node": ">=18" },
   "license": "SEE LICENSE IN LICENSE.md"
