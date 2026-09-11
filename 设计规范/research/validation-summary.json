@@ -1,0 +1,83 @@
+{
+  "status": "passed",
+  "date": "2026-09-11T07:33:36.688Z",
+  "browser": "147.0.7727.15",
+  "interactiveChecks": 13,
+  "checks": [
+    {
+      "name": "静态资源、标题与本地字体正常加载",
+      "status": "passed"
+    },
+    {
+      "name": "表单错误提示与修正、搜索空结果",
+      "status": "passed"
+    },
+    {
+      "name": "步骤必须满足条件，回看不造假，重置清除状态",
+      "status": "passed"
+    },
+    {
+      "name": "页签支持方向键，菜单支持 Escape 与焦点返回",
+      "status": "passed"
+    },
+    {
+      "name": "对话框和抽屉约束焦点、Escape 返回入口",
+      "status": "passed"
+    },
+    {
+      "name": "命令菜单支持快捷键、搜索空态和关闭",
+      "status": "passed"
+    },
+    {
+      "name": "小组件三种形式、明暗、左右、关闭、搜索与安全文本",
+      "status": "passed"
+    },
+    {
+      "name": "深色主题与减少动态偏好",
+      "status": "passed"
+    },
+    {
+      "name": "上个月默认值含一月跨年，天数不预填",
+      "status": "passed"
+    },
+    {
+      "name": "薪资完整四步，逐位核对前不能继续，参数修改使完成失效",
+      "status": "passed"
+    },
+    {
+      "name": "未解析 Excel 不标为已完成；历史和邮件没有步骤栏",
+      "status": "passed"
+    },
+    {
+      "name": "320–1440px 页面无横向溢出，手机目录可开关",
+      "status": "passed"
+    },
+    {
+      "name": "无运行错误、无缺失请求、无第三方网络调用",
+      "status": "passed"
+    }
+  ],
+  "responsiveWidths": [
+    320,
+    390,
+    640,
+    768,
+    972,
+    1440
+  ],
+  "runtimeErrors": [],
+  "missingResources": [],
+  "externalRuntimeRequests": [],
+  "visualReview": [
+    "组件库桌面及手机",
+    "薪资连续画布桌面及手机",
+    "樱花小组件完整内容与按钮",
+    "深色组件与表单"
+  ],
+  "fileIntegrity": "54 files; 47 local references; 6 asset hashes; JS syntax; generated tokens synchronized",
+  "limitations": [
+    "Chromium 验证；未声称所有浏览器均已检查",
+    "示例不进行真实 Excel 解析、工资核算或发送",
+    "研究范围为公开网页、演示与官方文档"
+  ]
+}

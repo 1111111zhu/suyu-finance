@@ -1,0 +1,293 @@
+{
+  "fontRules": [
+    "@font-face{font-family:Inter;font-style:normal;font-weight:300;src:url(/fonts/Inter-Light.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-Light.woff?v=3.19) format(\"woff\")}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:400;src:url(/fonts/Inter-Regular.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-Regular.woff?v=3.19) format(\"woff\")}",
+    "@font-face{font-family:Inter;font-style:italic;font-weight:400;src:url(/fonts/Inter-Italic.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-Italic.woff?v=3.19) format(\"woff\")}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:500;src:url(/fonts/Inter-Medium.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-Medium.woff?v=3.19) format(\"woff\")}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:600;src:url(/fonts/Inter-SemiBold.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-SemiBold.woff?v=3.19) format(\"woff\")}",
+    "@font-face{font-family:Inter;font-style:italic;font-weight:600;src:url(/fonts/Inter-SemiBoldItalic.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-SemiBoldItalic.woff?v=3.19) format(\"woff\")}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:700;src:url(/fonts/Inter-Bold.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-Bold.woff?v=3.19) format(\"woff\")}",
+    "@font-face{font-family:Inter;font-style:italic;font-weight:700;src:url(/fonts/Inter-BoldItalic.woff2?v=3.19) format(\"woff2\"),url(/fonts/Inter-BoldItalic.woff?v=3.19) format(\"woff\")}"
+  ],
+  "root": ":root{--white:#fff;--grey:#9fa3b5;--grey-light:#f4f5f7;--grey-medium:#717583;--grey-strong:#3d4259;--black:#131e40;--blue:#00a0ff;--blue-pale:#e8f5ff;--orange:#fb8c3b;--red:#dc2626;--red-pale:#fee2e2;--green:#2dbd33;--green-dark:#33c27f;--border:#eaecf8;--border-strong:#e4e6eb;color-scheme:light}",
+  "breakpoints": [
+    "@media screen and (max-width:900px)",
+    "@media screen and (max-width:640px)",
+    "@media screen and (max-width:420px)",
+    "@media(prefers-reduced-motion:reduce)",
+    "@media not (prefers-reduced-motion)"
+  ],
+  "colors": [
+    [
+      "#fff",
+      76
+    ],
+    [
+      "#1a2035",
+      44
+    ],
+    [
+      "#12376914",
+      44
+    ],
+    [
+      "#1237690a",
+      22
+    ],
+    [
+      "#717583",
+      16
+    ],
+    [
+      "#8c8f9a",
+      12
+    ],
+    [
+      "#6f7b96",
+      10
+    ],
+    [
+      "#16a34a",
+      7
+    ],
+    [
+      "#9fa3b5",
+      7
+    ],
+    [
+      "#3d4259",
+      7
+    ],
+    [
+      "#eaecf0",
+      7
+    ],
+    [
+      "#0000000a",
+      6
+    ],
+    [
+      "#eaecf8",
+      6
+    ],
+    [
+      "#00000017",
+      6
+    ],
+    [
+      "#00a0ff",
+      5
+    ],
+    [
+      "#9498a5",
+      5
+    ],
+    [
+      "#e8eaf0",
+      5
+    ],
+    [
+      "#5e6ad2",
+      5
+    ],
+    [
+      "#f7f8fc",
+      4
+    ],
+    [
+      "#e4e6eb",
+      4
+    ],
+    [
+      "#e8e9f0",
+      4
+    ],
+    [
+      "#6e727f",
+      4
+    ],
+    [
+      "#38c576",
+      4
+    ],
+    [
+      "#fff0",
+      4
+    ],
+    [
+      "#f1f3f6",
+      4
+    ]
+  ],
+  "radius": [
+    [
+      "8px",
+      26
+    ],
+    [
+      "4px",
+      23
+    ],
+    [
+      "50%",
+      20
+    ],
+    [
+      "6px",
+      13
+    ],
+    [
+      "10px",
+      11
+    ],
+    [
+      "5px",
+      8
+    ],
+    [
+      "20px",
+      7
+    ],
+    [
+      "100%",
+      6
+    ],
+    [
+      "14px",
+      5
+    ],
+    [
+      "0",
+      4
+    ],
+    [
+      "30px",
+      4
+    ],
+    [
+      "3px",
+      3
+    ],
+    [
+      "50px",
+      3
+    ],
+    [
+      "12px",
+      3
+    ],
+    [
+      "16px",
+      3
+    ],
+    [
+      "9999px",
+      3
+    ],
+    [
+      "0 0 10px 10px",
+      2
+    ],
+    [
+      "7px",
+      2
+    ],
+    [
+      "9px",
+      1
+    ],
+    [
+      "0 0 0 10px",
+      1
+    ]
+  ],
+  "shadows": [
+    [
+      "0 2px 4px #12376914,0 1px 1px #1237690a,0 0 0 1px #12376914",
+      14
+    ],
+    [
+      "none",
+      6
+    ],
+    [
+      "0 2px 5px #00000017",
+      5
+    ],
+    [
+      "0 1px 2px #12376914,0 0 0 1px #12376914",
+      2
+    ],
+    [
+      "0 1px 2px #16a34a1a,0 0 0 1px #16a34a33",
+      2
+    ],
+    [
+      "0 0 0 1px #f0f0f5",
+      2
+    ],
+    [
+      "0 1px 4px #0000000a",
+      2
+    ],
+    [
+      "0 0 0 1px #12376914,0 1px 1px #1237690a,0 2px 4px #12376914",
+      2
+    ],
+    [
+      "0 0 0 1px #12376914",
+      2
+    ],
+    [
+      "0 0 2px 2px #0009",
+      1
+    ]
+  ],
+  "easing": [
+    [
+      "cubic-bezier(.23,1,.32,1)",
+      18
+    ],
+    [
+      "cubic-bezier(.19,1,.22,1)",
+      6
+    ],
+    [
+      "cubic-bezier(.34,1.56,.64,1)",
+      2
+    ],
+    [
+      "cubic-bezier(.4,0,.2,1)",
+      2
+    ]
+  ],
+  "keyframes": [
+    "ripple",
+    "centerPayment",
+    "centerPaymentHide",
+    "badgeRefunded",
+    "pillRefunded",
+    "paymentActions",
+    "paymentDropdown",
+    "paymentClicked",
+    "fernandDash",
+    "cdot-pulse",
+    "lev-a",
+    "lev-b",
+    "lev-c",
+    "feat3FadeUp",
+    "feat3PopIn",
+    "feat3AgentTL",
+    "feat3AgentTR",
+    "feat3AgentBL",
+    "feat3RipplePulse",
+    "feat3RipplePulseOuter",
+    "blink",
+    "cursor-blink",
+    "show-content-image",
+    "turn-on-visibility",
+    "turn-off-visibility",
+    "lightbox-zoom-in",
+    "lightbox-zoom-out"
+  ]
+}

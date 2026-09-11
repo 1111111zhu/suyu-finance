@@ -1,0 +1,66 @@
+{
+  "date": "2026-09-11",
+  "scope": "公开网站、登录页、产品演示、官方组件文档；未登录账户",
+  "pages": [
+    "https://getfernand.com/",
+    "https://getfernand.com/pricing/",
+    "https://getfernand.com/about-us/",
+    "https://getfernand.com/updates/",
+    "https://help.getfernand.com/",
+    "https://app.getfernand.com/auth/login"
+  ],
+  "components": [
+    {
+      "name": "Text",
+      "url": "https://help.getfernand.com/features/custom-data/text"
+    },
+    {
+      "name": "Key/value pair",
+      "url": "https://help.getfernand.com/features/custom-data/key-value-pair"
+    },
+    {
+      "name": "List",
+      "url": "https://help.getfernand.com/features/custom-data/list"
+    },
+    {
+      "name": "Button",
+      "url": "https://help.getfernand.com/features/custom-data/button"
+    },
+    {
+      "name": "Spacer",
+      "url": "https://help.getfernand.com/features/custom-data/spacer"
+    },
+    {
+      "name": "Badge",
+      "url": "https://help.getfernand.com/features/custom-data/badge"
+    },
+    {
+      "name": "Pill",
+      "url": "https://help.getfernand.com/features/custom-data/pill"
+    },
+    {
+      "name": "Card",
+      "url": "https://help.getfernand.com/features/custom-data/card"
+    },
+    {
+      "name": "Tabs",
+      "url": "https://help.getfernand.com/features/custom-data/tabs"
+    },
+    {
+      "name": "Collapsible",
+      "url": "https://help.getfernand.com/features/custom-data/collapsible"
+    },
+    {
+      "name": "Divider",
+      "url": "https://help.getfernand.com/features/custom-data/divider"
+    },
+    {
+      "name": "Table",
+      "url": "https://help.getfernand.com/features/custom-data/table"
+    },
+    {
+      "name": "Form",
+      "url": "https://help.getfernand.com/features/custom-data/form"
+    }
+  ]
+}

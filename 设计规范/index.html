@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-accent="mint">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="规范设计：以连续画布、轻量控件和樱花背景构成的可复用 UI 规范与交互示例。">
+  <title>规范设计 · Calm UI</title>
+  <link rel="icon" href="assets/icons/flower.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles/foundations.css"><link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/canvases.css"><link rel="stylesheet" href="styles/motion.css">
+  <link rel="stylesheet" href="styles/gallery.css"><link rel="stylesheet" href="styles/widget.css">
+  <script type="module" src="components/gallery.js"></script>
+</head>
+<body class="kit-page ui-canvas ui-canvas--floral">
+  <a class="ui-skip" href="#main">跳到内容</a>
+  <aside class="kit-sidebar" id="kit-sidebar">
+    <a href="#overview" class="kit-brand"><span data-icon="flower"></span>规范设计</a>
+    <div class="kit-version">CALM UI &nbsp; / &nbsp; 1.0</div>
+    <nav class="kit-nav" aria-label="规范目录">
+      <a href="#overview" aria-current="page"><span data-icon="grid"></span>设计概览</a>
+      <a href="#foundations"><span data-icon="type"></span>基础语言</a>
+      <a href="#actions"><span data-icon="cursor"></span>按钮与操作</a>
+      <a href="#forms"><span data-icon="sliders"></span>输入与选择</a>
+      <a href="#data"><span data-icon="list"></span>信息与状态</a>
+      <a href="#workflow"><span data-icon="route"></span>导航与进度</a>
+      <a href="#canvases"><span data-icon="image"></span>画布与小组件</a>
+      <a href="#motion"><span data-icon="spark"></span>浮层与动效</a>
+      <a href="#docs"><span data-icon="book"></span>使用规范</a>
+    </nav>
+    <div class="kit-sidebar-footer">
+      <a href="examples/payroll.html"><span data-icon="arrowUp"></span>打开薪资示例</a>
+      <a href="docs/research.md"><span data-icon="link"></span>研究与来源</a>
+      <span class="ui-caption">连续画布 · 轻量交互</span>
+    </div>
+  </aside>
+  <main class="kit-main" id="main">
+    <div class="kit-content">
+      <header class="kit-topbar">
+        <div class="ui-row"><button class="ui-button ui-button--ghost ui-button--icon kit-mobile-toggle" aria-label="打开规范目录" aria-expanded="false" aria-controls="kit-sidebar" id="mobile-nav"><span data-icon="menu"></span></button><span class="kit-topbar-label">Design library <span aria-hidden="true">/</span> 设计规范</span></div>
+        <div class="kit-topbar-actions">
+          <div class="ui-segmented" data-segmented id="accent-toggle" role="group" aria-label="强调色">
+            <button aria-pressed="true" data-value="mint">薄荷绿</button><button aria-pressed="false" data-value="blue">Fernand 蓝</button>
+          </div>
+          <button class="ui-button ui-button--ghost ui-button--icon" data-theme-toggle aria-label="切换深色主题"><span data-icon="moon"></span></button>
+          <button class="ui-button ui-button--ghost ui-button--icon" data-open-dialog="command-dialog" aria-label="打开命令菜单"><span data-icon="search"></span></button>
+        </div>
+      </header>
+
+      <section class="kit-hero" id="overview">
+        <div class="ui-eyebrow">A little less, a little calmer</div>
+        <h1>轻一点，刚刚好。</h1>
+        <p>让内容自然落在画布上。用细线梳理关系，用轻巧的控件承载操作，<br class="kit-desktop-break">把樱花与光留在边缘，让每一步都有清晰的回应。</p>
+        <div class="ui-row">
+          <a class="ui-button ui-button--primary ui-button--pill" href="examples/payroll.html">体验完整页面 <span data-icon="arrow"></span></a>
+          <a class="ui-button ui-button--pill" href="#canvases"><span data-icon="flower"></span>樱花画布</a>
+          <a class="ui-text-action" href="docs/usage.md">使用指南 <span data-icon="arrowUp"></span></a>
+        </div>
+        <div class="kit-hero-meta"><span><span data-icon="check"></span>本地字体与素材</span><span><span data-icon="check"></span>可操作的组件状态</span><span><span data-icon="check"></span>浅色 / 深色 / 减少动态</span></div>
+      </section>
+
+      <section class="kit-section" id="foundations">
+        <div class="kit-section-head"><h2>基础语言</h2><span class="ui-eyebrow">01 / Foundations</span></div>
+        <p class="kit-section-intro">Inter 的清晰字形、冷灰的层次和有节制的绿色，让界面保持轻盈。</p>
+        <div class="kit-specimen">
+          <div class="kit-specimen-label"><h3>色彩</h3><p>点击复制色值。<br>强调色只用于操作与状态。</p></div>
+          <div class="kit-demo"><div class="kit-palette">
+            <button class="kit-swatch" style="--swatch:#1a2035" data-copy="#1A2035"><span>深墨</span><code>#1A2035</code></button>
+            <button class="kit-swatch" style="--swatch:#69758a" data-copy="#69758A"><span>辅助灰</span><code>#69758A</code></button>
+            <button class="kit-swatch" style="--swatch:#e8ecf1" data-copy="#E8ECF1"><span>分隔线</span><code>#E8ECF1</code></button>
+            <button class="kit-swatch" style="--swatch:#58b68e" data-copy="#58B68E"><span>薄荷绿</span><code>#58B68E</code></button>
+            <button class="kit-swatch" style="--swatch:#00a0ff" data-copy="#00A0FF"><span>参考蓝</span><code>#00A0FF</code></button>
+            <button class="kit-swatch" style="--swatch:#f5ddd8" data-copy="#F5DDD8"><span>樱花粉</span><code>#F5DDD8</code></button>
+          </div><p class="kit-note">小字号操作文字使用更深的语义色：薄荷绿 #277D5C / 蓝色 #087EB9。上方色块保留原始强调色。</p></div>
+        </div>
+        <div class="kit-specimen">
+          <div class="kit-specimen-label"><h3>字体</h3><p>英文 Inter<br>中文 PingFang SC 等系统字体</p></div>
+          <div class="kit-demo">
+            <div class="kit-type"><span style="font-size:38px;line-height:48px;letter-spacing:-.035em">Bonjour，开始新的一天。</span><small>38 / 48 · Regular</small></div>
+            <div class="kit-type"><span style="font-size:30px;line-height:38px">Everything in its place.</span><small>30 / 38 · Regular</small></div>
+            <div class="kit-type"><span style="font-size:18px;line-height:30px">让操作清楚，让信息安静。</span><small>18 / 30 · Regular</small></div>
+            <div class="kit-type"><span style="font-size:14px;line-height:22px">内容和动作，自然地发生在同一处。</span><small>14 / 22 · Regular</small></div>
+            <div class="kit-type"><span style="font-size:12px;line-height:20px;color:var(--ui-muted)">更新时间 · 09:41 &nbsp; ¥ 58,200.00</span><small>12 / 20 · Tabular</small></div>
+          </div>
+        </div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>间距与边界</h3><p>4px 基础节奏<br>小圆角、短阴影</p></div><div class="kit-demo ui-stack">
+          <div class="kit-spaces"><div class="kit-space" style="--size:4px"><span></span><code>4</code></div><div class="kit-space" style="--size:8px"><span></span><code>8</code></div><div class="kit-space" style="--size:12px"><span></span><code>12</code></div><div class="kit-space" style="--size:16px"><span></span><code>16</code></div><div class="kit-space" style="--size:24px"><span></span><code>24</code></div><div class="kit-space" style="--size:32px"><span></span><code>32</code></div><div class="kit-space" style="--size:48px"><span></span><code>48</code></div></div>
+          <div class="kit-shapes"><div class="kit-shape" style="border-radius:4px">4 px</div><div class="kit-shape" style="border-radius:6px">6 px</div><div class="kit-shape" style="border-radius:8px">8 px</div><div class="kit-shape" style="border-radius:99px">Pill</div></div>
+        </div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>图标</h3><p>24px 网格 · 1.6px 线宽<br>点击复制 SVG</p></div><div class="kit-demo"><div class="kit-icons" id="icon-library"></div></div></div>
+      </section>
+
+      <section class="kit-section" id="actions">
+        <div class="kit-section-head"><h2>按钮与操作</h2><span class="ui-eyebrow">02 / Actions</span></div>
+        <p class="kit-section-intro">主要动作有重量，次要动作有边界，日常动作直接跟随内容。</p>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>层级</h3><p>同一区域只强调一个动作。</p></div><div class="kit-demo"><div class="ui-row">
+          <button class="ui-button ui-button--primary" data-toast="主要操作已触发">继续 <span data-icon="arrow"></span></button><button class="ui-button" data-toast="次要操作已触发">查看详情</button><button class="ui-button ui-button--accent" data-toast="已应用">应用</button><button class="ui-button ui-button--ghost" data-toast="已取消示例操作">取消</button><button class="ui-text-action" data-toast="编辑操作已触发">编辑 <span data-icon="arrowUp"></span></button>
+        </div><details class="kit-code"><summary><span data-icon="code"></span>查看代码</summary><pre><code>&lt;button class="ui-button ui-button--primary"&gt;继续&lt;/button&gt;
+&lt;button class="ui-button"&gt;查看详情&lt;/button&gt;
+&lt;button class="ui-text-action"&gt;编辑&lt;/button&gt;</code></pre></details></div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>尺寸与形状</h3><p>28 / 34 / 40px<br>胶囊用于独立入口。</p></div><div class="kit-demo"><div class="ui-row"><button class="ui-button ui-button--sm" data-toast="小号按钮">Small</button><button class="ui-button" data-toast="标准按钮">Default</button><button class="ui-button ui-button--lg" data-toast="大号按钮">Large</button><button class="ui-button ui-button--pill" data-toast="选择文件示例"><span data-icon="upload"></span>选择文件</button><span class="ui-tooltip"><button class="ui-button ui-button--icon" data-toast="已复制链接" aria-label="复制链接" aria-describedby="copy-tip"><span data-icon="copy"></span></button><span role="tooltip" id="copy-tip">复制链接</span></span></div></div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>状态</h3><p>状态变化有对应反馈。</p></div><div class="kit-demo"><div class="ui-row"><button class="ui-button ui-button--warning" data-toast="稍后处理">稍后处理</button><button class="ui-button ui-button--danger" data-open-dialog="delete-dialog"><span data-icon="trash"></span>删除</button><button class="ui-button" disabled>不可用</button><button class="ui-button" data-loading>保存示例</button><span class="ui-tooltip"><button class="ui-button ui-button--ghost" data-open-dialog="command-dialog" aria-describedby="command-tip">快捷操作 <kbd class="ui-key">⌘ K</kbd></button><span role="tooltip" id="command-tip">Windows 可用 Ctrl K</span></span></div></div></div>
+      </section>
+
+      <section class="kit-section" id="forms">
+        <div class="kit-section-head"><h2>输入与选择</h2><span class="ui-eyebrow">03 / Input</span></div>
+        <p class="kit-section-intro">标签始终可见。表单在需要时展开，单位和字段靠近，不占用额外的大块空间。</p>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>基础表单</h3><p>试着输入不完整邮箱<br>或直接提交。</p></div><div class="kit-demo kit-split">
+          <form class="kit-form" id="sample-form" novalidate>
+            <label class="ui-field"><span>姓名</span><input class="ui-input" name="name" autocomplete="off" placeholder="请输入姓名" required aria-describedby="name-error"><span class="ui-field-error" id="name-error" hidden></span></label>
+            <label class="ui-field"><span>工作邮箱</span><input class="ui-input" name="email" type="email" placeholder="name@company.com" required aria-describedby="email-error"><span class="ui-field-error" id="email-error" hidden></span></label>
+            <label class="ui-field"><span>备注 <small class="ui-muted">选填</small></span><textarea class="ui-textarea" name="note" placeholder="补充说明…"></textarea></label>
+            <div class="ui-row"><button class="ui-button ui-button--primary">保存</button><span class="ui-caption">仅演示校验，内容不发送</span></div>
+          </form>
+          <div class="ui-stack" style="align-content:start">
+            <label class="ui-field"><span>搜索</span><span class="ui-input-wrap"><span data-icon="search"></span><input class="ui-input" id="component-search" placeholder="搜索示例成员" aria-controls="member-search-list"><kbd class="ui-key">↵</kbd></span></label>
+            <ul class="ui-list" id="member-search-list"><li><span class="ui-avatar ui-avatar--mint">LX</span><span class="ui-list-main"><span>林晓</span><span>研发部</span></span></li><li><span class="ui-avatar ui-avatar--peach">CC</span><span class="ui-list-main"><span>陈晨</span><span>财务部</span></span></li></ul><p id="member-search-empty" class="ui-caption" hidden>没有匹配的成员</p>
+            <label class="ui-field"><span>只读信息</span><input class="ui-input" value="自动分配编号" disabled></label>
+          </div>
+        </div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>轻量参数</h3><p>年月使用原生下拉。<br>天数输入固定为 66px。</p></div><div class="kit-demo">
+          <details class="ui-disclosure" open><summary><span class="ui-row"><span data-icon="calendar"></span>计薪参数 <span class="ui-muted" id="params-summary">请填写天数</span></span><span data-icon="chevron"></span></summary><div><form class="ui-inline-form" id="params-form"><label class="ui-inline-field"><span class="ui-sr-only">计薪年份</span><select name="year" aria-label="计薪年份"></select></label><label class="ui-inline-field"><span class="ui-sr-only">计薪月份</span><select name="month" aria-label="计薪月份"></select></label><label class="ui-inline-field"><span class="ui-sr-only">计薪天数</span><input name="days" type="number" min="1" max="31" step="0.5" placeholder="天数" required><span class="ui-muted">天</span></label><button class="ui-text-action">应用</button></form></div></details>
+        </div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>选择控件</h3><p>原生输入与可访问的开关。</p></div><div class="kit-demo ui-stack">
+          <div class="ui-row"><label class="ui-check"><input type="checkbox" checked>邮件提醒</label><label class="ui-check"><input type="checkbox">同步给团队</label><label class="ui-check"><input type="radio" name="density" checked>舒适</label><label class="ui-check"><input type="radio" name="density">紧凑</label></div>
+          <div class="ui-row"><button class="ui-switch" role="switch" aria-checked="true"><span class="ui-switch-track" aria-hidden="true"></span>自动保存</button><button class="ui-switch" role="switch" aria-checked="false"><span class="ui-switch-track" aria-hidden="true"></span>声音提醒</button></div>
+          <div class="ui-row"><div class="ui-segmented" data-segmented role="group" aria-label="视图密度"><button aria-pressed="true" data-value="day">日</button><button aria-pressed="false" data-value="week">周</button><button aria-pressed="false" data-value="month">月</button></div><span class="ui-caption">支持左右方向键切换</span></div>
+        </div></div>
+      </section>
+
+      <section class="kit-section" id="data">
+        <div class="kit-section-head"><h2>信息与状态</h2><span class="ui-eyebrow">04 / Data</span></div>
+        <p class="kit-section-intro">文字、状态圆点和行间细线构成层级。数据直接排在画布上。</p>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>状态与身份</h3><p>Badge 用于分类与计数。<br>Pill 用于持续状态。</p></div><div class="kit-demo ui-stack">
+          <div class="ui-row"><span class="ui-badge">12</span><span class="ui-badge ui-badge--success">已完成</span><span class="ui-badge ui-badge--warning">待处理</span><span class="ui-badge ui-badge--danger">需修正</span><span class="ui-badge">草稿</span></div>
+          <div class="ui-row"><span class="ui-pill ui-pill--success">已就绪</span><span class="ui-pill ui-pill--warning">待核对</span><span class="ui-pill ui-pill--danger">资料异常</span><span class="ui-pill">未开始</span></div>
+          <div class="ui-row"><div class="ui-avatars" aria-label="林晓、陈晨和许宁"><span class="ui-avatar">LX</span><span class="ui-avatar ui-avatar--peach">CC</span><span class="ui-avatar ui-avatar--mint">XN</span></div><span class="ui-tag">研发部<button aria-label="移除研发部标签" data-remove-tag><span data-icon="close"></span></button></span><span class="ui-tag">九月<button aria-label="移除九月标签" data-remove-tag><span data-icon="close"></span></button></span><button class="ui-text-action" id="restore-tags">还原</button></div>
+        </div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>明细与小卡片</h3><p>卡片只承载独立实体，<br>不作为每个区域的外壳。</p></div><div class="kit-demo kit-split">
+          <dl class="ui-keyvalue"><div><dt>当前负责人</dt><dd><span class="ui-avatar ui-avatar--mint" style="width:23px;height:23px">LX</span> 林晓</dd></div><div><dt>资料数量</dt><dd class="ui-number">5 / 5</dd></div><div><dt>最近更新</dt><dd>今天 09:41</dd></div><div><dt>工作状态</dt><dd><span class="ui-pill ui-pill--success">已就绪</span></dd></div></dl>
+          <div><article class="ui-card"><div class="ui-row"><span class="ui-avatar ui-avatar--mint"><span data-icon="layers"></span></span><div><div class="ui-row" style="gap:8px"><span>团队空间</span><span class="ui-badge ui-badge--success">ACTIVE</span></div><p class="ui-caption">4 位成员 · 协作中</p></div></div></article><p class="kit-note">仅当内容需要作为一个整体移动、选择或弹出时，才增加独立表面。</p></div>
+        </div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>列表与表格</h3><p>数字右对齐。<br>筛选与空状态相连。</p></div><div class="kit-demo">
+          <div class="ui-tabs" role="tablist" aria-label="数据状态" data-tabs><button role="tab" id="tab-records" aria-selected="true" aria-controls="panel-records">全部 <span class="ui-badge">3</span></button><button role="tab" id="tab-empty" aria-selected="false" aria-controls="panel-empty" tabindex="-1">未上传</button><button role="tab" id="tab-loading" aria-selected="false" aria-controls="panel-loading" tabindex="-1">加载中</button></div>
+          <div role="tabpanel" aria-labelledby="tab-records" id="panel-records" class="ui-tab-panel"><div class="ui-table-wrap"><table class="ui-table"><thead><tr><th>员工</th><th>部门</th><th class="ui-numeric">应发金额</th><th>状态</th><th><span class="ui-sr-only">操作</span></th></tr></thead><tbody><tr><td>林晓</td><td>研发部</td><td class="ui-numeric">11,500.00</td><td><span class="ui-pill ui-pill--success">已核对</span></td><td><button class="ui-text-action" data-open-dialog="detail-drawer">详情 <span data-icon="arrowUp"></span></button></td></tr><tr><td>陈晨</td><td>财务部</td><td class="ui-numeric">9,900.00</td><td><span class="ui-pill ui-pill--warning">待核对</span></td><td><button class="ui-text-action" data-toast="陈晨 · 示例金额 ¥9,900.00">详情 <span data-icon="arrowUp"></span></button></td></tr><tr><td>许宁</td><td>研发部</td><td class="ui-numeric">14,000.00</td><td><span class="ui-pill">草稿</span></td><td><button class="ui-text-action" data-toast="许宁 · 示例金额 ¥14,000.00">详情 <span data-icon="arrowUp"></span></button></td></tr></tbody></table></div></div>
+          <div role="tabpanel" aria-labelledby="tab-empty" id="panel-empty" class="ui-tab-panel" hidden><div class="ui-empty"><span data-icon="inbox"></span><h3>还没有资料</h3><p>上传第一份文件，即可开始。</p><button class="ui-text-action" data-toast="上传入口示例">选择文件 <span data-icon="arrow"></span></button></div></div>
+          <div role="tabpanel" aria-labelledby="tab-loading" id="panel-loading" class="ui-tab-panel" hidden aria-busy="true" aria-label="数据正在加载"><div class="ui-stack" style="padding:16px 0"><div class="ui-skeleton" style="width:70%"></div><div class="ui-skeleton" style="width:90%"></div><div class="ui-skeleton" style="width:55%"></div></div></div>
+        </div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>按需展开</h3><p>保留上下文，轻量展开细节。</p></div><div class="kit-demo"><details class="ui-disclosure"><summary>调整记录 <span data-icon="chevron"></span></summary><div><ul class="ui-list"><li><span data-icon="clock"></span><span class="ui-list-main"><span>基本工资调整</span><span>09:41 · 林晓</span></span><span class="ui-number">+ 200.00</span></li></ul></div></details><details class="ui-disclosure"><summary>字段映射 <span data-icon="chevron"></span></summary><div><dl class="ui-keyvalue"><div><dt>员工姓名</dt><dd>姓名</dd></div><div><dt>人员编号</dt><dd>工号</dd></div></dl></div></details></div></div>
+      </section>
+
+      <section class="kit-section" id="workflow">
+        <div class="kit-section-head"><h2>导航与进度</h2><span class="ui-eyebrow">05 / Flow</span></div>
+        <p class="kit-section-intro">步骤可回看，完成不能跳过。进度来自任务本身，切换页面不会产生完成勾选。</p>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>四步进度</h3><p>勾选当前示例条件后，<br>才能完成并继续。</p></div><div class="kit-demo">
+          <nav id="flow-demo" aria-label="示例算薪步骤"></nav>
+          <div class="kit-flow-info"><div class="kit-flow-task"><p id="flow-task-name">准备资料</p><small id="flow-task-desc">准备好本步骤资料后再继续。</small></div><span class="ui-caption ui-number" id="flow-count">0 / 4 已完成</span></div>
+          <div class="kit-flow-controls"><label class="ui-check"><input type="checkbox" id="flow-condition">本步骤条件已满足</label><button class="ui-button ui-button--accent" id="flow-complete" disabled>完成并继续 <span data-icon="arrow"></span></button><button class="ui-text-action ui-muted" id="flow-reset">重置示例</button></div>
+          <p class="kit-note" id="flow-status" aria-live="polite">初始状态没有任何完成勾选。</p>
+          <details class="kit-code"><summary><span data-icon="code"></span>查看状态约定</summary><pre><code>const flow = createStepper(element, {
+  labels: ['准备资料', '核对应发', '补充扣款', '核对实发'],
+  validate: index =&gt; businessConditions[index] === true,
+  onChange: ({ completed, percent }) =&gt; renderSummary(percent)
+});
+flow.go(0);      // 回看，不修改完成状态
+flow.complete(); // 先验证条件，再完成当前步骤
+flow.invalidate(0); // 资料变化，清除当前及后续完成状态</code></pre></details>
+        </div></div>
+      </section>
+
+      <section class="kit-section" id="canvases">
+        <div class="kit-section-head"><h2>画布与小组件</h2><span class="ui-eyebrow">06 / Canvas</span></div>
+        <p class="kit-section-intro">使用你选定的樱花背景。试试小组件的出现方式、配色、位置和内部导航。</p>
+        <div id="widget-playground" class="widget-playground" data-mode="popup" data-position="right">
+          <div class="widget-stage ui-canvas--blossom">
+            <div class="widget-preview-caption"><span class="ui-eyebrow">Cherry blossom</span><span>把清晰的操作，放进柔和的光里。</span></div>
+            <div class="widget-layer">
+              <section class="widget-window" data-theme="light" aria-label="帮助小组件预览" id="help-widget">
+                <header class="widget-head"><div><small>SEEEX 工作空间</small><h3>你好，有什么可以帮你？</h3></div><button class="ui-button ui-button--ghost ui-button--icon ui-button--sm" id="widget-close" aria-label="关闭帮助小组件"><span data-icon="close"></span></button></header>
+                <div class="widget-body" id="widget-home">
+                  <button class="widget-question" data-widget-view="chat"><span><strong>问个问题</strong><small>我们随时在这里</small></span><span data-icon="chat"></span></button>
+                  <button class="widget-link" data-widget-article="快速开始"><span data-icon="book"></span>快速开始<span data-icon="chevronRight"></span></button>
+                  <button class="widget-link" data-widget-article="计薪参数设置"><span data-icon="sliders"></span>计薪参数设置<span data-icon="chevronRight"></span></button>
+                  <button class="widget-link" data-widget-article="更新记录"><span data-icon="clock"></span>更新记录<span data-icon="chevronRight"></span></button>
+                  <div class="widget-search"><span data-icon="search"></span><input aria-label="搜索帮助" placeholder="搜索帮助" id="widget-search"></div>
+                  <div class="widget-articles"><button class="widget-link" data-widget-article="如何导入工资资料">如何导入工资资料<span data-icon="chevronRight"></span></button><button class="widget-link" data-widget-article="核算步骤说明">核算步骤说明<span data-icon="chevronRight"></span></button><button class="widget-link" data-widget-article="查看员工工资明细">查看员工工资明细<span data-icon="chevronRight"></span></button></div><p class="widget-no-results" hidden>没有匹配的文章</p>
+                </div>
+                <div class="widget-body" id="widget-chat" hidden><p class="widget-chat-intro">这是本地交互示例。输入内容只显示在此窗口。</p><div class="widget-messages" aria-live="polite"></div><form id="widget-chat-form"><label class="ui-sr-only" for="widget-message">输入消息</label><input class="ui-input" id="widget-message" placeholder="输入消息…" required autocomplete="off"><button class="ui-button ui-button--ghost ui-button--icon" aria-label="预览消息"><span data-icon="arrow"></span></button></form></div>
+                <div class="widget-body widget-article" id="widget-article" hidden><button class="ui-text-action" data-widget-view="home">← 返回</button><h4 id="widget-article-title"></h4><p id="widget-article-text"></p></div>
+                <nav class="widget-tabs" aria-label="帮助小组件导航"><button aria-current="page" data-widget-view="home"><span data-icon="home"></span>首页</button><button data-widget-view="chat"><span data-icon="chat"></span>消息</button><button data-widget-view="articles"><span data-icon="book"></span>文章</button></nav>
+              </section>
+              <button class="widget-launcher" id="widget-launcher" aria-label="打开帮助小组件" aria-controls="help-widget" aria-expanded="true"><span data-icon="chat"></span></button>
+            </div>
+          </div>
+          <div class="widget-controls">
+            <div class="widget-control"><span>强调色</span><div class="ui-row" style="gap:5px"><button class="ui-color-dot" style="--swatch:#58b68e" data-widget-color="mint" aria-label="小组件薄荷绿" aria-pressed="true"></button><button class="ui-color-dot" style="--swatch:#00a0ff" data-widget-color="blue" aria-label="小组件蓝色" aria-pressed="false"></button><button class="ui-color-dot" style="--swatch:#8273db" data-widget-color="violet" aria-label="小组件紫色" aria-pressed="false"></button></div></div>
+            <div class="widget-control"><span>出现方式</span><div class="ui-segmented" data-segmented data-widget-setting="mode" role="group" aria-label="小组件出现方式"><button aria-pressed="true" data-value="popup">Popup</button><button aria-pressed="false" data-value="modal">Modal</button><button aria-pressed="false" data-value="drawer">Drawer</button></div></div>
+            <div class="widget-control"><span>主题</span><div class="ui-segmented" data-segmented data-widget-setting="theme" role="group" aria-label="小组件主题"><button aria-pressed="true" data-value="light">Light</button><button aria-pressed="false" data-value="dark">Dark</button></div></div>
+            <div class="widget-control"><span>位置</span><div class="ui-segmented" data-segmented data-widget-setting="position" role="group" aria-label="小组件位置"><button aria-pressed="false" data-value="left">Left</button><button aria-pressed="true" data-value="right">Right</button></div></div>
+          </div>
+        </div>
+        <p class="kit-note">这里展示画布内的 Popup / Modal / Drawer 外观；实际模态对话框与焦点约束见下方「浮层与动效」。</p>
+        <div class="kit-canvas-thumbs" style="margin-top:32px">
+          <div><div class="kit-canvas-thumb ui-canvas--quiet"><div class="ui-row"><span class="ui-pill ui-pill--success">全部就绪</span><button class="ui-text-action" data-toast="继续处理">继续 <span data-icon="arrow"></span></button></div></div><p class="kit-canvas-caption">01 连续工作画布<small>列表、表单、数据与主要工作流。</small></p></div>
+          <div><div class="kit-canvas-thumb ui-canvas--dots"><div class="kit-rule-node"><span data-icon="spark"></span>条件满足<span data-icon="arrow"></span></div></div><p class="kit-canvas-caption">02 点阵流程画布<small>关系、规则和自动化编辑。</small></p></div>
+          <div><div class="kit-canvas-thumb ui-canvas--blossom"><button class="ui-button ui-button--pill" data-toast="背景与控件独立复用"><span data-icon="flower"></span>慢慢来，都会好的</button></div><p class="kit-canvas-caption">03 樱花展示画布<small>小组件预览与轻量空状态。</small></p></div>
+        </div>
+      </section>
+
+      <section class="kit-section" id="motion">
+        <div class="kit-section-head"><h2>浮层与动效</h2><span class="ui-eyebrow">07 / Motion</span></div>
+        <p class="kit-section-intro">控件轻轻回应，浮层沿入口出现。键盘、焦点返回与减少动态效果一并处理。</p>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>临时表面</h3><p>只有临时浮层<br>使用明显抬升阴影。</p></div><div class="kit-demo"><div class="ui-row">
+          <div class="ui-menu" data-menu><button class="ui-button" aria-haspopup="menu" aria-expanded="false" aria-controls="action-menu">更多操作 <span data-icon="chevron"></span></button><div class="ui-menu-items" role="menu" id="action-menu" hidden><button role="menuitem" data-toast="已复制示例链接"><span data-icon="copy"></span>复制链接<kbd class="ui-key">C</kbd></button><button role="menuitem" data-open-dialog="detail-drawer"><span data-icon="file"></span>查看详情</button><hr><button role="menuitem" data-toast="示例已归档"><span data-icon="inbox"></span>归档</button></div></div>
+          <button class="ui-button" data-open-dialog="sample-dialog">对话框</button><button class="ui-button" data-open-dialog="detail-drawer">侧边抽屉</button><button class="ui-button" data-toast="更改已保存，继续下一步吧。">轻提示</button><button class="ui-button ui-button--ghost" data-open-dialog="command-dialog">命令菜单 <kbd class="ui-key">⌘ K</kbd></button>
+        </div></div></div>
+        <div class="kit-specimen"><div class="kit-specimen-label"><h3>速度与曲线</h3><p>160ms 控件反馈<br>300ms 浮层出现<br>750ms 舒展过渡</p></div><div class="kit-demo"><div class="kit-motion-track" id="motion-track"><span class="kit-motion-dot"></span></div><div class="ui-space-between" style="margin-top:18px"><button class="ui-text-action" id="play-motion"><span data-icon="play"></span>播放过渡</button><button class="ui-switch" role="switch" aria-checked="true" id="motion-toggle"><span class="ui-switch-track" aria-hidden="true"></span>动态效果</button></div><p class="kit-note">自动尊重系统「减少动态效果」。关闭时，状态和焦点反馈仍然保留。</p></div></div>
+      </section>
+
+      <section class="kit-section" id="docs">
+        <div class="kit-section-head"><h2>带走这套规范</h2><span class="ui-eyebrow">08 / Handoff</span></div>
+        <p class="kit-section-intro">样式、行为、素材与研究分开存放。没有构建依赖，静态托管即可运行。</p>
+        <div class="kit-docs-links"><a href="docs/usage.md">接入与复用指南 <span data-icon="arrowUp"></span></a><a href="docs/components.md">组件清单与状态约定 <span data-icon="arrowUp"></span></a><a href="docs/design-rules.md">布局、字体和动效规则 <span data-icon="arrowUp"></span></a><a href="docs/research.md">Fernand 研究与来源 <span data-icon="arrowUp"></span></a><a href="tokens/tokens.json">JSON 设计变量 <span data-icon="arrowUp"></span></a><a href="docs/assets.md">素材来源与授权说明 <span data-icon="arrowUp"></span></a></div>
+      </section>
+      <footer class="kit-footer"><span>规范设计 · 1.0 · 2026.09</span><span>Inspired by Fernand. Crafted for SEEEX.</span></footer>
+    </div>
+  </main>
+
+  <dialog class="ui-dialog" id="sample-dialog" aria-labelledby="sample-title"><div class="ui-dialog-head"><h2 id="sample-title">保存这次调整？</h2><button class="ui-button ui-button--ghost ui-button--icon" data-close-dialog aria-label="关闭对话框"><span data-icon="close"></span></button></div><div class="ui-dialog-body"><p class="ui-muted">调整会保留在当前示例中。你可以继续查看其他组件。</p></div><div class="ui-dialog-footer"><button class="ui-button ui-button--ghost" data-close-dialog>取消</button><button class="ui-button ui-button--primary" data-close-dialog data-toast="示例调整已保存">保存调整</button></div></dialog>
+  <dialog class="ui-dialog" id="delete-dialog" aria-labelledby="delete-title"><div class="ui-dialog-head"><h2 id="delete-title">删除这条示例记录？</h2></div><div class="ui-dialog-body"><p class="ui-muted">这是删除确认组件的演示，不影响任何真实数据。</p></div><div class="ui-dialog-footer"><button class="ui-button" data-close-dialog autofocus>取消</button><button class="ui-button ui-button--danger" data-close-dialog data-toast="已演示删除确认">删除示例</button></div></dialog>
+  <dialog class="ui-dialog ui-drawer" id="detail-drawer" aria-labelledby="detail-title"><div class="ui-dialog-head"><h2 id="detail-title">林晓</h2><button class="ui-button ui-button--ghost ui-button--icon" data-close-dialog aria-label="关闭员工详情"><span data-icon="close"></span></button></div><div class="ui-dialog-body"><p class="ui-caption">研发部 · SY001 · 示例数据</p><hr><dl class="ui-keyvalue"><div><dt>应发工资</dt><dd class="ui-number">11,500.00</dd></div><div><dt>扣款合计</dt><dd class="ui-number">1,500.00</dd></div><div><dt>实发工资</dt><dd class="ui-number">10,000.00</dd></div></dl><hr><span class="ui-pill ui-pill--success">已核对</span></div></dialog>
+  <dialog class="ui-dialog ui-command" id="command-dialog" data-command aria-label="快捷操作"><div class="ui-command-search"><span data-icon="search"></span><input placeholder="搜索操作、组件或页面…" aria-label="搜索快捷操作" autofocus><kbd class="ui-key">esc</kbd></div><ul class="ui-command-list"><li><button data-go="examples/payroll.html"><span data-icon="calendar"></span>打开薪资示例<kbd class="ui-key">↵</kbd></button></li><li><button data-go="#actions"><span data-icon="cursor"></span>查看按钮与操作</button></li><li><button data-go="#canvases"><span data-icon="flower"></span>查看樱花画布</button></li><li><button data-go="#workflow"><span data-icon="route"></span>查看步骤进度</button></li></ul><div class="ui-empty" data-command-empty hidden>没有找到操作</div><div class="ui-command-hint">↑ ↓ 选择 &nbsp; ↵ 打开 &nbsp; esc 关闭</div></dialog>
+</body>
+</html>

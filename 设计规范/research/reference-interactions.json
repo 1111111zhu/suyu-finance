@@ -1,0 +1,403 @@
+[
+  {
+    "name": "primary-default",
+    "values": [
+      {
+        "cls": "hero__cta--primary",
+        "text": "Try for free\nR",
+        "bg": "rgb(26, 32, 53)",
+        "color": "rgb(255, 255, 255)",
+        "radius": "8px",
+        "shadow": "none",
+        "transform": "none",
+        "transition": "0.75s cubic-bezier(0.19, 1, 0.22, 1)",
+        "animation": "none",
+        "width": "149.688px",
+        "height": "47px",
+        "padding": "13px 20px"
+      }
+    ]
+  },
+  {
+    "name": "primary-hover",
+    "values": [
+      {
+        "cls": "hero__cta--primary",
+        "text": "Try for free\nR",
+        "bg": "rgb(26, 32, 53)",
+        "color": "rgb(255, 255, 255)",
+        "radius": "8px",
+        "shadow": "none",
+        "transform": "none",
+        "transition": "0.75s cubic-bezier(0.19, 1, 0.22, 1)",
+        "animation": "none",
+        "width": "149.688px",
+        "height": "47px",
+        "padding": "13px 20px"
+      }
+    ]
+  },
+  {
+    "name": "primary-focus",
+    "values": [
+      {
+        "cls": "hero__cta--primary",
+        "text": "Try for free\nR",
+        "bg": "rgb(26, 32, 53)",
+        "color": "rgb(255, 255, 255)",
+        "radius": "8px",
+        "shadow": "none",
+        "transform": "none",
+        "transition": "0.75s cubic-bezier(0.19, 1, 0.22, 1)",
+        "animation": "none",
+        "width": "149.688px",
+        "height": "47px",
+        "padding": "13px 20px"
+      }
+    ]
+  },
+  {
+    "name": "carousel-after-right",
+    "values": [
+      {
+        "scrollLeft": 0,
+        "width": 2370,
+        "scrollWidth": 2370,
+        "scrollSnapType": "none"
+      }
+    ]
+  },
+  {
+    "name": "widget-dark",
+    "values": [
+      {
+        "cls": "widget-pg__widget widget-pg__widget--dark",
+        "text": "Pied Piper\nHey! How can we help?\nAsk a question\nHow can we help?\nAPI docs reference\nRead our guides\nChangelog\nSearch for help\nMiddle-out compression setup\nImpro",
+        "bg": "rgb(30, 34, 53)",
+        "color": "rgb(19, 30, 64)",
+        "radius": "8px",
+        "shadow": "rgba(18, 55, 105, 0.16) 0px 8px 32px 0px, rgba(18, 55, 105, 0.08) 0px 0px 0px 1px",
+        "transform": "none",
+        "transition": "background 0.25s, box-shadow 0.2s, opacity 0.22s, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "animation": "none",
+        "width": "252px",
+        "height": "381.188px",
+        "padding": "0px"
+      }
+    ]
+  },
+  {
+    "name": "widget-modal",
+    "values": [
+      {
+        "cls": "widget-pg__widget widget-pg__widget--dark widget-pg__widget--modal widget-pg__widget--right",
+        "text": "Pied Piper\nHey! How can we help?\nAsk a question\nHow can we help?\nAPI docs reference\nRead our guides\nChangelog\nSearch for help\nMiddle-out compression setup\nImpro",
+        "bg": "rgb(30, 34, 53)",
+        "color": "rgb(19, 30, 64)",
+        "radius": "8px",
+        "shadow": "rgba(18, 55, 105, 0.16) 0px 8px 32px 0px, rgba(18, 55, 105, 0.08) 0px 0px 0px 1px",
+        "transform": "matrix(1, 0, 0, 1, -190, -190.594)",
+        "transition": "background 0.25s, box-shadow 0.2s, opacity 0.22s, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "animation": "none",
+        "width": "380px",
+        "height": "381.188px",
+        "padding": "0px"
+      }
+    ]
+  },
+  {
+    "name": "widget-drawer",
+    "values": [
+      {
+        "cls": "widget-pg__widget widget-pg__widget--dark widget-pg__widget--drawer widget-pg__widget--left",
+        "text": "Pied Piper\nHey! How can we help?\nAsk a question\nHow can we help?\nAPI docs reference\nRead our guides\nChangelog\nSearch for help\nMiddle-out compression setup\nImpro",
+        "bg": "rgb(30, 34, 53)",
+        "color": "rgb(19, 30, 64)",
+        "radius": "0px",
+        "shadow": "rgba(18, 55, 105, 0.16) 0px 8px 32px 0px, rgba(18, 55, 105, 0.08) 0px 0px 0px 1px",
+        "transform": "none",
+        "transition": "background 0.25s, box-shadow 0.2s, opacity 0.22s, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "animation": "none",
+        "width": "220px",
+        "height": "520px",
+        "padding": "0px"
+      }
+    ]
+  },
+  {
+    "name": "widget-light",
+    "values": [
+      {
+        "cls": "widget-pg__widget widget-pg__widget--light",
+        "text": "Pied Piper\nHey! How can we help?\nAsk a question\nHow can we help?\nAPI docs reference\nRead our guides\nChangelog\nSearch for help\nMiddle-out compression setup\nImpro",
+        "bg": "rgb(255, 255, 255)",
+        "color": "rgb(19, 30, 64)",
+        "radius": "8px",
+        "shadow": "rgba(18, 55, 105, 0.16) 0px 8px 32px 0px, rgba(18, 55, 105, 0.08) 0px 0px 0px 1px",
+        "transform": "none",
+        "transition": "background 0.25s, box-shadow 0.2s, opacity 0.22s, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "animation": "none",
+        "width": "252px",
+        "height": "381.188px",
+        "padding": "0px"
+      }
+    ]
+  },
+  {
+    "name": "widget-closed",
+    "values": [
+      {
+        "cls": "widget-pg__widget widget-pg__widget--light wpg-widget--closed",
+        "text": "Pied Piper\nHey! How can we help?\nAsk a question\nHow can we help?\nAPI docs reference\nRead our guides\nChangelog\nSearch for help\nMiddle-out compression setup\nImpro",
+        "bg": "rgb(255, 255, 255)",
+        "color": "rgb(19, 30, 64)",
+        "radius": "8px",
+        "shadow": "rgba(18, 55, 105, 0.16) 0px 8px 32px 0px, rgba(18, 55, 105, 0.08) 0px 0px 0px 1px",
+        "transform": "matrix(0.88, 0, 0, 0.88, 0, 8.8)",
+        "transition": "background 0.25s, box-shadow 0.2s, opacity 0.16s ease-in, transform 0.16s ease-in",
+        "animation": "none",
+        "width": "252px",
+        "height": "381.188px",
+        "padding": "0px"
+      }
+    ]
+  },
+  {
+    "name": "video-modal-dom",
+    "html": {
+      "dialogs": [
+        {
+          "tag": "VIDEO",
+          "cls": "illu__hero reveal reveal__hero",
+          "src": null,
+          "label": null
+        },
+        {
+          "tag": "VIDEO",
+          "cls": "screenshot__video",
+          "src": null,
+          "label": null
+        },
+        {
+          "tag": "VIDEO",
+          "cls": "screenshot__video",
+          "src": null,
+          "label": null
+        },
+        {
+          "tag": "DIV",
+          "cls": "demo-modal__dialog",
+          "src": null,
+          "label": "Fernand product demo video"
+        },
+        {
+          "tag": "IFRAME",
+          "cls": "",
+          "src": "https://www.youtube-nocookie.com/embed/pbJFZt9ThjE?autoplay=1&rel=0",
+          "label": null
+        },
+        {
+          "tag": "IFRAME",
+          "cls": "",
+          "src": "https://messenger.getfernand.com/client.html",
+          "label": null
+        }
+      ],
+      "controls": [
+        {
+          "text": " Set up with your AI agent ",
+          "aria": null,
+          "cls": "ai-setup__toggle"
+        },
+        {
+          "text": "Copy Copied ",
+          "aria": null,
+          "cls": "ai-setup__copy"
+        },
+        {
+          "text": " Watch a 2 minute demo",
+          "aria": null,
+          "cls": "button"
+        },
+        {
+          "text": "",
+          "aria": "Scroll left",
+          "cls": "channels__arrow channels__arrow--left is-visible"
+        },
+        {
+          "text": "",
+          "aria": "Scroll right",
+          "cls": "channels__arrow channels__arrow--right is-visible"
+        },
+        {
+          "text": "Open console",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "View metrics",
+          "aria": null,
+          "cls": "ghost"
+        },
+        {
+          "text": "",
+          "aria": null,
+          "cls": "wpg-color"
+        },
+        {
+          "text": "",
+          "aria": null,
+          "cls": "wpg-color"
+        },
+        {
+          "text": "",
+          "aria": null,
+          "cls": "wpg-color"
+        },
+        {
+          "text": "",
+          "aria": null,
+          "cls": "wpg-color"
+        },
+        {
+          "text": "",
+          "aria": null,
+          "cls": "wpg-color"
+        },
+        {
+          "text": "",
+          "aria": null,
+          "cls": "wpg-color"
+        },
+        {
+          "text": "Popup",
+          "aria": null,
+          "cls": "active"
+        },
+        {
+          "text": "Modal",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "Drawer",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "Light",
+          "aria": null,
+          "cls": "active"
+        },
+        {
+          "text": "Dark",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "On",
+          "aria": null,
+          "cls": "active"
+        },
+        {
+          "text": "Off",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "On",
+          "aria": null,
+          "cls": "active"
+        },
+        {
+          "text": "Off",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "On",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "Off",
+          "aria": null,
+          "cls": "active"
+        },
+        {
+          "text": "Left",
+          "aria": null,
+          "cls": ""
+        },
+        {
+          "text": "Right",
+          "aria": null,
+          "cls": "active"
+        },
+        {
+          "text": " Set up with your AI agent ",
+          "aria": null,
+          "cls": "ai-setup__toggle"
+        },
+        {
+          "text": "Copy Copied ",
+          "aria": null,
+          "cls": "ai-setup__copy"
+        },
+        {
+          "text": " × ",
+          "aria": "Close video",
+          "cls": "demo-modal__close"
+        }
+      ]
+    }
+  },
+  {
+    "name": "mobile-layout",
+    "width": {
+      "viewport": 390,
+      "document": 390,
+      "h1": {
+        "size": "26px",
+        "line": "33px"
+      },
+      "nav": [
+        {
+          "text": "",
+          "visible": true,
+          "cls": "router-link-active router-link-exact-active"
+        },
+        {
+          "text": "About us",
+          "visible": true,
+          "cls": ""
+        },
+        {
+          "text": "Pricing",
+          "visible": true,
+          "cls": ""
+        },
+        {
+          "text": "Log in",
+          "visible": true,
+          "cls": ""
+        },
+        {
+          "text": "Book a demo",
+          "visible": false,
+          "cls": ""
+        },
+        {
+          "text": "Try for free",
+          "visible": true,
+          "cls": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "app-ui-kit",
+    "url": "https://app.getfernand.com/features/custom-data",
+    "text": ""
+  }
+]
