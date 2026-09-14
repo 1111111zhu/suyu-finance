@@ -314,7 +314,7 @@ export default function PolicyPage() {
     <aside className="app-sidebar" id="policy-sidebar">
       <Link className="suyu-logo" href="/" aria-label="溯驭财务首页"><span className="suyu-logo-mark" aria-hidden="true" /></Link>
       <nav className="side-nav">
-        <Link href="/rd-cost/index.html"><Icon name="file" />研发费用</Link>
+        <a href="/rd-cost"><Icon name="file" />研发费用</a>
         <Link className="active" href="/" aria-current="page"><Icon name="folder" />项目申报</Link>
         <a href="/salary/index.html?v=policy-home#gross/upload"><Icon name="salary" />工资表</a>
       </nav>
