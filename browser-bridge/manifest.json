@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "薪资邮件填充助手",
+  "version": "0.1.0",
+  "description": "把薪资测算系统校准后的邮件正文填入企业微信邮箱写信页，不自动发送。",
+  "permissions": ["storage"],
+  "host_permissions": ["https://exmail.qq.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://exmail.qq.com/*"],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

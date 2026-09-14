@@ -7,8 +7,8 @@ globalThis.PayrollEngine = (() => {
     ['应发薪','workdays','number',['应发薪天数']],['实发薪天数','payableDays','number'],
     ['基本工资','base','money',['工资基数']],['岗位工资','post','money'],['绩效基数','perfBase','money'],
     ['绩效分数','effectiveScore','number',['绩效系数']],['绩效工资','performancePay','money'],['工资小计','subtotal','money'],
-    ['餐饮津贴','meal','money',['餐补合计']],['交通津贴','transit','money',['交通补贴']],['其他津贴','otherAllow','money'],
-    ['病假补贴','sickSubsidy','money'],['其他加','otherAdd','money'],
+    ['餐饮津贴','meal','money',['餐补合计']],['交通津贴','transit','money',['交通补贴']],
+    ['其他津贴','otherAllow','money'],['病假补贴','sickSubsidy','money'],['其他加','otherAdd','money'],
     ['年假天数','annual','number',['年假(天)']],['弹性假天数','flexible','number',['弹性假(天)']],
     ['调休假天数','compensatory','number',['调休假(天)']],['病假天数','sick','number',['病假(天)']],
     ['事假天数','personal','number',['事假(天)']],['旷工天数','absent','number',['旷工(天)']],
@@ -166,6 +166,17 @@ globalThis.PayrollEngine = (() => {
     if (value===null || !Number.isFinite(value)) {issues.push(`${label}${column===undefined?'缺少金额列':'金额缺失或无效'}，按 0 计算`);return 0;}
     return round(value);
   }
+  function optionalAmount(rows,name,aliases,label,issues) {
+    if (!rows) return 0;
+    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name);
+    if (!matches.length) return 0;
+    if(matches.length>1) issues.push(`${label}姓名重复，沿用首条金额`);
+    const row=matches[0],column=aliases.map(alias=>Object.keys(row).find(header=>key(header)===key(alias))).find(header=>header!==undefined);
+    const value=column===undefined?null:numeric(row[column]);
+    if (value===null || value===undefined) return 0;
+    if (!Number.isFinite(value)) {issues.push(`${label}金额无效，按 0 计算`);return 0;}
+    return round(value);
+  }
   function calculateNet(base,sources) {
     return base.map(employee=>{
       const e={...employee,deductionIssues:[]},issues=e.deductionIssues,name=nameKey(e.name);
@@ -178,6 +189,7 @@ globalThis.PayrollEngine = (() => {
       e.utility=e.isIntern?0:get('afterTax',['水电代扣','水电费代扣','水电费合计'],'水电代扣');
       e.mealDeduct=e.isIntern?0:get('afterTax',['餐费代扣','餐费合计'],'餐费代扣');
       e.otherDeduct=e.isIntern?0:get('afterTax',['其它代扣','其他代扣'],'其它代扣');
+      e.otherReduction=e.isIntern?0:round(Number(e.otherReduction)||0);
       e.remark=String(sources.afterTax?.map(canonicalRow).find(row=>nameKey(row['姓名'])===name)?.['备注'] ?? '');
       e.gross=round(Number(e.gross)||0);
       e.afterTaxTotal=round(e.utility+e.mealDeduct+e.otherDeduct);

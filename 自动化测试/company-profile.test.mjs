@@ -35,6 +35,10 @@ test("company profile only writes exact claims supported by allow-listed sources
   assert.equal(profile.fields.highTechEnterprise.source.sourceType, "government_official");
   assert.equal(profile.matcherProfile.publishedLocation.district.value, "吴江区");
   assert.equal(profile.matcherProfile.registeredLocation.district.value, null);
+  assert.deepEqual(profile.applicationEntities.map((entity) => [entity.label, entity.scopes[0].id]), [
+    ["杭州溯驭", "high-tech-enterprise"],
+    ["苏州溯驭", "specialized-little-giant"],
+  ]);
   assert.equal(profile.fields.annualRevenue.value, null);
   assert.equal(profile.fields.annualRevenue.status, "unknown");
   assert.equal(profile.validation.noInference, true);

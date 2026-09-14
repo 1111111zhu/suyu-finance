@@ -1,0 +1,167 @@
+/* Visual language from the local suyu-finance payroll design. Business logic stays in workbench-*.js. */
+@import url('./design/tokens/tokens.css');
+
+@font-face{font-family:Inter;src:url('./assets/Inter-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:Inter;src:url('./assets/Inter-Medium.woff2') format('woff2');font-weight:500;font-display:swap}
+@font-face{font-family:Inter;src:url('./assets/Inter-SemiBold.woff2') format('woff2');font-weight:600 900;font-display:swap}
+
+:root{
+  --bg:var(--ui-canvas);--surface:var(--ui-surface);--surface-soft:var(--ui-surface-tint);
+  --text:var(--ui-ink);--text-2:var(--ui-text);--text-3:var(--ui-muted);
+  --line:var(--ui-line);--line-strong:var(--ui-line-strong);
+  --brand:var(--ui-accent);--brand-2:#20684f;--brand-soft:var(--ui-accent-soft);
+  --green:var(--ui-accent);--green-soft:var(--ui-success-soft);
+  --orange:var(--ui-warning);--orange-soft:var(--ui-warning-soft);
+}
+html,body{background:var(--ui-canvas)}
+body{font:400 14px/1.6 var(--ui-font-sans);color:var(--ui-ink);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:url('./design/assets/backgrounds/fernand-cherry-blossom.png') center bottom/cover no-repeat;opacity:.095}
+body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse at 49% 16%,var(--ui-canvas) 12%,rgba(252,253,253,.94) 49%,rgba(252,253,253,.68) 77%,transparent)}
+.app,.main{background:transparent}
+.main{position:relative;z-index:1;min-height:100vh;margin-left:155px}
+.content{max-width:none;padding:36px 40px 64px}
+
+/* Quiet, narrow navigation like the reference rather than a floating menu. */
+.topbar{position:fixed!important;inset:0 auto 0 0!important;width:155px!important;height:100vh!important;display:flex!important;flex-direction:column;align-items:stretch!important;gap:34px!important;padding:27px 17px!important;border-right:1px solid var(--ui-line)!important;border-bottom:0!important;background:rgba(252,253,253,.91)!important;box-shadow:none!important;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+.topbar .wb-brand{align-self:flex-start;width:103px;height:38px;margin:0 0 2px 5px}
+.topbar .wb-brand::before,.topbar .wb-brand::after{display:none}
+.topbar .wb-brand-mark{filter:none;animation-duration:12s}
+.wb-topnav{display:grid!important;align-content:start;gap:12px!important;flex:0 0 auto!important;height:auto!important}
+.wb-topnav button,.wb-topnav .wb-home,.wb-nav-menu>summary{position:relative;display:flex;align-items:center;justify-content:flex-start;gap:10px;min-height:38px;padding:7px 9px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--ui-muted)!important;font-size:13px!important;font-weight:400!important;line-height:1.3;text-decoration:none;transform:none!important;white-space:nowrap}
+.wb-topnav button:hover,.wb-topnav .wb-home:hover,.wb-nav-menu>summary:hover{color:var(--ui-ink)!important;background:transparent!important}
+.wb-topnav button.active{color:var(--ui-accent)!important;background:transparent!important;box-shadow:none!important;font-weight:600!important}
+.wb-topnav button.active::before{content:"";position:absolute;left:-17px;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--ui-accent-mark)!important}
+.wb-nav-icon{display:inline-grid;place-items:center;flex:0 0 17px;width:17px;height:17px}
+.wb-nav-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round}
+.wb-nav-label{min-width:0}
+.wb-nav-menu>summary{list-style:none;cursor:pointer}
+.wb-nav-menu>summary::-webkit-details-marker{display:none}
+.wb-nav-chevron{margin-left:auto;font-size:11px;color:var(--ui-faint)}
+.wb-nav-menu>div{position:static!important;display:grid;gap:2px;margin:2px 0 0 23px;padding:2px 0!important;min-width:0;border:0!important;background:transparent!important;box-shadow:none!important}
+.wb-nav-menu>div button{min-height:31px!important;height:auto!important;padding:6px 2px!important;text-align:left;white-space:normal;font-size:11px!important;line-height:1.35}
+.wb-topnav .wb-home{margin:0!important}
+
+/* Shared controls, type, and surfaces. */
+.btn{min-height:34px;padding:7px 13px;border:1px solid var(--ui-line);border-radius:6px;background:var(--ui-surface);color:var(--ui-text);box-shadow:0 1px 2px rgba(18,55,105,.045);font-size:13px;font-weight:500;transition:background .16s var(--ui-ease-out),color .16s var(--ui-ease-out),transform .16s var(--ui-ease-out)}
+.btn:hover{background:var(--ui-surface-hover);border-color:var(--ui-line-strong);color:var(--ui-ink);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn-primary{border-color:rgba(88,182,142,.25);background:var(--ui-accent-soft);color:var(--ui-accent);box-shadow:0 1px 2px rgba(18,55,105,.04)}
+.btn-primary:hover{border-color:rgba(88,182,142,.4);background:color-mix(in srgb,var(--ui-accent-mark) 18%,white);color:var(--ui-accent)}
+.btn:disabled,.btn-primary:disabled{background:var(--ui-surface-tint);border-color:var(--ui-line);color:var(--ui-faint);box-shadow:none}
+.input,.select,.email-input,.wb-search input{min-height:36px;border:1px solid var(--ui-line-strong);border-radius:5px;background:var(--ui-surface);box-shadow:none;color:var(--ui-ink);font-size:13px}
+.input:focus,.select:focus,.wb-search input:focus,textarea:focus{border-color:var(--ui-accent-mark);outline:2px solid color-mix(in srgb,var(--ui-accent-mark) 30%,transparent);outline-offset:1px}
+.wb-link{color:var(--ui-accent);font-size:12px}
+.wb-page-head{margin:8px 0 28px;align-items:flex-end}
+.wb-page-head h1{margin:0;font-size:27px;font-weight:500;letter-spacing:-.035em;line-height:1.25}
+.wb-page-head p{margin:7px 0 0;color:var(--ui-muted);font-size:12px}
+.wb-muted,.wb-small,.wb-meta{color:var(--ui-muted)}
+.wb-eyebrow{font-size:11px;color:var(--ui-muted);letter-spacing:.03em}
+.wb-pill{background:var(--ui-surface-tint);color:var(--ui-muted);border-radius:4px;font-size:11px}
+.wb-panel{border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible}
+.wb-section-head{padding:20px 0 17px}
+.wb-section-head h2{font-size:15px;font-weight:600}
+.wb-section-head p{font-size:12px}
+.wb-inline-empty{border-top:1px solid var(--ui-line);color:var(--ui-muted)}
+
+/* The four stages stay clickable; the track fills only for actually completed steps. */
+.wb-workflow{margin:0 0 24px!important;padding:0 0 25px!important;border-bottom:1px solid var(--ui-line)!important}
+.wb-workflow-guide::before{display:none!important}
+.wb-flow-groups{display:flex!important;gap:12px!important;align-items:stretch!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
+.wb-flow-link{display:none!important}
+.wb-flow-step{position:relative;display:flex!important;align-items:center!important;gap:7px!important;flex:1 1 0!important;min-width:0!important;min-height:47px!important;margin:0!important;padding:2px 2px 17px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--ui-muted)!important;transform:none!important;text-align:left}
+.wb-flow-step::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:2px;background:var(--ui-line)}
+.wb-flow-step.active,.wb-flow-step.done{color:var(--ui-accent)!important;background:transparent!important;box-shadow:none!important}
+.wb-flow-step.active::after,.wb-flow-step.done::after{background:var(--ui-accent-mark)}
+.wb-flow-step:hover{color:var(--ui-ink)!important;background:transparent!important}
+.wb-flow-step.active:hover{color:var(--ui-accent)!important}
+.wb-step-dot{display:grid;place-items:center;flex:0 0 22px;width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:inherit;font-size:11px;font-weight:600}
+.wb-flow-step.done .wb-step-dot{background:var(--ui-success-soft);color:var(--ui-accent);border:0}
+.wb-flow-step.active .wb-step-dot{background:transparent;color:var(--ui-accent);border:0}
+.wb-step-text{display:grid;gap:0;min-width:0}
+.wb-step-text strong{font-size:12px;font-weight:500;line-height:1.35;white-space:nowrap}
+.wb-step-text small{font-size:10px;opacity:.7;white-space:nowrap}
+.wb-flow-step em{display:none}
+
+/* Parameters and upload follow the thin, document-like reference layout. */
+.wb-parambar{width:max-content;max-width:100%;margin:0 0 12px;border:0;border-radius:0;background:transparent;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+.wb-parambar>summary{min-height:34px;gap:8px;padding:0;align-items:center}
+.wb-parambar>summary span{padding:0;font-size:13px;font-weight:500;color:var(--ui-text)}
+.wb-parambar>summary span::before{display:none}
+.wb-parambar>summary strong{font-size:12px;font-weight:500;color:var(--ui-accent)}
+.wb-parambar>summary em{padding:0 2px;border-radius:0;background:transparent!important;color:var(--ui-muted);font-size:11px}
+.wb-parambar-panel{gap:14px;padding:7px 0 4px;flex-wrap:wrap}
+.wb-parambar label{height:32px;gap:5px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ui-muted)}
+.wb-parambar label span{font-size:11px}
+.wb-parambar .select,.wb-parambar .input{height:30px;border:0;border-bottom:1px solid var(--ui-line-strong);border-radius:0;background:transparent;padding:0 17px 0 3px;font-size:12px;font-weight:500}
+.wb-parambar #payrollYear{width:74px}.wb-parambar #payrollMonth{width:52px}.wb-parambar #payrollDays{width:28px;padding:0;text-align:center}
+.wb-parambar .btn{min-height:29px;padding:4px 11px;border-radius:5px;font-size:12px}
+.wb-upload-layout{grid-template-columns:minmax(0,1fr) 270px;gap:40px;align-items:start}
+.wb-upload-main{gap:0}
+.wb-upload-main>.wb-panel{border-bottom:1px solid var(--ui-line)}
+.wb-drop-area{margin:0;padding:38px 0 34px;gap:20px;border:0;border-radius:0;background:transparent;box-shadow:none}
+.wb-drop-area:hover,.wb-drop-area.drag-over{background:var(--ui-accent-soft);border-color:transparent;outline:1px dashed var(--ui-accent-mark);outline-offset:8px}
+.wb-drop-icon{width:34px;height:34px;color:var(--ui-text)}
+.wb-drop-icon svg{width:33px;height:33px;stroke-width:1.25}
+.wb-drop-area strong{font-size:21px;font-weight:500;letter-spacing:-.025em;line-height:1.3}
+.wb-drop-area p{margin:5px 0 0;font-size:12px;color:var(--ui-muted)}
+.wb-drop-choose{padding:6px 11px;border:1px solid var(--ui-line);border-radius:999px;background:var(--ui-surface);color:var(--ui-accent);font-size:11px;white-space:nowrap}
+.wb-source-list{padding:0 0 8px}
+.wb-source-row{min-height:73px;gap:12px;padding:14px 0;border-top:1px solid var(--ui-line)}
+.wb-source-symbol{width:22px;height:26px;background:transparent;color:var(--ui-muted);font-size:13px}
+.wb-source-info{gap:1px}
+.wb-source-info>strong{font-size:13px;font-weight:500}
+.wb-source-info>span,.wb-source-info>small{font-size:11px;color:var(--ui-muted)}
+.wb-source-state{font-size:11px;color:var(--ui-muted)}
+.wb-source-state.ready{color:var(--ui-success)}
+.wb-source-row>.btn{min-height:28px;padding:4px 9px;font-size:11px;border-radius:999px}
+.wb-reference-sources>summary{padding:17px 0;font-size:13px}
+.wb-upload-main .import-review{margin:12px 0 18px;background:var(--ui-surface);border:1px solid var(--ui-line)}
+.wb-upload-side{position:sticky;top:28px;min-width:0;padding-left:30px;border-left:1px solid var(--ui-line)}
+.wb-run-panel{padding:18px 0!important;border:0;background:transparent}
+.wb-run-panel h2{margin:10px 0 8px;font-size:26px;font-weight:500;letter-spacing:-.03em}
+.wb-run-panel>p{font-size:12px}
+.wb-checklist{margin-top:28px;padding:20px 0 7px;gap:13px;font-size:12px;border-top:1px solid var(--ui-line)}
+.wb-checklist strong{font-weight:500}
+.wb-run-panel>.btn{margin-top:22px;width:100%;min-height:38px;border-radius:999px}
+.wb-hint{background:var(--ui-warning-soft);color:var(--ui-warning);font-size:11px}
+.wb-gross-source .wb-section-head,.wb-gross-source .wb-source-total{padding-left:0;padding-right:0}
+.wb-alternative{margin:0;border-color:var(--ui-line)}
+.wb-aside-links{border-top:1px solid var(--ui-line)}
+
+/* Review, detail, history and settings share the same restrained data rhythm. */
+.wb-totals{gap:26px;color:var(--ui-muted);font-size:12px}
+.wb-totals strong{font-size:23px;font-weight:500;color:var(--ui-ink)}
+.wb-search input{height:38px;padding:8px 12px 8px 40px}
+.wb-search>svg{top:10px;stroke:var(--ui-muted)}
+.wb-filter-menu>summary{min-height:36px;padding:8px 12px;border-color:var(--ui-line-strong);border-radius:5px;background:var(--ui-surface);font-size:12px}
+.wb-filter-menu>div{border-color:var(--ui-line);box-shadow:var(--ui-shadow-float)}
+.wb-tabs{height:43px;gap:20px;border-color:var(--ui-line)}
+.wb-tabs button{border-bottom-width:2px;font-size:12px}
+.wb-tabs button.active{color:var(--ui-accent);border-bottom-color:var(--ui-accent-mark)}
+.wb-table-shell{border:0;border-radius:0;background:transparent;box-shadow:none}
+.wb-table th{padding:11px 14px;background:transparent;color:var(--ui-muted);font-size:11px;font-weight:400;border-bottom:1px solid var(--ui-line)}
+.wb-table td{padding:14px;border-top:1px solid var(--ui-line);font-size:12px;color:var(--ui-text)}
+.wb-table tbody tr:hover td{background:color-mix(in srgb,var(--ui-accent-mark) 6%,transparent)}
+.wb-name{font-size:13px;font-weight:600;color:var(--ui-ink)}
+.wb-pagination button{border-color:var(--ui-line);border-radius:5px}
+.wb-equation{padding:18px 0;border:0;border-top:1px solid var(--ui-line);border-bottom:1px solid var(--ui-line);border-radius:0;background:transparent}
+.wb-equation .wb-part strong{font-size:23px;font-weight:500}
+.wb-ledger{padding:0 18px 16px 0;border:0;border-radius:0;background:transparent}
+.wb-ledger>.wb-tabs{margin:0 0 8px;padding:0}
+.wb-detail-grid{grid-template-columns:minmax(0,1fr) 270px;gap:34px}
+.wb-editor{top:24px;padding:12px 0 20px 28px;border:0;border-left:1px solid var(--ui-line);border-radius:0;background:transparent}
+.wb-editor h2{font-size:21px;font-weight:500}
+.wb-group-head{font-size:14px;font-weight:600}
+.wb-item{border-color:var(--ui-line);font-size:12px}
+.wb-item-name{font-size:12px}
+.wb-item-value{font-size:13px}
+.wb-notice{border-radius:5px;font-size:12px}
+.wb-notice.info{background:var(--ui-surface-tint)}
+.wb-mail-compose,.wb-mail-side,.wb-rules-content .wb-panel,.wb-mapping-panel{border-top:1px solid var(--ui-line)}
+
+@media(min-width:1600px){.main{margin-left:175px}.topbar{width:175px!important}.content{padding-inline:54px}.wb-upload-layout{grid-template-columns:minmax(0,1fr) 310px}.wb-detail-grid{grid-template-columns:minmax(0,1fr) 310px}}
+@media(max-width:1180px){.main{margin-left:142px}.topbar{width:142px!important;padding-inline:11px!important}.wb-topnav button.active::before{left:-11px}.content{padding-inline:27px}.wb-upload-layout{grid-template-columns:minmax(0,1fr) 245px;gap:24px}.wb-upload-side{padding-left:22px}.wb-detail-grid{grid-template-columns:minmax(0,1fr) 245px;gap:22px}.wb-editor{padding-left:22px}.wb-flow-step{gap:4px!important}.wb-step-text strong{font-size:11px}}
+@media(max-width:960px){.main{margin-left:136px}.topbar{width:136px!important}.wb-upload-layout,.wb-detail-grid{grid-template-columns:minmax(0,1fr)}.wb-upload-side{position:static;padding:24px 0 0;border-left:0;border-top:1px solid var(--ui-line)}.wb-run-panel{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.wb-run-panel>.wb-checklist{grid-column:2;grid-row:1/5;margin:0;padding:0 0 0 20px;border-top:0;border-left:1px solid var(--ui-line)}.wb-run-panel>.btn{width:max-content;min-width:200px}.wb-editor{position:static;padding:22px 0 0;border-left:0;border-top:1px solid var(--ui-line)}.wb-flow-step{flex-basis:0!important}}
+@media(max-width:640px){.main{margin-left:60px}.topbar{width:60px!important;padding:24px 8px!important;gap:27px!important}.topbar .wb-brand{width:40px;height:24px;margin:0 auto}.wb-topnav{gap:13px!important}.wb-topnav button,.wb-topnav .wb-home,.wb-nav-menu>summary{justify-content:center;min-height:40px;padding:0!important}.wb-nav-label,.wb-nav-chevron{display:none}.wb-nav-icon,.wb-nav-icon svg{width:19px;height:19px;flex-basis:19px}.wb-topnav button.active::before{left:-8px;top:11px;bottom:11px}.wb-nav-menu>div{position:fixed!important;left:60px;top:190px;width:185px;margin:0;padding:8px!important;border:1px solid var(--ui-line)!important;background:var(--ui-surface)!important;box-shadow:var(--ui-shadow-float)!important}.wb-nav-menu>div button{justify-content:flex-start!important}.content{padding:24px 18px 42px}.wb-workflow{padding-bottom:18px!important}.wb-flow-groups{gap:5px!important}.wb-flow-step{min-height:50px!important;padding:2px 1px 12px!important;gap:2px!important;flex-direction:column;align-items:flex-start!important}.wb-step-dot{font-size:10px;width:18px;height:18px;flex-basis:18px}.wb-step-text strong{font-size:10px;white-space:normal}.wb-step-text small{display:none}.wb-parambar{width:100%}.wb-parambar-panel{gap:8px}.wb-drop-area{align-items:flex-start;gap:12px;padding:28px 0}.wb-drop-area strong{font-size:17px}.wb-drop-area p{font-size:11px}.wb-drop-choose{display:none}.wb-run-panel{display:block}.wb-run-panel>.wb-checklist{margin-top:22px;padding:16px 0 0;border-top:1px solid var(--ui-line);border-left:0}.wb-run-panel>.btn{width:100%}.wb-source-info>span{display:none}.wb-source-row{gap:8px}.wb-source-row>.btn{padding-inline:7px}.wb-page-head h1{font-size:23px}.wb-totals strong{font-size:19px}}
+@media(prefers-reduced-motion:reduce){.topbar *,.wb-flow-step,.btn,.wb-brand-mark{animation:none!important;transition-duration:.01ms!important}}
+@media print{body::before,body::after{display:none}.main{margin-left:0}.topbar{display:none!important}.content{padding:0}}

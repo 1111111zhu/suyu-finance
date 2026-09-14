@@ -97,8 +97,8 @@ class PlatformRegressionTests(unittest.TestCase):
         self.assertIn("子项目归集", candidates[0]["reason"])
 
     def test_browser_generated_calculation_script_compiles(self) -> None:
-        """Prevent indentation regressions inside the Python template embedded in the page."""
-        page_source = (PROJECT_ROOT / "app" / "page.tsx").read_text(encoding="utf-8")
+        """Prevent indentation regressions inside the R&D workbench Python template."""
+        page_source = (PROJECT_ROOT / "app" / "rd-cost" / "page.tsx").read_text(encoding="utf-8")
         match = re.search(
             r"await runtime\.runPythonAsync\(\s*`(.*?)`\s*,?\s*\);",
             page_source,
