@@ -1,0 +1,13 @@
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+@keyframes ui-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes ui-menu-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ui-dialog-in { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes ui-drawer-in { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ui-canvas-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-node-pulse { 0%, 100% { box-shadow: 0 0 0 3px var(--ui-accent-soft); } 50% { box-shadow: 0 0 0 6px var(--ui-accent-soft); } }
+.ui-animate-in { animation: ui-menu-in 600ms var(--ui-ease-out) both; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+[data-motion="off"] *, [data-motion="off"] *::before, [data-motion="off"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

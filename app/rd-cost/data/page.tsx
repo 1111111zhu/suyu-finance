@@ -1,0 +1,5 @@
+"use client";
+import { WorkbenchShell } from "../workbench-shell";
+import { getProjects, getLedger } from "../rd-store";
+import "../rd-cost.css";
+export default function DataPage(){function download(){const blob=new Blob([JSON.stringify({projects:getProjects(),ledger:getLedger()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="研发费用工作台备份.json";a.click();} return <WorkbenchShell><div className="rd-page-head"><div><h1>数据管理</h1><p>查看本地工作台数据并导出备份</p></div><button className="rd-btn primary" onClick={download}>导出数据库备份</button></div><div className="rd-grid rd-grid-4"><div className="rd-card rd-card-body"><div className="rd-stat-label">项目数</div><div className="rd-stat-value">{getProjects().length}</div></div><div className="rd-card rd-card-body"><div className="rd-stat-label">台账记录</div><div className="rd-stat-value">{getLedger().length}</div></div><div className="rd-card rd-card-body" style={{gridColumn:"span 2"}}><div className="rd-stat-label">数据边界</div><p style={{marginTop:8,color:"#515b72"}}>研发 Excel 在浏览器本地处理；导出的 JSON 仅保存项目和台账摘要。</p></div></div></WorkbenchShell>}

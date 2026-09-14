@@ -2,6 +2,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { companyProfileSources } from "../数据配置/company-profile-sources.mjs";
+import { applicationEntities } from "../数据配置/application-entities.mjs";
 
 const outputPath = path.resolve(process.cwd(), "public/company-profile.json");
 
@@ -295,6 +296,10 @@ export async function buildCompanyProfile({
     },
     fields,
     matcherProfile: matcherProfile(fields),
+    // User-confirmed application allocation is deliberately separate from
+    // public-company facts. Re-emitting it on every monthly profile refresh
+    // keeps the rule stable without promoting it to a verified legal fact.
+    applicationEntities,
     sources: sourceStatus,
     validation: {
       verifiedFieldCount,

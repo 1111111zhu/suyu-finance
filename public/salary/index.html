@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>自动算薪系统 · Demo</title>
+  <title>薪资 · 两阶段算薪工作台</title>
   <style>
     :root {
       --bg: #f4f7fb;
@@ -270,6 +270,26 @@
     .intern-toolbar .input { width: 150px; }
     .intern-rate-input { width: 120px; min-width: 100px; text-align: right; }
     .intern-check { width: 16px; height: 16px; accent-color: var(--brand); }
+    .email-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(360px,.9fr); gap: 20px; align-items: start; }
+    .email-card { padding: 18px; }
+    .email-card + .email-card { margin-top: 16px; }
+    .email-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .email-fields .form-field { margin-bottom: 0; }
+    .email-section { border: 1px solid var(--line); border-radius: 9px; padding: 12px; margin-top: 10px; background: #fff; }
+    .email-section-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 7px; }
+    .email-section-title { font-size: 12px; font-weight: 780; color: var(--text); }
+    .email-section-note { font-size: 10px; color: var(--text-3); }
+    .email-textarea { width: 100%; min-height: 62px; resize: vertical; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; font: inherit; font-size: 12px; line-height: 1.6; color: var(--text); background: #fbfcfe; }
+    .email-textarea:focus, .email-input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+    .email-input { width: 100%; height: 38px; border: 1px solid var(--line); border-radius: 7px; padding: 0 10px; font: inherit; font-size: 12px; color: var(--text); background: #fff; }
+    .email-preview { min-height: 580px; background: #fff; white-space: pre-wrap; }
+    .email-status { padding: 10px 12px; border-radius: 8px; font-size: 12px; line-height: 1.6; margin-bottom: 12px; }
+    .email-status.pass { background: var(--green-soft); color: #21764b; }
+    .email-status.warn { background: var(--orange-soft); color: #8e5b1b; }
+    .email-status.block { background: var(--red-soft); color: #a34848; }
+    .email-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .email-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .email-summary-note { margin-top: 10px; color: var(--text-3); font-size: 11px; line-height: 1.5; }
     .empty { padding: 30px; color: var(--text-3); text-align: center; }
     .modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(18, 30, 50, .35); display: grid; place-items: center; padding: 20px; }
     .modal-backdrop.hidden { display: none; }
@@ -308,6 +328,7 @@
       .page-head { display: block; }
       .page-actions { margin-top: 15px; }
       .grid-3, .grid-4, .grid-2, .source-grid, .mapping-summary, .template-grid, .slip-groups { grid-template-columns: 1fr; }
+      .email-layout, .email-fields, .email-summary-grid { grid-template-columns: 1fr; }
       .flow { overflow-x: auto; justify-content: flex-start; }
       .flow-step { min-width: 130px; }
       .flow-arrow { display: none; }
@@ -326,8 +347,12 @@
       .formula-item:nth-child(odd) { border-right: 0; }
     }
   </style>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="./xlsx.full.min.js"></script>
   <script src="./payroll-engine.js"></script>
+  <script src="./payroll-email-engine.js"></script>
+  <link rel="stylesheet" href="./workbench.css">
+  <link rel="stylesheet" href="./workbench-pages.css">
+  <link rel="stylesheet" href="./suyu-theme.css">
 </head>
 <body>
   <div class="app">
@@ -349,6 +374,7 @@
         <button class="nav-btn" data-view="mapping"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="2" fill="currentColor" stroke="none"/></svg></span><span>字段映射</span></button>
         <button class="nav-btn" data-view="results"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h17"/><path d="m7 15 4-4 3 2 5-6"/></svg></span><span>计算结果</span></button>
         <button class="nav-btn" data-view="slip"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M6 3h12a2 2 0 0 1 2 2v16H4V5a2 2 0 0 1 2-2Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span>工资条预览</span></button>
+        <button class="nav-btn" data-view="email"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span>邮件正文</span></button>
       </nav>
       <div class="nav-section">ADMIN</div>
       <nav class="nav">
@@ -367,7 +393,7 @@
   <div class="toast" id="toast"></div>
   <div class="modal-backdrop hidden" id="batchModal">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <div class="modal-head"><div class="modal-title" id="modalTitle">新建算薪批次</div><button class="icon-btn" id="closeModal"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="modal-head"><div class="modal-title" id="modalTitle">新建算薪批次</div><button type="button" class="icon-btn" id="closeModal" aria-label="关闭新建批次"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
       <form id="batchForm">
         <div class="modal-body">
           <div class="form-field"><label for="batchMonth">计薪月份</label><input class="input" type="month" id="batchMonth"  required /></div>
@@ -585,6 +611,7 @@
       company: '全部公司',
       status: '全部状态',
       selectedId: 'SY001',
+      emailDraft: null,
       batches: [
         {name:monthLabel(currentMonth)+'工资批次', month:currentMonth, workdays:currentWorkdays, status:'已计算', employees:80, sources:10, date:'2025-01-28', active:true},
         {name:'2024年12月工资批次', month:'2024-12', status:'已归档', employees:78, sources:9, date:'2024-12-28'},
@@ -652,7 +679,7 @@
       const sheetName=workbook.SheetNames[0];
       if (!sheetName) throw new Error('Excel 文件没有可读取的工作表');
       const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
-      const rows=PayrollEngine.rowsFromGrid(grid); rows.sheetName=sheetName;
+      const rows=PayrollEngine.rowsFromGrid(grid); rows.sheetName=sheetName; rows.sourceStartRow=grid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
       return rows;
     }
     function tableFor(key) {
@@ -820,7 +847,7 @@
     }
     function saveBatchData() {
       const rates=structuredClone(currentBatch().data?.internDailyRates || {});
-      Object.assign(currentBatch(), {workdays:currentWorkdays, data:{schemaVersion:2,grossSource:state.grossSource,comparison:structuredClone(state.comparison),payrollStage:state.payrollStage,sourceRows:structuredClone(sourceRows), sourceStatus:structuredClone(state.sourceStatus), liveImport:state.liveImport, internDailyRates:rates, makeupWorkdays:structuredClone(makeupWorkdays)}});
+      Object.assign(currentBatch(), {workdays:currentWorkdays, data:{schemaVersion:3,grossSource:state.grossSource,comparison:structuredClone(state.comparison),payrollStage:state.payrollStage,sourceRows:structuredClone(sourceRows), sourceStatus:structuredClone(state.sourceStatus), liveImport:state.liveImport, internDailyRates:rates, makeupWorkdays:structuredClone(makeupWorkdays), emailDraft:structuredClone(state.emailDraft)}});
     }
     function setCurrentBatch(batch) {
       saveBatchData();
@@ -830,6 +857,7 @@
       state.liveImport = batch.data?.liveImport || false;
       state.sourceStatus = structuredClone(batch.data?.sourceStatus || Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}])));
       state.payrollStage=batch.data?.payrollStage || 'gross';
+      state.emailDraft=structuredClone(batch.data?.emailDraft || null);
       recalculateEmployees(); crumbBatch.textContent = batch.name;
     }
     function payrollSettings() {
@@ -864,12 +892,94 @@
         mapping:['字段映射配置',`${monthLabel(currentMonth)} · 校验直接映射与系统计算字段`],
         results:['计算结果 · 工资明细表',`${monthLabel(currentMonth)} · 7 组字段 · ${employees.length} 人${state.liveImport?'导入':'示例'}数据`],
         slip:['工资条预览',`${monthLabel(currentMonth)} · 按员工查看工资明细`],
+        email:['邮件正文校准',`${monthLabel(currentMonth)} · 自动生成特殊事项说明，核对后打开企业微信邮箱`],
         templates:['模板管理','管理字段映射模板与源表格式模板']
       }[view];
     }
     function setPageHead(view, actions='') { const meta=pageMeta(view); return `<div class="page-head"><div><h1 class="page-title">${meta[0]}</h1><p class="page-subtitle">${meta[1]}</p></div><div class="page-actions">${actions}</div></div>`; }
     function stepper() {
       return `<nav class="stepper" aria-label="算薪步骤">${[['gross','1 · 计算应发工资'],['net','2 · 补充扣款，计算实发']].map(([stage,label])=>`<button class="btn ${state.payrollStage===stage?'btn-primary':''}" data-payroll-stage="${stage}" ${state.payrollStage===stage?'aria-current="step"':''}>${label}</button>`).join('<span class="step-line"></span>')}</nav>`;
+    }
+
+    function emailContext() {
+      const sample=employees[0] || generatedEmployees[0] || {};
+      return {month:currentMonth, company:currentBatch().company || sample.company || '溯驭技术', recipientName:'董博'};
+    }
+    function emailRows() {
+      const source=state.payrollStage==='net' ? employees : generatedEmployees;
+      return source.map(employee=>exportRecord(employee));
+    }
+    function ensureEmailDraft(refresh=false) {
+      const rows=emailRows(), sourceStage=state.payrollStage;
+      if (!state.emailDraft || refresh || state.emailDraft.sourceStage!==sourceStage || state.emailDraft.sourceRows!==rows.length) {
+        state.emailDraft=PayrollEmailEngine.extract(rows, emailContext());
+        state.emailDraft.sourceStage=sourceStage;
+        state.emailDraft.sourceRows=rows.length;
+        state.emailDraft.sourceFilename=sourceStage==='net' ? `实发工资表_${currentBatch().month}.xlsx` : (state.sourceStatus.grossUpload?.filename || `应发工资表_${currentBatch().month}.xlsx`);
+        saveBatchData();
+      }
+      // Repair drafts saved by earlier prototypes or a user-cleared form.
+      if (!String(state.emailDraft.recipient || '').trim()) state.emailDraft.recipient=PayrollEmailEngine.DEFAULT_RECIPIENT || '2745738591@qq.com';
+      if (!String(state.emailDraft.recipientName || '').trim()) state.emailDraft.recipientName=PayrollEmailEngine.DEFAULT_RECIPIENT_NAME || '董博';
+      if (!String(state.emailDraft.subject || '').trim()) state.emailDraft.subject=`【工资表】${monthLabel(currentBatch().month)}${currentBatch().company || '溯驭技术'}工资表`;
+      if (!state.emailDraft.mailboxUrl || /exmail\.qq\.com\/(?:login|cgi-bin\/readtemplate)(?:$|[/?#])/.test(state.emailDraft.mailboxUrl)) state.emailDraft.mailboxUrl=PayrollEmailEngine.MAILBOX_URL;
+      state.emailDraft.validation=PayrollEmailEngine.validate(state.emailDraft);
+      return state.emailDraft;
+    }
+    function emailBody(draft=ensureEmailDraft()) {
+      return draft.bodyOverride ? draft.bodyOverride : PayrollEmailEngine.render(draft, emailContext());
+    }
+    function setEmailField(field, value) {
+      const draft=ensureEmailDraft(); draft[field]=value; draft.bodyOverride=''; draft.validation=PayrollEmailEngine.validate(draft); saveBatchData();
+    }
+    function setEmailSection(section, value) {
+      const draft=ensureEmailDraft(); draft.sections[section]=value; draft.bodyOverride=''; draft.validation=PayrollEmailEngine.validate(draft); saveBatchData();
+    }
+    function setEmailSummary(field, value) {
+      const draft=ensureEmailDraft(), parsed=PayrollEmailEngine.number(value); draft.summary[field]=parsed; draft.bodyOverride=''; draft.validation=PayrollEmailEngine.validate(draft); saveBatchData();
+    }
+    function validateEmailDraft() {
+      const draft=ensureEmailDraft(); draft.validation=PayrollEmailEngine.validate(draft); saveBatchData(); return draft.validation;
+    }
+    async function copyEmailBody() {
+      const draft=ensureEmailDraft();
+      try { await navigator.clipboard.writeText(emailBody(draft)); showToast('正文已复制，可粘贴到企业微信邮箱'); }
+      catch { showToast('浏览器未授权剪贴板，请在右侧正文框中手动复制'); }
+    }
+    function openEmailComposer() {
+      const draft=ensureEmailDraft(), result=validateEmailDraft();
+      if (result.status==='blocked') { showToast(`暂不能打开邮箱：${result.errors.join('；')}`, 5000); render('email'); return; }
+      if (result.status==='warning' && !draft.acknowledgedWarnings) { showToast('请先勾选“已确认提示”后打开邮箱', 4000); return; }
+      window.__salaryEmailHandoff={recipient:draft.recipient,subject:draft.subject,body:emailBody(draft),attachment:draft.sourceFilename,mailboxUrl:draft.mailboxUrl};
+      try { navigator.clipboard?.writeText(emailBody(draft)); } catch {}
+      const target=draft.mailboxUrl || PayrollEmailEngine.MAILBOX_URL;
+      // 本地桥接扩展通过 hash 接收这次交接数据；hash 不会提交给邮箱服务器，
+      // 扩展读取后会立即清理。没有安装扩展时仍按原流程打开邮箱入口。
+      let targetWithHandoff=target;
+      try {
+        const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(window.__salaryEmailHandoff))));
+        targetWithHandoff=`${target.split('#')[0]}#salary-email=${encodeURIComponent(encoded)}`;
+      } catch {}
+      let opened=null;
+      try { opened=window.open(targetWithHandoff, '_blank', 'noopener'); } catch {}
+      if (opened) showToast('企业微信邮箱入口已打开，正文已复制；登录后点击“写信”，再核对收件人、主题和附件后发送。网页端不会自动点击发送', 7000);
+      else {
+        showToast('弹窗被拦截，正在当前窗口进入企业微信邮箱入口', 3000);
+        window.location.assign(targetWithHandoff);
+      }
+    }
+    function renderEmail() {
+      const draft=ensureEmailDraft(), validation=draft.validation, body=emailBody(draft);
+      const recipientValue=draft.recipient || '2745738591@qq.com';
+      const recipientNameValue=draft.recipientName || '董博';
+      const subjectValue=draft.subject || `【工资表】${monthLabel(currentBatch().month)}${currentBatch().company || '溯驭技术'}工资表`;
+      const labels=Object.fromEntries(PayrollEmailEngine.SECTION_ORDER);
+      const statusClass=validation.status==='passed'?'pass':validation.status==='warning'?'warn':'block';
+      const statusText=validation.status==='passed'?'校准通过：可以打开邮箱编辑草稿':validation.status==='warning'?`有 ${validation.warnings.length} 项提示，请确认后继续`:`有 ${validation.errors.length} 项阻断问题，请修正后继续`;
+      const issueList=[...validation.errors,...validation.warnings].map(item=>`<div>· ${escapeHtml(item)}</div>`).join('');
+      const sections=PayrollEmailEngine.SECTION_ORDER.map(([key])=>`<div class="email-section"><div class="email-section-head"><span class="email-section-title">${labels[key]}</span><span class="email-section-note">自动识别结果，可编辑补录</span></div><textarea class="email-textarea" data-email-section="${key}" aria-label="${labels[key]}">${escapeHtml(draft.sections?.[key] || '')}</textarea></div>`).join('');
+      const deptSummary=(draft.summary.departments || []).map(item=>`${item.dept}\t${PayrollEmailEngine.money(item.total)}\t${PayrollEmailEngine.money(item.average)}`).join('\n');
+      return `${setPageHead('email','<button class="btn" data-email-refresh>重新从二阶段结果提取</button><button class="btn" data-email-export>导出工资表附件 '+icon.download+'</button><button class="btn" data-email-copy>复制正文</button><button class="btn btn-primary" data-email-open>打开企业微信邮箱 '+icon.arrow+'</button>')}<div class="email-status ${statusClass}" role="status"><strong>${statusText}</strong>${issueList?`<div style="margin-top:4px">${issueList}</div>`:''}</div><div class="email-layout"><div><div class="card email-card"><div class="section-head"><div><div class="section-title">邮件信息</div><div class="section-desc">默认测试收件人已填入，正式使用前可替换。</div></div><span class="badge blue">二阶段结果</span></div><div class="email-fields"><div class="form-field"><label for="emailRecipient">收件人</label><input class="email-input" id="emailRecipient" data-email-field="recipient" value="2745738591@qq.com"></div><div class="form-field"><label for="emailRecipientName">称呼</label><input class="email-input" id="emailRecipientName" data-email-field="recipientName" value="董博"></div><div class="form-field"><label for="emailSubject">主题</label><input class="email-input" id="emailSubject" data-email-field="subject" value="${escapeHtml(subjectValue)}"></div><div class="form-field"><label>附件</label><input class="email-input" value="${escapeHtml(draft.sourceFilename || '当前二阶段工资表.xlsx')}" readonly></div></div><div class="email-summary-note">邮箱入口：${escapeHtml(draft.mailboxUrl || PayrollEmailEngine.MAILBOX_URL)}。网页端需要已有登录会话；系统不会点击发送。附件请先点击“导出工资表附件”，再在邮箱编辑页手动选择。</div></div><div class="card email-card"><div class="section-head"><div><div class="section-title">本月特殊事项</div><div class="section-desc">来源于当前最终二阶段工资结果；表格没有承载的内容可直接补录。</div></div></div>${sections}<div class="email-section"><div class="email-section-head"><span class="email-section-title">总成本与部门补充说明</span><span class="email-section-note">金额按元保留两位小数</span></div><div class="email-summary-grid"><div><label class="email-section-note">合计发薪成本</label><input class="email-input" data-email-summary="total" value="${draft.summary.total ?? ''}"></div><div><label class="email-section-note">平均人员成本</label><input class="email-input" data-email-summary="average" value="${draft.summary.average ?? ''}"></div></div><textarea class="email-textarea" data-email-manual-summary style="margin-top:10px" aria-label="补充说明" placeholder="可补录团队实习生补助、政策说明等不在工资表中的内容">${escapeHtml(draft.manualSummary || '')}</textarea><div class="email-summary-note">已识别部门成本（部门、总成本、平均成本）：\n${escapeHtml(deptSummary || '未识别，请在上方补录')}</div></div></div></div><div><div class="card email-card"><div class="section-head"><div><div class="section-title">正文预览与最终校准</div><div class="section-desc">可以直接编辑最终正文；编辑后以正文框内容为准。</div></div><span class="badge ${validation.status==='passed'?'green':validation.status==='warning'?'orange':'orange'}">${validation.status==='passed'?'可打开邮箱':validation.status==='warning'?'待确认':'待修正'}</span></div><textarea class="email-textarea email-preview" id="emailPreview" data-email-body aria-label="邮件正文">${escapeHtml(body)}</textarea><label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:12px;color:var(--text-2)"><input type="checkbox" data-email-ack ${draft.acknowledgedWarnings?'checked':''}> 我已核对正文、金额和提示，允许打开邮箱编辑</label><div class="email-actions"><button class="btn" data-email-refresh>恢复自动生成正文</button><button class="btn btn-primary" data-email-open>打开邮箱并进入编辑流程 ${icon.arrow}</button></div></div></div></div>`;
     }
 
     function render(view=state.view) {
@@ -882,6 +992,7 @@
       if (view==='results') content.innerHTML = renderResults();
       if (view==='exceptions') content.innerHTML = renderExceptions();
       if (view==='slip') content.innerHTML = renderSlip();
+      if (view==='email') content.innerHTML = renderEmail();
       if (view==='templates') content.innerHTML = renderTemplates();
       const navigation=content.querySelector('.stepper');
       if(navigation) {content.prepend(navigation);navigation.insertAdjacentHTML('afterend',payrollSettings());}
@@ -1009,7 +1120,7 @@
       const totals=employees.reduce((a,e)=>({gross:a.gross+e.gross,net:a.net+e.net,social:a.social+e.social,fund:a.fund+e.fund}),{gross:0,net:0,social:0,fund:0});
       const depts=[...new Set(employees.map(e=>e.dept))];
       const exceptionEmployees=employees.filter(e=>hasVisibleException(e)), exceptionText=exceptionEmployees.length?`⚠ ${exceptionEmployees.length} 条异常记录：${exceptionEmployees.slice(0,2).map(e=>`${e.name} · ${visibleIssues(e).join('；')}`).join('；')}${exceptionEmployees.length>2?'…':''}`:'';
-      return `${setPageHead('results','<button class="btn" data-export-gross>导出应发工资表</button><button class="btn" data-go="upload">补充个税 / 扣款表</button><button class="btn" data-export>导出完整工资表 '+icon.download+'</button><button class="btn btn-primary" data-go="slip">工资条预览 '+icon.arrow+'</button>')}${stepper('results')}${renderGrossSource()}${renderComparison()}<div class="alert" style="margin-bottom:16px">实发工资＝当前应发来源金额－个人社保－个人公积金－个税－税后代扣合计；实习生不扣款。${deductionNotice()}</div>${renderPayrollIssues()}<div class="grid grid-4"><div class="card stat-card"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(totals.gross)}<em>元</em></div><div class="stat-foot">公司总成本合计：${money(payrollTotal('companyCost'))}</div></div><div class="card stat-card"><div class="stat-label">社保 / 公积金</div><div class="stat-value">${money(totals.social+totals.fund)}<em>元</em></div><div class="stat-foot">本阶段个人缴纳合计</div></div><div class="card stat-card"><div class="stat-label">实发工资合计</div><div class="stat-value">${money(totals.net)}<em>元</em></div><div class="stat-foot good">${employees.some(e=>e.payrollBlocked)?'有异常需核对，工资已继续生成':'已完成公式链'}</div></div><button type="button" class="card stat-card" data-go="exceptions" style="text-align:left;cursor:pointer;font:inherit"><div class="stat-label">异常记录</div><div class="stat-value">${exceptionEmployees.length}<em>条</em></div><div class="stat-foot warn">点击查看异常详情 →</div></button></div><div class="card section-card"><div class="section-head"><div><div class="section-title">工资明细表 <span class="badge blue" style="margin-left:7px">工资明细与公司成本</span></div><div class="section-desc"><span id="resultCount">筛选出 ${total} 条${state.liveImport?'导入':'示例'}记录</span> · 异常行高亮</div></div><span class="badge ${employees.some(e=>e.payrollBlocked)?'orange':'green'}">${employees.some(e=>e.payrollBlocked)?'待修正，可正常导出':'计算完成'}</span></div><div class="section-body"><div class="toolbar"><div class="toolbar-left"><div class="search-wrap">${icon.search}<input class="input" id="resultSearch" placeholder="搜索姓名 / 工号…" value="${state.search}" /></div><select class="select" id="deptFilter"><option>全部部门</option>${depts.map(d=>`<option ${state.dept===d?'selected':''}>${d}</option>`).join('')}</select><select class="select" id="statusFilter"><option>全部状态</option><option ${state.status==='在职'?'selected':''}>在职</option><option ${state.status==='入职'?'selected':''}>入职</option><option ${state.status==='离职'?'selected':''}>离职</option></select></div><div class="toolbar-right"><span class="muted" id="resultRange">${state.liveImport?'导入数据':'示例数据'} ${total?start+1:0}–${Math.min(start+rows.length,total)} / ${total}</span></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>序号</th><th>姓名</th><th>部门</th><th>状态</th><th class="amount">工资小计</th><th class="amount">应发工资</th><th class="amount">个人社保</th><th class="amount">公积金</th><th class="amount">假勤扣款</th><th class="amount">其他代扣</th><th class="amount">水电费代扣</th><th class="amount">餐费代扣</th><th class="amount">个税</th><th class="amount">实发工资</th><th class="amount">年假天数</th><th class="amount">弹性假天数</th><th class="amount">调休假天数</th><th class="amount">病假天数</th><th class="amount">事假天数</th><th class="amount">旷工天数</th><th class="amount">公司缴纳（公积金）</th><th class="amount">公司总计（社保）</th><th class="amount">税后代扣合计</th><th class="amount">公司总成本</th><th>备注</th></tr></thead><tbody id="resultTbody">${rows.map((e,i)=>resultRow(e,start+i)).join('')}</tbody></table></div><div class="table-footer"><span id="exceptionBanner">${exceptionText}</span><div class="pagination" id="pagination">${pagination(total)}</div></div></div></div>`;
+      return `${setPageHead('results','<button class="btn" data-export-gross>导出应发工资表</button><button class="btn" data-go="upload">补充个税 / 扣款表</button><button class="btn" data-export>导出完整工资表 '+icon.download+'</button><button class="btn btn-primary" data-go="email">生成邮件正文 '+icon.arrow+'</button><button class="btn" data-go="slip">工资条预览 '+icon.arrow+'</button>')}${stepper('results')}${renderGrossSource()}${renderComparison()}<div class="alert" style="margin-bottom:16px">实发工资＝当前应发来源金额－个人社保－个人公积金－个税－税后代扣合计；实习生不扣款。${deductionNotice()}</div>${renderPayrollIssues()}<div class="grid grid-4"><div class="card stat-card"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(totals.gross)}<em>元</em></div><div class="stat-foot">公司总成本合计：${money(payrollTotal('companyCost'))}</div></div><div class="card stat-card"><div class="stat-label">社保 / 公积金</div><div class="stat-value">${money(totals.social+totals.fund)}<em>元</em></div><div class="stat-foot">本阶段个人缴纳合计</div></div><div class="card stat-card"><div class="stat-label">实发工资合计</div><div class="stat-value">${money(totals.net)}<em>元</em></div><div class="stat-foot good">${employees.some(e=>e.payrollBlocked)?'有异常需核对，工资已继续生成':'已完成公式链'}</div></div><button type="button" class="card stat-card" data-go="exceptions" style="text-align:left;cursor:pointer;font:inherit"><div class="stat-label">异常记录</div><div class="stat-value">${exceptionEmployees.length}<em>条</em></div><div class="stat-foot warn">点击查看异常详情 →</div></button></div><div class="card section-card"><div class="section-head"><div><div class="section-title">工资明细表 <span class="badge blue" style="margin-left:7px">工资明细与公司成本</span></div><div class="section-desc"><span id="resultCount">筛选出 ${total} 条${state.liveImport?'导入':'示例'}记录</span> · 异常行高亮</div></div><span class="badge ${employees.some(e=>e.payrollBlocked)?'orange':'green'}">${employees.some(e=>e.payrollBlocked)?'待修正，可正常导出':'计算完成'}</span></div><div class="section-body"><div class="toolbar"><div class="toolbar-left"><div class="search-wrap">${icon.search}<input class="input" id="resultSearch" placeholder="搜索姓名 / 工号…" value="${state.search}" /></div><select class="select" id="deptFilter"><option>全部部门</option>${depts.map(d=>`<option ${state.dept===d?'selected':''}>${d}</option>`).join('')}</select><select class="select" id="statusFilter"><option>全部状态</option><option ${state.status==='在职'?'selected':''}>在职</option><option ${state.status==='入职'?'selected':''}>入职</option><option ${state.status==='离职'?'selected':''}>离职</option></select></div><div class="toolbar-right"><span class="muted" id="resultRange">${state.liveImport?'导入数据':'示例数据'} ${total?start+1:0}–${Math.min(start+rows.length,total)} / ${total}</span></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>序号</th><th>姓名</th><th>部门</th><th>状态</th><th class="amount">工资小计</th><th class="amount">应发工资</th><th class="amount">个人社保</th><th class="amount">公积金</th><th class="amount">假勤扣款</th><th class="amount">其他代扣</th><th class="amount">水电费代扣</th><th class="amount">餐费代扣</th><th class="amount">个税</th><th class="amount">实发工资</th><th class="amount">年假天数</th><th class="amount">弹性假天数</th><th class="amount">调休假天数</th><th class="amount">病假天数</th><th class="amount">事假天数</th><th class="amount">旷工天数</th><th class="amount">公司缴纳（公积金）</th><th class="amount">公司总计（社保）</th><th class="amount">税后代扣合计</th><th class="amount">公司总成本</th><th>备注</th></tr></thead><tbody id="resultTbody">${rows.map((e,i)=>resultRow(e,start+i)).join('')}</tbody></table></div><div class="table-footer"><span id="exceptionBanner">${exceptionText}</span><div class="pagination" id="pagination">${pagination(total)}</div></div></div></div>`;
     }
     function resultRow(e, index) { return `<tr class="${hasVisibleException(e)?'exception-row':''}"><td>${index+1}</td><td class="name-cell" data-employee="${e.id}">${escapeHtml(e.name)}${hasVisibleException(e)?' <span class="badge orange">异常</span>':''}</td><td>${escapeHtml(e.dept)}</td><td><span class="badge ${e.status==='在职'?'green':e.status==='入职'?'blue':'orange'}">${e.status}</span></td><td class="amount strong">${money(e.subtotal)}</td><td class="amount strong">${money(e.gross)}</td><td class="amount">${money(e.social)}</td><td class="amount">${money(e.fund)}</td><td class="amount">${money(e.attendanceDeduct)}</td><td class="amount">${money(e.otherDeduct)}</td><td class="amount">${money(num(e.utility))}</td><td class="amount">${money(num(e.mealDeduct))}</td><td class="amount">${money(e.tax)}</td><td class="amount net">${money(e.net)}</td><td class="amount">${num(e.annual)}</td><td class="amount">${num(e.flexible)}</td><td class="amount">${num(e.compensatory)}</td><td class="amount">${num(e.sick)}</td><td class="amount">${num(e.personal)}</td><td class="amount">${num(e.absent)}</td><td class="amount">${money(num(e.companyFund))}</td><td class="amount">${money(num(e.companySocial))}</td><td class="amount">${money(e.afterTaxTotal)}</td><td class="amount">${money(e.companyCost)}</td><td>${escapeHtml(e.remark)}</td></tr>`; }
     function pagination(total) { const pages=Math.max(1,Math.ceil(total/state.pageSize)); let out=`<button class="page-btn" data-page="prev" ${state.page===1?'disabled':''}>‹</button>`; for(let i=1;i<=pages;i++) out+=`<button class="page-btn ${i===state.page?'active':''}" data-page="${i}">${i}</button>`; out+=`<button class="page-btn" data-page="next" ${state.page===pages?'disabled':''}>›</button>`; return out; }
@@ -1028,6 +1139,22 @@
       return `${setPageHead('templates','<button class="btn btn-primary" data-new-template>'+icon.plus+' 新建模板</button>')}<div class="card"><div class="section-head"><div><div class="section-title">映射模板 & 源表格式模板</div><div class="section-desc">管理员可新增、编辑、复制模板；计划员可查看和使用</div></div><span class="badge blue">管理员视图</span></div><div class="section-body"><div class="template-grid">${items.map(x=>`<div class="template-card"><div class="template-top"><div><div class="template-name">${x[0]}</div><div class="template-version">${x[1]}</div></div><span class="badge ${x[3]}">${x[3]==='green'?'使用中':x[3]==='blue'?'V2':'V3'}</span></div><div class="template-copy">${x[2]}</div><div class="template-actions"><button class="btn btn-sm" data-template-action="编辑">编辑</button><button class="btn btn-sm" data-template-action="复制">复制</button></div></div>`).join('')}</div></div></div><div class="card section-card"><div class="section-head"><div><div class="section-title">角色与权限</div><div class="section-desc">当前用户为计划员</div></div></div><div class="section-body"><div class="grid grid-3"><div class="mapping-stat"><div class="mapping-stat-label">计划员</div><div class="mapping-stat-value" style="font-size:18px">执行算薪</div><div class="mapping-stat-note">上传、映射、计算、导出</div></div><div class="mapping-stat"><div class="mapping-stat-label">管理员</div><div class="mapping-stat-value" style="font-size:18px">维护模板</div><div class="mapping-stat-note">模板、权限、历史记录</div></div><div class="mapping-stat"><div class="mapping-stat-label">数据安全</div><div class="mapping-stat-value" style="font-size:18px">脱敏</div><div class="mapping-stat-note">工资条银行卡号部分隐藏</div></div></div></div></div>`;
     }
     function bindView() {
+      content.querySelectorAll('[data-email-field]').forEach(input=>input.addEventListener('input',()=>setEmailField(input.dataset.emailField,input.value)));
+      const emailRecipientInput=content.querySelector('#emailRecipient');
+      const emailNameInput=content.querySelector('#emailRecipientName');
+      const emailSubjectInput=content.querySelector('#emailSubject');
+      if (emailRecipientInput && !emailRecipientInput.value) emailRecipientInput.value='2745738591@qq.com';
+      if (emailNameInput && !emailNameInput.value) emailNameInput.value='董博';
+      if (emailSubjectInput && !emailSubjectInput.value) emailSubjectInput.value=`【工资表】${monthLabel(currentBatch().month)}${currentBatch().company || '溯驭技术'}工资表`;
+      content.querySelectorAll('[data-email-section]').forEach(input=>input.addEventListener('input',()=>setEmailSection(input.dataset.emailSection,input.value)));
+      content.querySelectorAll('[data-email-summary]').forEach(input=>input.addEventListener('input',()=>setEmailSummary(input.dataset.emailSummary,input.value)));
+      content.querySelector('[data-email-manual-summary]')?.addEventListener('input',event=>{const draft=ensureEmailDraft();draft.manualSummary=event.target.value;draft.bodyOverride='';draft.validation=PayrollEmailEngine.validate(draft);saveBatchData();});
+      content.querySelector('[data-email-body]')?.addEventListener('input',event=>{const draft=ensureEmailDraft();draft.bodyOverride=event.target.value;draft.validation=PayrollEmailEngine.validate(draft);saveBatchData();});
+      content.querySelector('[data-email-ack]')?.addEventListener('change',event=>{const draft=ensureEmailDraft();draft.acknowledgedWarnings=event.target.checked;draft.validation=PayrollEmailEngine.validate(draft);saveBatchData();render('email');});
+      content.querySelectorAll('[data-email-refresh]').forEach(button=>button.addEventListener('click',()=>{ensureEmailDraft(true);render('email');showToast('已从最终二阶段工资结果重新生成正文');}));
+      content.querySelectorAll('[data-email-export]').forEach(button=>button.addEventListener('click',()=>{const draft=ensureEmailDraft();if(state.payrollStage==='gross') downloadGross(); else downloadCsv();draft.attachmentReady=true;saveBatchData();showToast('工资表附件已导出，请在邮箱编辑页手动选择该文件');}));
+      content.querySelectorAll('[data-email-copy]').forEach(button=>button.addEventListener('click',copyEmailBody));
+      content.querySelectorAll('[data-email-open]').forEach(button=>button.addEventListener('click',openEmailComposer));
       content.querySelector('[data-remove-gross]')?.addEventListener('click',removeUploadedGross);
       content.querySelectorAll('[data-payroll-stage]').forEach(button=>button.addEventListener('click',()=>switchPayrollStage(button.dataset.payrollStage)));
       content.querySelector('#payrollSettings')?.addEventListener('submit', event=>{event.preventDefault();applyPayrollSettings(content.querySelector('#payrollYear').value+'-'+content.querySelector('#payrollMonth').value,content.querySelector('#payrollDays').value,content.querySelector('#makeupWorkdays')?.value || '');});
@@ -1035,7 +1162,7 @@
       content.querySelectorAll('[data-step-view]').forEach(el=>el.addEventListener('click',()=>render(el.dataset.stepView)));
       content.querySelectorAll('[data-upload]').forEach(btn=>btn.addEventListener('click',()=>document.getElementById('file-'+btn.dataset.upload).click()));
       content.querySelectorAll('[data-source-input]').forEach(input=>input.addEventListener('change',()=>handleSourceInput(input)));
-      content.querySelectorAll('[data-intern-rate]').forEach(input=>input.addEventListener('change',()=>{setInternDailyRate(decodeURIComponent(input.dataset.internRate),input.value);render('mapping');showToast(input.value===''?'已清空日薪':'日薪已保存并重算');}));
+      content.querySelectorAll('[data-intern-rate]').forEach(input=>input.addEventListener('change',()=>{if(setInternDailyRate(decodeURIComponent(input.dataset.internRate),input.value)===false)return;render('mapping');showToast('日薪已保存并重算');}));
       const selectAllInterns=content.querySelector('#selectAllInterns'); if(selectAllInterns) selectAllInterns.addEventListener('change',()=>content.querySelectorAll('[data-intern-select]').forEach(input=>input.checked=selectAllInterns.checked));
       content.querySelector('[data-apply-intern-rate]')?.addEventListener('click',()=>{const names=[...content.querySelectorAll('[data-intern-select]:checked')].map(input=>decodeURIComponent(input.dataset.internSelect)), rate=content.querySelector('#bulkInternRate')?.value;if(!names.length){showToast('请先选择至少一名实习生');return;}if(!applyBulkInternRate(names,rate)){showToast('请输入大于或等于 0 的有效日薪');return;}render('mapping');showToast(`已为 ${names.length} 名实习生批量设置日薪`);});
       const bulk=content.querySelector('#bulk-source-input'), zone=content.querySelector('[data-bulk-upload]');
@@ -1206,7 +1333,10 @@
     document.getElementById('batchForm').addEventListener('submit',e=>{e.preventDefault();const month=document.getElementById('batchMonth').value,name=document.getElementById('batchName').value,company=document.getElementById('batchCompany').value;const workdays=document.getElementById('batchDays').value;if(!validPayrollSettings(month,workdays)){showToast('应发薪天数须大于 0 且不超过当月日历天数');return;}const b={name,month,workdays:Number(workdays),status:'待上传',employees:0,sources:0,date:new Date().toISOString().slice(0,10),company,active:false,data:{internDailyRates:{}}};state.batches.unshift(b);setCurrentBatch(b);sourceRows={};state.payrollStage='gross';state.liveImport=false;state.sourceStatus=Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}]));closeModal();render('upload');showToast(`${name} 已创建，请上传源表`);});
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
     recalculateEmployees();
-    render('overview');
+    // Mount the workbench after the original payroll module is ready.
   </script>
+  <script src="./workbench-core.js"></script>
+  <script src="./workbench-pages.js"></script>
+  <script src="./workbench-ui.js"></script>
 </body>
 </html>

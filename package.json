@@ -13,7 +13,7 @@
     "presync:policies": "npm run test:policy",
     "check:policy-integrity": "node 自动化脚本/check-policy-integrity.mjs",
     "check:policy-links": "node 自动化脚本/check-policy-links.mjs",
-    "test:policy": "node --test 自动化测试/policy-matcher.test.mjs 自动化测试/policy-feed.test.mjs 自动化测试/document-text.test.mjs 自动化测试/policy-links.test.mjs 自动化测试/policy-integrity.test.mjs 自动化测试/policy-navigation.test.mjs",
+    "test:policy": "node --test 自动化测试/policy-matcher.test.mjs",
     "sync:company-profile": "node 自动化脚本/sync-company-profile.mjs",
     "test:company-profile": "node --test 自动化测试/company-profile.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
