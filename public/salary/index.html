@@ -364,9 +364,6 @@
     html.embedded .topbar { display: none !important; }
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
-  <script>
-    if (new URLSearchParams(window.location.search).get('embed') === '1') document.documentElement.classList.add('embedded');
-  </script>
   <script src="./xlsx.full.min.js"></script>
   <script src="./payroll-engine.js"></script>
   <script src="./payroll-email-engine.js"></script>
@@ -433,6 +430,8 @@
       refresh: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-4M4 5v5h5M4 13a8 8 0 0 0 14.9 4M20 19v-5h-5"/></svg>',
       file: '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>'
     };
+
+    if (typeof window !== 'undefined' && /(?:^|[?&])embed=1(?:[&#]|$)/.test(window.location?.search || '')) document.documentElement.classList.add('embedded');
 
     const sourceSheets = [
       {key:'roster',name:'花名册',icon:'人',desc:'员工范围与入离职、实习生标识、转正日期'},
