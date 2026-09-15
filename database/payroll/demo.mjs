@@ -4,7 +4,10 @@ import { createPool } from './pool.mjs';
 import { createPayrollRepository, bootstrapAdmin } from './repository.mjs';
 
 /** All names, amounts and file references are fictitious. No real files are uploaded. */
-export async function seedDemo(pool, { password, prefix = 'demo-v1' } = {}) {
+export async function seedDemo(pool, { password, prefix = 'demo-v1', allowDemo = false } = {}) {
+  if (!allowDemo || process.env.NODE_ENV==='production') throw Object.assign(new Error('Demo initialization is disabled'),{code:'PAYROLL_DEMO_DISABLED'});
+  const database=(await pool.query('SELECT current_database() AS name')).rows[0].name;
+  if (!/^payroll_(demo|test)_[a-z0-9_]+$/.test(database)) throw Object.assign(new Error('Demo data requires a separately named payroll_demo_* or payroll_test_* database'),{code:'PAYROLL_DEMO_DATABASE'});
   const admin = await bootstrapAdmin(pool, { username: 'demo_admin', displayName: '虚拟演示管理员', password });
   const db = createPayrollRepository(pool);
   const base = key => ({ actorId: admin.id, requestKey: `${prefix}:${key}` });
@@ -33,7 +36,7 @@ export async function seedDemo(pool, { password, prefix = 'demo-v1' } = {}) {
 async function main() {
   if (process.env.PAYROLL_ALLOW_DEMO !== 'yes') throw new Error('Set PAYROLL_ALLOW_DEMO=yes only for an empty demonstration database');
   const pool = createPool({ connectionString: process.env.DATABASE_MIGRATION_URL || process.env.DATABASE_URL });
-  try { process.stdout.write(JSON.stringify(await seedDemo(pool, { password: process.env.PAYROLL_DEMO_PASSWORD }), null, 2) + '\n'); }
+  try { process.stdout.write(JSON.stringify(await seedDemo(pool, { password: process.env.PAYROLL_DEMO_PASSWORD, allowDemo: true }), null, 2) + '\n'); }
   finally { await pool.end(); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => { process.stderr.write(`Demo initialization failed (${error.code || 'configuration'}). Check the demo opt-in, password and database state.\n`); process.exitCode = 1; });

@@ -20,10 +20,32 @@ export async function provisionRuntimeRole(pool, { role, password }) {
       await client.query(`GRANT UPDATE(${columns}) ON payroll.${table} TO "${role}"`);
     }
     await client.query(`GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA payroll TO "${role}"`);
+    await grantApiPrivileges(client,role);
     await client.query('COMMIT');
     return { role };
   } catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
+}
+
+/** Add only the new API grants to an existing restricted role after migrations. */
+export async function grantExistingApiRole(pool,{role}) {
+  if (!/^[a-z][a-z0-9_]{0,62}$/.test(role)) throw new Error('Use a dedicated lowercase runtime role name');
+  const client=await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing=(await client.query('SELECT rolsuper,rolcreatedb,rolcreaterole FROM pg_roles WHERE rolname=$1',[role])).rows[0];
+    if (!existing || existing.rolsuper || existing.rolcreatedb || existing.rolcreaterole) throw new Error('Expected an existing restricted runtime role');
+    await grantApiPrivileges(client,role);
+    await client.query('COMMIT');
+    return {role};
+  }catch(error){await client.query('ROLLBACK');throw error;}
+  finally{client.release();}
+}
+async function grantApiPrivileges(client,role) {
+  await client.query(`GRANT SELECT,INSERT ON payroll.workspaces,payroll.workspace_versions TO "${role}"`);
+  await client.query(`GRANT UPDATE(name,month,revision,updated_at) ON payroll.workspaces TO "${role}"`);
+  await client.query(`GRANT SELECT,INSERT,DELETE ON payroll.auth_sessions,payroll.auth_login_limits TO "${role}"`);
+  await client.query(`GRANT UPDATE(failures) ON payroll.auth_login_limits TO "${role}"`);
 }
 
 async function main() {
@@ -31,11 +53,14 @@ async function main() {
   try {
     if (process.argv[2] === 'runtime-role') {
       const result = await provisionRuntimeRole(pool, { role: process.env.PAYROLL_RUNTIME_ROLE, password: process.env.PAYROLL_RUNTIME_PASSWORD });
-      process.stdout.write(`Created runtime role ${result.role}; no DELETE, DDL or account-management permissions.\n`);
+      process.stdout.write(`Created runtime role ${result.role}; no wage-history DELETE, DDL or account-management permissions.\n`);
+    } else if (process.argv[2] === 'api-grants') {
+      const result=await grantExistingApiRole(pool,{role:process.env.PAYROLL_RUNTIME_ROLE});
+      process.stdout.write(`Updated API grants for ${result.role}; wage history remains protected.\n`);
     } else if (process.argv[2] === 'bootstrap') {
       const result = await bootstrapAdmin(pool, { username: process.env.PAYROLL_ADMIN_USERNAME, displayName: process.env.PAYROLL_ADMIN_NAME || '工资管理员', password: process.env.PAYROLL_ADMIN_PASSWORD });
       process.stdout.write(JSON.stringify(result) + '\n');
-    } else throw new Error('Usage: node database/payroll/admin.mjs bootstrap|runtime-role');
+    } else throw new Error('Usage: node database/payroll/admin.mjs bootstrap|runtime-role|api-grants');
   } finally { await pool.end(); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => { process.stderr.write(`Payroll setup failed (${error.code || 'configuration'}). Check the role, required environment variables and database state.\n`); process.exitCode = 1; });

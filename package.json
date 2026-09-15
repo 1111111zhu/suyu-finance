@@ -21,9 +21,12 @@
     "db:status": "node database/payroll/migrate.mjs status",
     "db:bootstrap": "node database/payroll/admin.mjs bootstrap",
     "db:runtime-role": "node database/payroll/admin.mjs runtime-role",
+    "db:api-grants": "node database/payroll/admin.mjs api-grants",
     "db:seed:demo": "node database/payroll/demo.mjs",
     "test:db": "node --test 自动化测试/payroll-db-fields.test.mjs 自动化测试/payroll-db-tools.test.mjs",
-    "test:db:integration": "node --test 自动化测试/payroll-db.integration.test.mjs"
+    "test:db:integration": "node --test 自动化测试/payroll-db.integration.test.mjs",
+    "payroll:api": "node server/payroll/start.mjs",
+    "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
