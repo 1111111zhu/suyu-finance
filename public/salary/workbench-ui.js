@@ -168,11 +168,12 @@ globalThis.PayrollWorkbenchUI=(()=>{
   }
   async function initialize(){setupModal();document.addEventListener('click',e=>{document.querySelectorAll('.wb-nav-menu[open],.wb-filter-menu[open]').forEach(d=>{if(!d.contains(e.target))d.open=false;});const matches=document.getElementById('employeeMatches');if(matches&&!e.target.closest('.wb-search'))matches.hidden=true;});document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.wb-nav-menu[open],.wb-filter-menu[open]').forEach(d=>d.open=false);const m=document.getElementById('employeeMatches');if(m)m.hidden=true;}if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'&&ui.draft){e.preventDefault();document.querySelector('[data-wb=save]')?.click();}});document.title='薪资 · 两阶段算薪工作台';document.querySelector('.topbar').addEventListener('click',handle);content.addEventListener('click',handle);document.body.addEventListener('click',e=>{if(e.target.closest('.wb-dialog'))handle(e);});window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
     const restored=await W.restore();if(restored&&!state.liveImport&&currentBatch().draftOrigin!=='empty'&&!currentBatch().workbench?.demoProfiles&&currentBatch().name.includes('示例批次')){demo(true);recalculateEmployees();}saveBatchData();
-    const route=window.location.hash.slice(1).split('/'),validViews=['results','slip','upload','email','batches','mapping','rules','templates','exceptions'],hasRoute=['gross','net'].includes(route[0]);
+    const route=window.location.hash.slice(1).split('/').filter(Boolean),validViews=['results','slip','upload','email','batches','mapping','rules','templates','exceptions'],hasRoute=['gross','net'].includes(route[0]),view=hasRoute?route[1]:route[0];
     if(hasRoute){state.payrollStage=route[0];recalculateEmployees();}
     else{state.payrollStage='gross';recalculateEmployees();}
-    if(route[2])state.selectedId=decodeURIComponent(route[2]);
-    mount(hasRoute&&validViews.includes(route[1])?route[1]:'upload',false);
+    const selectedId=hasRoute?route[2]:route[1];
+    if(selectedId)state.selectedId=decodeURIComponent(selectedId);
+    mount(validViews.includes(view)?view:'upload',false);
   }
   function init(){return initializing ||= initialize();}
   function prepareCloud(action){

@@ -39,6 +39,14 @@ test('default entry opens the first gross upload step even when payroll data exi
   assert.equal(b.window.location.hash,'#net/results');
 });
 
+test('legacy single-view history route opens the batch list instead of the upload page',async()=>{
+  const a=await app('#batches');
+  assert.equal(a.window.location.hash,'#gross/batches');
+  assert.match(a.element('content').innerHTML,/历史批次/);
+  assert.match(a.element('content').innerHTML,/打开批次/);
+  assert.doesNotMatch(a.element('content').innerHTML,/拖入 Excel，自动识别资料/);
+});
+
 test('all four destinations switch stage and view directly, including from utility pages',async()=>{
   const a=await app();
   await a.click({wb:'route',route:'batches'},true);
