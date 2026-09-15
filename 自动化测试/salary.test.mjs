@@ -172,7 +172,7 @@ test('performance cutoff includes the 15th and is limited to hires in payroll mo
   const result=run(`calcSalary({status:'${status}',join:'${date}',score:.9,perfBase:1000},'2026-09',22)`);
   assert.equal(result.effectiveScore,score);assert.equal(result.performancePay,1000*score);
  }
- assert.match(run('payrollSettings()'),/当月 15 日及以后入职/);
+ assert.match(run('payrollSettings()'),/15 日（含）以后/);
 });
 
 test('roster status and dates are preserved in exported rows while date calculations use local calendar dates',()=>{
@@ -256,7 +256,7 @@ test('zero-leave paid days survive detail and slip export without clamping or de
   assert.equal(run('savedDetail.rows[2][28]'),0);
   assert.equal(run('savedDetail.rows[2][29]'),0);
  }
- assert.match(run('payrollSettings()'),/假勤扣薪天数＝病假＋事假＋旷工/);
+ assert.match(run('payrollSettings()'),/病假 ＋ 事假 ＋ 旷工/);
  run("state.payrollStage='net'");
  assert.match(run('renderSlip()'),/实发薪天数保留考勤表原值/);
 });
@@ -392,14 +392,14 @@ test('gross payroll export keeps other reduction independent and only leaves unc
  assert.match(run("savedBook['应发工资表'].A5.c[0].t"),/其他工资项目继续生成/);
 });
 
-test('intern roster headers match whenever the header contains internship text',()=>{
+test('intern roster headers match whenever the header contains internship text and basic salary takes priority',()=>{
  const run=app();
  for(const header of ['是否实习','是否实习生','本月是否为实习生','实习标识']) {
   run(`sourceRows={roster:[{姓名:'正式甲','${header}':'否'},{姓名:'实习甲','${header}':' 是 '}],attendance:[{姓名:'正式甲',实发薪天数:22},{姓名:'实习甲',实发薪天数:18.5}],salary:[{姓名:'正式甲',基本工资:1000},{姓名:'实习甲',基本工资:9999}],other:[{姓名:'实习甲',其他减:500,其他代扣:400}],tax:[{姓名:'实习甲',税:300}]};state.liveImport=true;setInternDailyRate('实习甲',200);recalculateEmployees();`);
   assert.deepEqual(Array.from(run('employees.map(e=>e.name)')),['正式甲','实习甲']);
   assert.equal(run('employees[1].isIntern'),true);
-  assert.equal(run('employees[1].net'),3700);
-  assert.equal(run('employees[1].base'),0);
+  assert.equal(run('employees[1].net'),9999);
+  assert.equal(run('employees[1].base'),9999);
   assert.equal(run('employees[1].tax'),0);
  }
 });
@@ -423,21 +423,21 @@ test('reimporting roster prunes only removed or non-intern daily-rate entries',(
  assert.equal(run("Object.keys(internDailyRates()).sort().join(',')"),'甲');
 });
 
-test('intern mapping controls, export contract and salary slip show daily-rate calculation basis',()=>{
+test('intern mapping controls, export contract and salary slip show the basic-salary priority',()=>{
  const run=app();captureExports(run);
  run("sourceRows={roster:[{姓名:'正式',是否实习:'否'},{姓名:'实习',是否实习生:'是'}],attendance:[{姓名:'正式',实发薪天数:22},{姓名:'实习',实发薪天数:7.5}],salary:[{姓名:'正式',基本工资:1000},{姓名:'实习',基本工资:9999}]};state.liveImport=true;setInternDailyRate('实习',300);state.payrollStage='gross';recalculateEmployees();");
- assert.match(run('renderMapping()'),/实习生日薪设置/);
+ assert.match(run('renderMapping()'),/实习生工资设置/);
  assert.match(run('renderMapping()'),/任一表头包含“实习”/);
  assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length-8'));
  assert.equal(run("exportRow(employees.find(e=>e.name==='正式'))[exportHeaders().indexOf('是否实习生')]"),'');
  assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[exportHeaders().indexOf('是否实习生')]"),'是');
  for(const field of ['日薪','转正日期','转正前应出勤天数','转正后应出勤天数','转正前工资','转正后工资','转正前工资小计','转正后工资小计']) assert.equal(run(`exportHeaders().includes('${field}')`),false);
  assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[10]"),7.5);
- assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[exportHeaders().indexOf('实发工资')]"),2250);
+ assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[exportHeaders().indexOf('实发工资')]"),9999);
  run("state.payrollStage='net';state.selectedId=employees.find(e=>e.name==='实习').id");
- assert.match(run('renderSlip()'),/300.00 × 7.5/);
+ assert.match(run('renderSlip()'),/基本工资/);
  run('downloadSlip()');
- assert.equal(run("savedBook['工资条'].rows.find(r=>r[0]==='计算公式')[1]"),'300 × 7.5');
+ assert.equal(run("savedBook['工资条'].rows.find(r=>r[0]==='计算公式')[1]"),'基本工资');
 });
 
 // Revised workflow: stage-owned sources, optional gross override, complete comparison.
@@ -545,12 +545,13 @@ test('all second-stage malformed, missing and duplicate amounts warn and retain 
  const issues=run("visibleIssues(employees[0]).join('；')");
  assert.match(issues,/个人社保金额缺失或无效/);assert.match(issues,/个税姓名重复/);assert.match(issues,/水电代扣未找到匹配/);
 });
-test('intern marker survives export/reimport and all employee withholding is ignored for interns',()=>{
+test('intern marker survives export/reimport, exempting social and fund but deducting tax and post-tax withholding',()=>{
  const run=app();seedPayroll(run);netSources(run);captureExports(run);
  run("sourceRows.grossUpload=[{姓名:'甲',应发工资:3700,是否实习生:'是',日薪:200,实发薪天数:18.5}];recalculateEmployees();downloadCsv();");
- assert.equal(run('employees[0].net'),3700);assert.equal(run('employees[0].afterTaxTotal'),0);assert.equal(run('employees[0].tax'),0);
+ assert.equal(run('employees[0].net'),3400);assert.equal(run('employees[0].afterTaxTotal'),100);assert.equal(run('employees[0].tax'),200);
+ assert.equal(run('employees[0].social'),0);assert.equal(run('employees[0].fund'),0);
  assert.equal(run('employees[0].companyCost'),5000);
- assert.equal(run("savedBook['工资明细表'][excelColumn(exportHeaders().indexOf('实发工资'))+'3'].v"),3700);
+ assert.equal(run("savedBook['工资明细表'][excelColumn(exportHeaders().indexOf('实发工资'))+'3'].v"),3400);
  assert.match(run("savedBook['工资明细表'][excelColumn(exportHeaders().indexOf('实发工资'))+'3'].f"),/^IF\(AI3="是"/);
 });
 test('batch switching restores both stage-owned contributions, authoritative gross source and comparison',()=>{
