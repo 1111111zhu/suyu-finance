@@ -16,12 +16,20 @@
     "test:policy": "node --test 自动化测试/policy-matcher.test.mjs",
     "sync:company-profile": "node 自动化脚本/sync-company-profile.mjs",
     "test:company-profile": "node --test 自动化测试/company-profile.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "db:migrate": "node database/payroll/migrate.mjs migrate",
+    "db:status": "node database/payroll/migrate.mjs status",
+    "db:bootstrap": "node database/payroll/admin.mjs bootstrap",
+    "db:runtime-role": "node database/payroll/admin.mjs runtime-role",
+    "db:seed:demo": "node database/payroll/demo.mjs",
+    "test:db": "node --test 自动化测试/payroll-db-fields.test.mjs 自动化测试/payroll-db-tools.test.mjs",
+    "test:db:integration": "node --test 自动化测试/payroll-db.integration.test.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
     "next": "16.2.6",
     "pdfjs-dist": "^6.3.289",
+    "pg": "8.23.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "word-extractor": "^1.0.4",

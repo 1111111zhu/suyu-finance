@@ -41,3 +41,8 @@ next-env.d.ts
 /.codex_tmp/
 __pycache__/
 *.py[cod]
+
+# Payroll data and backup archives must stay outside source control.
+*.dump
+*.backup
+/payroll-backups/

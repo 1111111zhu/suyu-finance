@@ -1,0 +1,32 @@
+services:
+  payroll-db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PAYROLL_DB_NAME:-payroll}
+      # Bootstrap administrator only. Provision the migration owner and restricted
+      # runtime role separately; never use this account in the application.
+      POSTGRES_USER: ${PAYROLL_DB_ADMIN_USER:-payroll_admin}
+      POSTGRES_PASSWORD: ${PAYROLL_DB_ADMIN_PASSWORD:?Set PAYROLL_DB_ADMIN_PASSWORD securely}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+      TZ: UTC
+      PGTZ: UTC
+    command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=UTC", "-c", "password_encryption=scram-sha-256"]
+    ports:
+      - "127.0.0.1:${PAYROLL_DB_PORT:-5432}:5432"
+    volumes:
+      - payroll-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  payroll-db-data:

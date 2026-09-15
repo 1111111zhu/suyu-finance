@@ -5,3 +5,8 @@ npm-debug.log*
 deployment-package
 *.tar.gz
 *.zip
+.env*
+outputs
+work
+*.dump
+*.backup
