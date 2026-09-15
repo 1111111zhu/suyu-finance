@@ -1,0 +1,44 @@
+name: Payroll database checks
+
+on:
+  pull_request:
+    paths: ['database/payroll/**', '自动化测试/payroll-db*', '运维脚本/payroll-db*', 'compose.payroll-db.yaml', 'package*.json', '.github/workflows/payroll-db.yml']
+  push:
+    branches: [main]
+    paths: ['database/payroll/**', '自动化测试/payroll-db*', '运维脚本/payroll-db*', 'compose.payroll-db.yaml', 'package*.json', '.github/workflows/payroll-db.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: payroll_test_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: temporary-ci-password-not-production
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d payroll_test_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PAYROLL_TEST_DATABASE_URL: postgres://postgres:temporary-ci-password-not-production@127.0.0.1:5432/payroll_test_ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx eslint database/payroll 自动化测试/payroll-db*.mjs
+      - run: npm run test:db
+      - run: npm run test:db:integration
+      - name: Validate database Compose configuration
+        env:
+          PAYROLL_DB_ADMIN_PASSWORD: temporary-validation-only
+        run: docker compose -f compose.payroll-db.yaml config --quiet
