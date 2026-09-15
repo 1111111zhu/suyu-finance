@@ -27,7 +27,6 @@ const icons = {
   batches: <><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></>,
   email: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>,
-  template: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5M9 13h6M9 17h5" /></>,
 };
 
 const groups: NavGroup[] = [
@@ -51,7 +50,6 @@ const groups: NavGroup[] = [
       { id: "salary-batches", label: "历史批次", description: "查看与管理历史工资批次", src: "/salary/index.html?embed=1#batches", icon: icons.batches },
       { id: "salary-email", label: "邮件发送", description: "生成工资表邮件内容与附件", src: "/salary/index.html?embed=1#net/email", icon: icons.email },
       { id: "salary-settings", label: "核算规则", description: "查看计薪、假勤与转正规则", src: "/salary/index.html?embed=1#gross/rules", icon: icons.settings },
-      { id: "salary-templates", label: "模板管理", description: "查看与管理工资表输出模板", src: "/salary/index.html?embed=1#gross/templates", icon: icons.template },
     ],
   },
 ];
