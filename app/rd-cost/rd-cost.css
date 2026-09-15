@@ -683,3 +683,56 @@
   .rd-nav-item svg,.rd-sidebar-foot svg{width:19px!important;height:19px!important;flex-basis:19px!important}
   .rd-main{margin-left:60px!important}
 }
+
+/* Embedded research sub-pages do not include their own content shell.  Give
+   them the same breathing room as the embedded payroll pages, rather than
+   letting their headings and cards start flush against the shared sidebar. */
+.rd-embed{
+  min-height:100vh;
+  background:var(--rd-bg,#fcfdfd);
+  color:var(--rd-ink,#1a2035);
+  font:14px/1.6 Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+.rd-embed:not(:has(.rd-cost-page)){
+  padding:36px 40px 64px;
+}
+.rd-embed:has(.rd-cost-page){
+  padding:0;
+}
+@media(max-width:640px){
+  .rd-embed:not(:has(.rd-cost-page)){
+    padding:24px 18px 42px;
+  }
+}
+
+/* Typography in the R&D area follows the payroll workspace hierarchy. */
+.rd-embed .rd-page-head h1,
+.rd-embed .rd-cost-page .page-title{
+  font-size:27px!important;
+  font-weight:500!important;
+  letter-spacing:-.035em!important;
+}
+.rd-embed .rd-page-head p,
+.rd-embed .rd-cost-page .page-description{
+  margin-top:7px!important;
+  color:var(--rd-muted,#69758a)!important;
+  font-size:12px!important;
+  line-height:1.6!important;
+}
+.rd-embed .rd-card h2{
+  font-size:15px!important;
+  font-weight:500!important;
+  line-height:1.5!important;
+}
+.rd-embed .rd-card p,
+.rd-embed .rd-stat-label{
+  font-size:12px!important;
+}
+.rd-embed .rd-stat-value{
+  font-size:22px!important;
+  font-weight:500!important;
+}
+.rd-embed .rd-btn{
+  font-size:13px!important;
+  font-weight:500!important;
+}

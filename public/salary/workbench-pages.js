@@ -50,7 +50,7 @@ globalThis.PayrollWorkbenchPages = (() => {
     return head('工资表输出格式','当前核算使用统一格式，明细调整同步回填到导出文件。',btn(`导出当前${title()}工资表`,'export',employees.length?'':'disabled',true))+`<section class="wb-panel">${label('当前工资表格式','导出为 Excel，可继续用于下一阶段核算。','<span class="wb-pill">使用中</span>')}<div class="wb-template-options">${[['应发工资表','工资构成、税前扣减与应发合计','gross'],['实发工资表','应发、代扣、实发与公司成本','net']].map(([name,note,stage])=>`<button class="wb-template-option ${state.payrollStage===stage?'active':''}" data-wb="format-stage" data-stage="${stage}"><span class="wb-file-symbol">XLS</span><div><strong>${name}</strong><p>${note}</p></div><span>${state.payrollStage===stage?'✓':'→'}</span></button>`).join('')}</div><div class="wb-template-note"><span>输出字段</span><strong>${desc.length} 项</strong><span>当前阶段</span><strong>${title()}工资</strong></div><div class="wb-field-grid">${desc.map(([name],i)=>`<div><span>${String(i+1).padStart(2,'0')}</span>${name}</div>`).join('')}</div></section><div class="wb-detail-footer"><span class="wb-small">已下载文件需要重新导出，才会包含最新修改。</span>${route('查看字段来源','mapping')}</div>`;
   }
   function rules(){
-    return head('核算规则','查看当前系统使用的口径与资料来源。',route('返回资料准备','upload'))+`<div class="wb-rules-layout"><nav class="wb-rule-nav"><a href="#rule-gross" data-rule-anchor="rule-gross">应发工资</a><a href="#rule-net" data-rule-anchor="rule-net">实发工资</a><a href="#rule-people" data-rule-anchor="rule-people">特殊人员</a><a href="#rule-edit" data-rule-anchor="rule-edit">明细调整</a></nav><div class="wb-rules-content"><section class="wb-panel" id="rule-gross">${label('01 应发工资','第一阶段：先核算工资构成')}<div class="wb-formula-text">工资与补贴 − 税前扣减 = 应发工资</div><p>基本工资、岗位工资、绩效工资和各项津贴计入工资与补贴。个人社保、公积金在第一阶段仅供个税测算参考。</p><details><summary>计薪天数与假勤规则 ⌄</summary>${payrollSettings()}</details></section><section class="wb-panel" id="rule-net">${label('02 实发工资','第二阶段：补充代扣资料')}<div class="wb-formula-text">应发 − 社保 − 公积金 − 个税 − 税后代扣 = 实发</div><p>社保、公积金需在第二阶段补充。上传的应发表优先使用，可查看与第一阶段的差异，也可移除后恢复本批次生成结果。</p><p>个税使用上传金额。应发发生变化后，需要重新核对个税。</p></section><section class="wb-panel" id="rule-people">${label('特殊人员','沿用当前批次的计薪参数')}<h3>实习生</h3><p>实习工资 = 日薪 × 考勤表实发薪天数，默认实发等于应发，不扣常规个人代扣。</p><h3>当月转正</h3><p>转正前后工资各按当月应出勤天数折算，两段天数合计应等于本月值。可在员工明细的考勤与人事页核对。</p></section><section class="wb-panel" id="rule-edit">${label('明细调整','保存后同步总表、汇总与导出')}<p>修改工资项目会更新相关计算。直接指定最终应发或实发时，系统单列人工调整差额，并保留修改原因。</p><p>每项调整支持撤销。原始资料不被回写；已经下载的工资表需重新导出。</p></section></div></div>`;
+    return head('核算规则','查看当前系统使用的口径与资料来源。',route('返回资料准备','upload'))+`<div class="wb-rules-layout"><nav class="wb-rule-nav"><a href="#rule-gross" data-rule-anchor="rule-gross">应发工资</a><a href="#rule-net" data-rule-anchor="rule-net">实发工资</a><a href="#rule-people" data-rule-anchor="rule-people">特殊人员</a><a href="#rule-edit" data-rule-anchor="rule-edit">明细调整</a></nav><div class="wb-rules-content"><section class="wb-panel" id="rule-gross">${label('01 应发工资','第一阶段：先核算工资构成')}<div class="wb-formula-text">工资与补贴 − 税前扣减 = 应发工资</div><p>基本工资、岗位工资、绩效工资和各项津贴计入工资与补贴。个人社保、公积金在第一阶段仅供个税测算参考。</p><details open><summary>计薪参数与员工假勤规则 ⌃</summary>${payrollSettings()}</details></section><section class="wb-panel" id="rule-net">${label('02 实发工资','第二阶段：补充代扣资料')}<div class="wb-formula-text">应发 − 社保 − 公积金 − 个税 − 税后代扣 = 实发</div><p>社保、公积金需在第二阶段补充。上传的应发表优先使用，可查看与第一阶段的差异，也可移除后恢复本批次生成结果。</p><p>个税使用上传金额。应发发生变化后，需要重新核对个税。</p></section><section class="wb-panel" id="rule-people">${label('特殊人员','沿用当前批次的计薪参数')}<h3>实习生</h3><p>实习工资 = 日薪 × 考勤表实发薪天数，默认实发等于应发，不扣常规个人代扣。</p><h3>当月转正</h3><p>转正前后工资各按当月应出勤天数折算，两段天数合计应等于本月值。可在员工明细的考勤与人事页核对。</p></section><section class="wb-panel" id="rule-edit">${label('明细调整','保存后同步总表、汇总与导出')}<p>修改工资项目会更新相关计算。直接指定最终应发或实发时，系统单列人工调整差额，并保留修改原因。</p><p>每项调整支持撤销。原始资料不被回写；已经下载的工资表需重新导出。</p></section></div></div>`;
   }
   function bindEmail(){
     const sync=()=>{const d=ensureEmailDraft(),area=document.getElementById('emailPreview');if(document.activeElement!==area)area.value=emailBody(d);document.getElementById('wbMailCost').textContent='¥ '+fmt(d.summary.total);const list=[...d.validation.errors,...d.validation.warnings];document.getElementById('wbMailValidationSummary').textContent=list.length?list.length+' 项核对提示 ⌄':'核对项已满足';document.getElementById('wbMailValidationIssues').innerHTML=list.map(x=>`<p>${esc(x)}</p>`).join('');document.getElementById('wbMailSaveState').textContent='已保存本批次草稿';document.querySelector('[data-email-apply]').hidden=!d.bodyOverride;document.getElementById('wbBodyMode').textContent=d.bodyOverride?'以手动正文为准':'可直接修改';};
@@ -68,5 +68,23 @@ globalThis.PayrollWorkbenchPages = (() => {
     if(state.view==='email')bindEmail();
     content.querySelectorAll('[data-rule-anchor]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();document.getElementById(a.dataset.ruleAnchor)?.scrollIntoView({behavior:'smooth',block:'start'});}));
   }
+  const legacyMapping=mapping;
+  mapping=function(){
+    return legacyMapping()
+      .replace('日薪与字段映射','实习生工资与字段映射')
+      .replace('修改日薪后，明细与工资表同步更新。','有基本工资时优先取基本工资；日薪只用于未填基本工资的实习生。')
+      .replace('批量日薪','批量日薪（无基本工资时）')
+      .replace('>日薪</th>','>日薪（无基本工资时）</th>')
+      .replace('实习生日薪','实习生工资')
+      .replace('日薪 × 考勤表实发薪天数','有基本工资时取基本工资；未填基本工资时，日薪 × 考勤表实发薪天数')
+      .replace('可在这里统一设置实习生日薪。','可在这里为未填基本工资的实习生统一设置日薪。');
+  };
+  const legacyRules=rules;
+  rules=function(){
+    return legacyRules().replace(
+      '实习工资 = 日薪 × 考勤表实发薪天数，默认实发等于应发，不扣常规个人代扣。',
+      '有基本工资时，实习工资取基本工资；未填基本工资时，按日薪 × 考勤表实发薪天数。实发工资扣个税和税后代扣；个人社保、公积金不扣。'
+    );
+  };
   return {upload,mapping,exceptions,email,templates,rules,bind};
 })();
