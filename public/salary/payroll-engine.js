@@ -185,15 +185,18 @@ globalThis.PayrollEngine = (() => {
       e.companyFund=get('netFund',['公司缴纳','公司缴纳公积金','公司缴纳（公积金）'],'公司缴纳公积金');
       e.social=e.isIntern?0:get('netSocial',['个人总计','个人社保'],'个人社保');
       e.fund=e.isIntern?0:get('netFund',['个人缴纳','个人公积金'],'个人公积金');
-      e.tax=e.isIntern?0:get('tax',['税','个税','个人所得税','税额'],'个税');
-      e.utility=e.isIntern?0:get('afterTax',['水电代扣','水电费代扣','水电费合计'],'水电代扣');
-      e.mealDeduct=e.isIntern?0:get('afterTax',['餐费代扣','餐费合计'],'餐费代扣');
-      e.otherDeduct=e.isIntern?0:get('afterTax',['其它代扣','其他代扣'],'其它代扣');
+      // 实习生不承担个人社保、公积金；个税和税后代扣仍按上传资料扣除。
+      e.tax=get('tax',['税','个税','个人所得税','税额'],'个税');
+      e.utility=get('afterTax',['水电代扣','水电费代扣','水电费合计'],'水电代扣');
+      e.mealDeduct=get('afterTax',['餐费代扣','餐费合计'],'餐费代扣');
+      e.otherDeduct=get('afterTax',['其它代扣','其他代扣'],'其它代扣');
       e.otherReduction=e.isIntern?0:round(Number(e.otherReduction)||0);
       e.remark=String(sources.afterTax?.map(canonicalRow).find(row=>nameKey(row['姓名'])===name)?.['备注'] ?? '');
       e.gross=round(Number(e.gross)||0);
       e.afterTaxTotal=round(e.utility+e.mealDeduct+e.otherDeduct);
-      e.net=e.isIntern?e.gross:round(e.gross-e.social-e.fund-e.tax-e.afterTaxTotal);
+      e.net=e.isIntern
+        ? round(e.gross-e.tax-e.afterTaxTotal)
+        : round(e.gross-e.social-e.fund-e.tax-e.afterTaxTotal);
       e.companyCost=round(e.gross+e.companySocial+e.companyFund);
       return e;
     });
