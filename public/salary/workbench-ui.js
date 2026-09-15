@@ -14,7 +14,7 @@ globalThis.PayrollWorkbenchUI=(()=>{
   const queryBox=(id,placeholder,value='',small=false)=>`<div class="wb-search${small?' compact':''}">${icons.search}<input id="${id}" aria-label="${placeholder}" placeholder="${placeholder}" value="${esc(value)}" autocomplete="off" />${small?'<div class="wb-search-results" id="employeeMatches" hidden></div>':''}</div>`;
   const monthlyViews=['upload','mapping','results','slip','exceptions'];
   const preferredStatuses=['在职','入职','离职','转正','实习生','薪资异动'];
-  let monthlyLocation=null;
+  let monthlyLocation=null, initializing=null;
   function grossUploadDone(){const required=['roster','salary','performance','attendance','other'];return !!state.liveImport&&required.every(key=>state.sourceStatus[key]?.uploaded&&sourceRows[key]?.length);}
   function grossResultDone(){return grossUploadDone()&&generatedEmployees.length>0&&currentBatch().status==='已计算';}
   function netUploadDone(){const required=['tax','netSocial','netFund','afterTax'];return grossResultDone()&&!!state.liveImport&&required.every(key=>state.sourceStatus[key]?.uploaded&&sourceRows[key]?.length);}
@@ -63,7 +63,7 @@ globalThis.PayrollWorkbenchUI=(()=>{
     }
     return `<div class="wb-item"><strong>应发工资</strong><div class="wb-item-value"><strong>${fmt(e.gross)}</strong>${action('查看构成','grossdetail')}</div></div>`+(e.isIntern?'<p class="wb-small">实习生不参与常规代扣；默认实发等于应发。</p>':group('社保、公积金与个税',num(e.social)+num(e.fund)+num(e.tax))+['social','fund','tax'].map(f=>item(e,f,f==='tax'?'个税表':f==='social'?'第二阶段社保表':'第二阶段公积金表')).join('')+group('税后代扣',e.afterTaxTotal)+['utility','mealDeduct','otherDeduct'].map(f=>item(e,f,f==='mealDeduct'?'税后代扣表':'')).join(''))+(e._netPinned?`<div class="wb-item"><span>实发人工调整</span><strong>${sign(e.netAdjustment)}</strong>${action('恢复计算','reset','data-field="netTarget"')}</div>`:'');
   }
-  function historyHTML(e){const list=W.history(e).slice().reverse();return group('调整记录')+(list.length?list.map(h=>`<div class="wb-history-item"><div class="wb-row wb-between"><strong>${esc(W.fields[h.field]?.[0]||h.field)}</strong><span>${valueText(h.field,h.before)} → ${valueText(h.field,h.value)}</span></div>${h.reason?`<p>${esc(h.reason)}</p>`:''}<div class="wb-row wb-between"><span class="wb-small">${new Date(h.at).toLocaleString('zh-CN')}${h.revoked?' · 已撤销':''}</span>${h.revoked?'':action('撤销此次修改','undo',`data-id="${h.id}"`)}</div></div>`).join(''):'<p class="wb-muted" style="padding:25px 0">尚无调整，所有金额均来自当前核算结果。</p>');}
+  function historyHTML(e){const list=W.history(e).slice().reverse();return group('调整记录')+(list.length?list.map(h=>`<div class="wb-history-item"><div class="wb-row wb-between"><strong>${esc(W.fields[h.field]?.[0]||h.field)}</strong><span>${valueText(h.field,h.before)} → ${valueText(h.field,h.value)}</span></div>${h.reason?`<p>${esc(h.reason)}</p>`:''}<div class="wb-row wb-between"><span class="wb-small">${new Date(h.at).toLocaleString('zh-CN')}${h.revoked?' · 已撤销':''}</span>${h.revoked?'':action('撤销此次修改','undo',`data-id="${esc(h.id)}"`)}</div></div>`).join(''):'<p class="wb-muted" style="padding:25px 0">尚无调整，所有金额均来自当前核算结果。</p>');}
   function impact(e){const d=ui.draft;if(!d)return '';const gross=state.payrollStage==='gross',old=d.employee;return `<h3>本次影响</h3>${(gross?[['应发工资',old.gross,e.gross]]:[['扣款合计',deductions(old),deductions(e)],['实发工资',old.net,e.net]]).map(([label,a,b])=>`<div class="wb-impact-row"><span>${label}</span><span>${fmt(a)}　→　<strong>${fmt(b)}</strong></span></div>`).join('')}<div class="wb-impact-row"><span>${title()}变化</span><strong>${sign(gross?e.gross-old.gross:e.net-old.net)}</strong></div>`;}
   function editor(e){const d=ui.draft,gross=state.payrollStage==='gross';
     if(!d)return `<aside class="wb-editor"><div class="wb-editor-idle"><div class="wb-small">${title()}核对</div><h2>${W.isReviewed(e)?'这位员工已核对':'核对本人工资'}</h2><p>在左侧点击工资项目，查看来源、调整金额。</p><div class="wb-review-meter"><span>本批次已核对</span><strong>${employees.filter(W.isReviewed).length} / ${employees.length}</strong></div><div class="wb-shortcuts">${action(W.isReviewed(e)?'继续下一位 →':'核对完成，下一位 →','review-next','','btn btn-primary')}${action(gross?'补发 / 扣减项目　＋':'添加代扣项目　＋','add','','btn')}</div><div class="wb-review-tools">${action('导出明细 ↓','export-person')}${action('打印明细','print-person')}</div>${W.ambiguous(e)?'<p class="wb-small">存在同名人员，请先核对源表。</p>':''}</div></aside>`;
@@ -91,6 +91,9 @@ globalThis.PayrollWorkbenchUI=(()=>{
     P.bind();bindInputs();
     if(previous!==state.view)window.scrollTo?.({top:0,behavior:'instant'});
     if(window.history?.replaceState)window.history.replaceState(null,'',`#${state.payrollStage}/${state.view}${state.view==='slip'?'/'+encodeURIComponent(state.selectedId):''}`);
+    // Import/compute finally blocks can finish without another local save. Notify only;
+    // cloud status packing calls the original snapshot writer, never this mount or save queue.
+    W.notifyState();
   }
   render=view=>mount(view||state.view);
   stepper=()=>'';
@@ -102,7 +105,7 @@ globalThis.PayrollWorkbenchUI=(()=>{
     document.getElementById('wbResultSearch')?.addEventListener('input',e=>{state.search=e.target.value;ui.page=1;refreshResults();});
     document.getElementById('wbDept')?.addEventListener('change',e=>{state.dept=e.target.value;ui.page=1;refreshResults();});
     document.getElementById('wbBatchSearch')?.addEventListener('input',e=>content.querySelectorAll('[data-wb-batch-row]').forEach(r=>r.hidden=!r.dataset.name.includes(e.target.value)));
-    document.getElementById('wbPersonSearch')?.addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase(),list=document.getElementById('employeeMatches');list.hidden=!q;const matches=employees.filter(p=>p.name.toLowerCase().includes(q)||String(p.employeeNumber||p.id).toLowerCase().includes(q));list.innerHTML=matches.slice(0,12).map(p=>action(`${esc(p.name)} <span class="wb-meta">${esc(p.dept)} · ${esc(p.employeeNumber||p.id)}</span>`,'person',`data-id="${p.id}"`,'')).join('')||'<div class="wb-small">没有找到匹配员工</div>';});
+    document.getElementById('wbPersonSearch')?.addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase(),list=document.getElementById('employeeMatches');list.hidden=!q;const matches=employees.filter(p=>p.name.toLowerCase().includes(q)||String(p.employeeNumber||p.id).toLowerCase().includes(q));list.innerHTML=matches.slice(0,12).map(p=>action(`${esc(p.name)} <span class="wb-meta">${esc(p.dept)} · ${esc(p.employeeNumber||p.id)}</span>`,'person',`data-id="${esc(p.id)}"`,'')).join('')||'<div class="wb-small">没有找到匹配员工</div>';});
     bindEditor();
   }
   function bindEditor(){document.getElementById('wbAmount')?.addEventListener('input',e=>{ui.draft.value=e.target.value;try{const emp=W.previewChange(ui.draft.employee,ui.draft.field,e.target.value);document.getElementById('wbEquation').outerHTML=equation(emp);document.getElementById('wbLedger').innerHTML=ledger(emp);document.getElementById('wbImpact').innerHTML=impact(emp);document.getElementById('wbEditError').textContent='';}catch(err){document.getElementById('wbEditError').textContent=err.message;}});document.getElementById('wbReason')?.addEventListener('input',e=>ui.draft.reason=e.target.value);}
@@ -149,10 +152,11 @@ globalThis.PayrollWorkbenchUI=(()=>{
     if(cmd==='close-dialog')b.closest('dialog').close();
   }catch(err){const inline=document.getElementById('wbEditError');if(inline)inline.textContent=err.message;else showToast(err.message,5000);}}
   function demo(onlyProfiles=false){const defaults={company:'溯驭技术',subdept:'',status:'在职',join:'2024-01-01',leave:'',base:8000,post:2000,perfBase:1200,score:1,actualPaidDays:22,meal:300,transit:0,otherAllow:0,otherAdd:0,sick:0,personal:0,absent:0,social:800,fund:300,exception:''};
+    currentBatch().draftOrigin='demo';
     profiles.splice(0,profiles.length,...[['林晓','研发部',8000],['陈晨','财务部',6400],['许宁','研发部',10500],['周悦','行政部',5500],['方远','销售部',7000],['苏禾','研发部',0]].map(([name,dept,base],i)=>({...defaults,name,dept,base,id:'SY00'+(i+1),...(i===5?{isIntern:true,dailyRate:150}:{} )})));
     if(onlyProfiles)return;
     sourceRows.netSocial=profiles.map(p=>({姓名:p.name,个人总计:800,公司总计:1200}));sourceRows.netFund=profiles.map(p=>({姓名:p.name,个人缴纳:300,公司缴纳:300}));sourceRows.tax=profiles.map(p=>({姓名:p.name,税:200}));sourceRows.afterTax=profiles.map(p=>({姓名:p.name,水电代扣:0,餐费代扣:200,其它代扣:0}));
-    state.batches=[{name:monthLabel(currentMonth)+'工资 · 示例批次',company:'溯驭技术',month:currentMonth,workdays:22,status:'已计算',employees:6,sources:12,date:new Date().toISOString().slice(0,10),active:true}];
+    state.batches=[{name:monthLabel(currentMonth)+'工资 · 示例批次',company:'溯驭技术',month:currentMonth,workdays:22,status:'已计算',employees:6,sources:12,date:new Date().toISOString().slice(0,10),active:true,draftOrigin:'demo'}];
     recalculateEmployees();saveBatchData();
   }
   function setupModal(){const oldOpen=openModal,oldClose=closeModal,modal=document.getElementById('batchModal');let trigger=null;
@@ -162,14 +166,25 @@ globalThis.PayrollWorkbenchUI=(()=>{
     modal.addEventListener('keydown',e=>{if(e.key!=='Tab')return;const list=[...modal.querySelectorAll('button,input,select')].filter(el=>!el.disabled&&el.getClientRects().length),first=list[0],last=list.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}});
     const month=document.getElementById('batchMonth'),name=document.getElementById('batchName');month.addEventListener('change',()=>{if(/^\d{4}-\d{2}$/.test(month.value)&&/^\d{4}年\d+月工资批次$/.test(name.value))name.value=monthLabel(month.value)+'工资批次';});
   }
-  async function init(){setupModal();document.addEventListener('click',e=>{document.querySelectorAll('.wb-nav-menu[open],.wb-filter-menu[open]').forEach(d=>{if(!d.contains(e.target))d.open=false;});const matches=document.getElementById('employeeMatches');if(matches&&!e.target.closest('.wb-search'))matches.hidden=true;});document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.wb-nav-menu[open],.wb-filter-menu[open]').forEach(d=>d.open=false);const m=document.getElementById('employeeMatches');if(m)m.hidden=true;}if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'&&ui.draft){e.preventDefault();document.querySelector('[data-wb=save]')?.click();}});document.title='薪资 · 两阶段算薪工作台';document.querySelector('.topbar').addEventListener('click',handle);content.addEventListener('click',handle);document.body.addEventListener('click',e=>{if(e.target.closest('.wb-dialog'))handle(e);});window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
-    const restored=await W.restore();if(restored&&!state.liveImport&&!currentBatch().workbench?.demoProfiles&&currentBatch().name.includes('示例批次')){demo(true);recalculateEmployees();}saveBatchData();
+  async function initialize(){setupModal();document.addEventListener('click',e=>{document.querySelectorAll('.wb-nav-menu[open],.wb-filter-menu[open]').forEach(d=>{if(!d.contains(e.target))d.open=false;});const matches=document.getElementById('employeeMatches');if(matches&&!e.target.closest('.wb-search'))matches.hidden=true;});document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.wb-nav-menu[open],.wb-filter-menu[open]').forEach(d=>d.open=false);const m=document.getElementById('employeeMatches');if(m)m.hidden=true;}if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'&&ui.draft){e.preventDefault();document.querySelector('[data-wb=save]')?.click();}});document.title='薪资 · 两阶段算薪工作台';document.querySelector('.topbar').addEventListener('click',handle);content.addEventListener('click',handle);document.body.addEventListener('click',e=>{if(e.target.closest('.wb-dialog'))handle(e);});window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
+    const restored=await W.restore();if(restored&&!state.liveImport&&currentBatch().draftOrigin!=='empty'&&!currentBatch().workbench?.demoProfiles&&currentBatch().name.includes('示例批次')){demo(true);recalculateEmployees();}saveBatchData();
     const route=window.location.hash.slice(1).split('/'),validViews=['results','slip','upload','email','batches','mapping','rules','templates','exceptions'],hasRoute=['gross','net'].includes(route[0]);
     if(hasRoute){state.payrollStage=route[0];recalculateEmployees();}
     else{state.payrollStage='gross';recalculateEmployees();}
     if(route[2])state.selectedId=decodeURIComponent(route[2]);
     mount(hasRoute&&validViews.includes(route[1])?route[1]:'upload',false);
   }
+  function init(){return initializing ||= initialize();}
+  function prepareCloud(action){
+    if(importSession().busy||state.calculating)throw new Error('资料正在处理，请稍候再操作服务器草稿');
+    if(action==='save'&&ui.draft)throw new Error('请先保存或取消当前项目的修改，再保存服务器草稿');
+    return action==='restore'?leave():true;
+  }
+  function cloudRestored(){
+    state.search='';state.dept='全部部门';state.company='全部公司';state.status='全部状态';
+    ui.tab='all';ui.page=1;ui.detailTab='pay';ui.queue=[];ui.draft=null;
+    mount(employees.length?'results':'upload',false);
+  }
   if(!globalThis.__PAYROLL_TEST__)init().catch(e=>{content.innerHTML=`<div class="wb-empty"><h2>工作台未能加载</h2><p>${esc(e.message)}</p></div>`;});
-  return {ui,results,detail,mount,init,demo,ledger,equation};
+  return {ui,results,detail,mount,init,demo,ledger,equation,prepareCloud,cloudRestored};
 })();

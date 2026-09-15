@@ -369,6 +369,7 @@
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-pages.css">
+  <link rel="stylesheet" href="./workbench-cloud.css">
   <link rel="stylesheet" href="./suyu-theme.css">
 </head>
 <body>
@@ -399,6 +400,9 @@
         <div class="crumb">算薪工作台 / <strong id="crumbBatch">2025年1月工资批次</strong></div>
         <div class="top-actions"><div class="batch-pill"><span class="dot"></span>本月批次 · 已计算</div><button class="icon-btn" title="通知"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button><div class="avatar">计</div></div>
       </header>
+      <section id="payrollCloud" class="wb-cloud" aria-label="服务器草稿">
+        <p role="status">服务器草稿连接准备中；本机工作台可独立使用。</p>
+      </section>
       <section class="content" id="content"></section>
     </main>
   </div>
@@ -629,9 +633,9 @@
       selectedId: 'SY001',
       emailDraft: null,
       batches: [
-        {name:monthLabel(currentMonth)+'工资批次', month:currentMonth, workdays:currentWorkdays, status:'已计算', employees:80, sources:10, date:'2025-01-28', active:true},
-        {name:'2024年12月工资批次', month:'2024-12', status:'已归档', employees:78, sources:9, date:'2024-12-28'},
-        {name:'2024年11月工资批次', month:'2024-11', status:'已归档', employees:76, sources:9, date:'2024-11-28'}
+        {name:monthLabel(currentMonth)+'工资批次', month:currentMonth, workdays:currentWorkdays, status:'已计算', employees:80, sources:10, date:'2025-01-28', active:true, draftOrigin:'demo'},
+        {name:'2024年12月工资批次', month:'2024-12', status:'已归档', employees:78, sources:9, date:'2024-12-28', draftOrigin:'demo'},
+        {name:'2024年11月工资批次', month:'2024-11', status:'已归档', employees:76, sources:9, date:'2024-11-28', draftOrigin:'demo'}
       ]
     };
 
@@ -1380,7 +1384,7 @@
     }
     document.querySelectorAll('.nav').forEach(nav=>nav.addEventListener('click',e=>{const btn=e.target.closest('[data-view]');if(btn)render(btn.dataset.view);}));
     document.getElementById('closeModal').addEventListener('click',closeModal); document.getElementById('cancelModal').addEventListener('click',closeModal); document.getElementById('batchModal').addEventListener('click',e=>{if(e.target.id==='batchModal')closeModal();});
-    document.getElementById('batchForm').addEventListener('submit',e=>{e.preventDefault();const month=document.getElementById('batchMonth').value,name=document.getElementById('batchName').value,company=document.getElementById('batchCompany').value;const workdays=document.getElementById('batchDays').value;if(!validPayrollSettings(month,workdays)){showToast('应发薪天数须大于 0 且不超过当月日历天数');return;}const b={name,month,workdays:Number(workdays),status:'待上传',employees:0,sources:0,date:new Date().toISOString().slice(0,10),company,active:false,data:{internDailyRates:{}}};state.batches.unshift(b);setCurrentBatch(b);sourceRows={};state.payrollStage='gross';state.liveImport=false;state.sourceStatus=Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}]));closeModal();render('upload');showToast(`${name} 已创建，请上传源表`);});
+    document.getElementById('batchForm').addEventListener('submit',e=>{e.preventDefault();const month=document.getElementById('batchMonth').value,name=document.getElementById('batchName').value,company=document.getElementById('batchCompany').value;const workdays=document.getElementById('batchDays').value;if(!validPayrollSettings(month,workdays)){showToast('应发薪天数须大于 0 且不超过当月日历天数');return;}const b={name,month,workdays:Number(workdays),status:'待上传',employees:0,sources:0,date:new Date().toISOString().slice(0,10),company,active:false,draftOrigin:'empty',data:{internDailyRates:{}}};saveBatchData();state.batches.push(b);setCurrentBatch(b);state.batches.splice(state.batches.indexOf(b),1);state.batches.unshift(b);recalculateEmployees();saveBatchData();closeModal();render('upload');showToast(`${name} 已创建，请上传源表`);});
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
@@ -1388,5 +1392,6 @@
   <script src="./workbench-core.js"></script>
   <script src="./workbench-pages.js"></script>
   <script src="./workbench-ui.js"></script>
+  <script src="./workbench-cloud.js"></script>
 </body>
 </html>

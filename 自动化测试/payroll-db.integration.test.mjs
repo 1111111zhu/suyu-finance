@@ -28,7 +28,9 @@ before(async () => {
     execFileSync(join(pgBin, 'initdb'), ['-D', join(directory, 'data'), '-A', 'trust', '-U', 'payroll_test_owner', '--no-locale', '-E', 'UTF8'], { stdio: 'pipe' });
     execFileSync(join(pgBin, 'pg_ctl'), ['-D', join(directory, 'data'), '-l', join(directory, 'postgres.log'), '-o', `-h '' -k ${directory} -p 55439`, '-w', 'start'], { stdio: 'pipe' });
     started = true;
-    pool = createPool({ host: directory, port: 55439, database: 'postgres', user: 'payroll_test_owner' });
+    const admin=createPool({ connectionString:'',host: directory, port: 55439, database: 'postgres', user: 'payroll_test_owner' });
+    try { await admin.query('CREATE DATABASE payroll_test_core'); } finally { await admin.end(); }
+    pool = createPool({ connectionString:'',host: directory, port: 55439, database: 'payroll_test_core', user: 'payroll_test_owner' });
   }
   await migrate(pool);
   actor = await bootstrapAdmin(pool, { username: 'demo_admin', displayName: '虚拟测试管理员', password });
@@ -231,9 +233,9 @@ test('generated net records the exact gross version and separates net deduction 
 });
 test('demo is fictitious, covers three companies and is repeatable', async () => {
   const prefix = 'integration-' + randomUUID();
-  const result = await seedDemo(pool, { password, prefix });
+  const result = await seedDemo(pool, { password, prefix, allowDemo:true });
   assert.equal(result.totals.length, 3); assert.equal(result.status, 'confirmed');
-  const again = await seedDemo(pool, { password, prefix });
+  const again = await seedDemo(pool, { password, prefix, allowDemo:true });
   assert.deepEqual(again, result);
 });
 test('a fresh repository restores unfinished sources, adjustments, reviews and employee history', async () => {
@@ -279,7 +281,7 @@ test('runtime role can use repository but cannot erase history, alter schema or 
 test('pg_dump and pg_restore preserve rows, file links and constraints in a new database', async t => {
   if (!directory) { t.skip('Local PostgreSQL client tools are required for restore verification'); return; }
   const exportPath = join(directory, 'restore-test.dump');
-  const environment = { ...process.env, PGHOST: directory, PGPORT: '55439', PGUSER: 'payroll_test_owner', PGDATABASE: 'postgres' };
+  const environment = { ...process.env, PGHOST: directory, PGPORT: '55439', PGUSER: 'payroll_test_owner', PGDATABASE: 'payroll_test_core' };
   execFileSync(join(pgBin, 'pg_dump'), ['--format=custom', '--file', exportPath], { env: environment, stdio: 'pipe' });
   const restoreName = 'payroll_test_restore';
   execFileSync(join(pgBin, 'createdb'), [restoreName], { env: environment, stdio: 'pipe' });
@@ -299,7 +301,7 @@ test('pg_dump and pg_restore preserve rows, file links and constraints in a new 
 });
 test('delivered backup/restore scripts share a snapshot and refuse existing restore targets', async t => {
   if (!directory) { t.skip('Local PostgreSQL client tools are required for restore scripts'); return; }
-  const environment = { ...process.env, PATH: `${pgBin}:${process.env.PATH}`, PGHOST: directory, PGPORT: '55439', PGUSER: 'payroll_test_owner', PGDATABASE: 'postgres' };
+  const environment = { ...process.env, PATH: `${pgBin}:${process.env.PATH}`, PGHOST: directory, PGPORT: '55439', PGUSER: 'payroll_test_owner', PGDATABASE: 'payroll_test_core' };
   const backup = JSON.parse(execFileSync('bash', [join(root,'运维脚本/payroll-db-backup.sh'),'--output-dir',join(directory,'backups')], { env: environment, encoding: 'utf8', stdio: ['ignore','pipe','pipe'] }));
   assert.equal(backup.status, 'complete');
   const metadata = (await readFile(join(backup.backupDirectory,'files.metadata.jsonl'),'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));

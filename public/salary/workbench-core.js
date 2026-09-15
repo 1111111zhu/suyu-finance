@@ -5,6 +5,8 @@ globalThis.PayrollWorkbench = (() => {
     save:saveBatchData, batch:setCurrentBatch, commit:commitSource, issues:visibleIssues, detail:detailSheet, summary:summarySheet};
   const rawProfiles = new Map();
   const defaultProfiles = structuredClone(profiles);
+  const listeners = new Set();
+  const notify = () => listeners.forEach(listener => listener());
   let preview = null, hydrating = false, storageError = '', queue = Promise.resolve();
   const fields = {
     base:['基本工资','salary'], post:['岗位工资','salary'], perfBase:['绩效基数','salary'], score:['绩效系数','performance'],
@@ -166,8 +168,15 @@ globalThis.PayrollWorkbench = (() => {
     return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:state.sourceStatus[sourceKey]?.filename||'',row:i>=0?i+(rows.sourceStartRow||2):null,sheet:rows.sheetName||'',record:i>=0?rows[i]:null};
   }
   commitSource=(k,item)=>{
-    if(!state.liveImport) {currentBatch().workbench=null;rawProfiles.clear();}
+    if(!state.liveImport) {
+      currentBatch().workbench=null;rawProfiles.clear();
+      // A first real import replaces the entire demonstration, including its settings/mail.
+      if(currentBatch().draftOrigin!=='empty'){
+        state.emailDraft=null;currentBatch().data ||= {};currentBatch().data.internDailyRates={};
+      }
+    }
     else if(data().history.length) data().sourceChanged=true;
+    currentBatch().draftOrigin='user-import';
     preview=null;return original.commit(k,item);
   };
   // Existing exports retain their sheet layout and receive an explicit adjustment term in formulas.
@@ -248,22 +257,100 @@ globalThis.PayrollWorkbench = (() => {
   applyBulkInternRate=(names,input)=>syncInternRates(names,input);
   setCurrentBatch=batch=>{
     original.batch(batch);
-    if(!state.liveImport)profiles.splice(0,profiles.length,...structuredClone(batch.workbench?.demoProfiles||defaultProfiles));
+    if(!state.liveImport)profiles.splice(0,profiles.length,...structuredClone(batch.workbench?.demoProfiles||(batch.draftOrigin==='empty'?[]:defaultProfiles)));
     original.recalc();saveBatchData();
   };
   function openDB(){return new Promise((resolve,reject)=>{if(!globalThis.indexedDB){reject(new Error('本地存储不可用'));return;}const req=indexedDB.open('payroll-workbench-local',1);req.onupgradeneeded=()=>req.result.createObjectStore('workspace');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
   async function persist(){const snapshot=structuredClone(state.batches);try{const db=await openDB();await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(snapshot,'batches');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();storageError='';}catch(e){storageError=e.message||'无法保存到本机';}}
-  saveBatchData=()=>{original.save();if(!state.liveImport)data().demoProfiles=structuredClone(profiles);if(!hydrating)queue=queue.then(persist);};
+  saveBatchData=()=>{original.save();if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=structuredClone(profiles);if(!hydrating)queue=queue.then(persist);notify();};
   async function restore(){
     hydrating=true;
     try{const db=await openDB();const saved=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('batches');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});db.close();
       if(!Array.isArray(saved)||!saved.length)return false;
       state.batches=saved;const b=currentBatch();currentMonth=b.month;currentWorkdays=b.workdays||22;
       sourceRows=structuredClone(b.data?.sourceRows||{});state.sourceStatus=structuredClone(b.data?.sourceStatus||{});
-      state.liveImport=!!b.data?.liveImport;if(!state.liveImport)profiles.splice(0,profiles.length,...structuredClone(b.workbench?.demoProfiles||defaultProfiles));state.payrollStage=b.data?.payrollStage||'gross';makeupWorkdays=b.data?.makeupWorkdays||[];state.emailDraft=b.data?.emailDraft||null;
+      state.liveImport=!!b.data?.liveImport;if(!state.liveImport)profiles.splice(0,profiles.length,...structuredClone(b.workbench?.demoProfiles||(b.draftOrigin==='empty'?[]:defaultProfiles)));state.payrollStage=b.data?.payrollStage||'gross';makeupWorkdays=b.data?.makeupWorkdays||[];state.emailDraft=b.data?.emailDraft||null;
       original.recalc();return true;
     }catch(e){storageError=e.message;return false;}finally{hydrating=false;}
   }
+  const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  function jsonCopy(value) {
+    return JSON.parse(JSON.stringify(value), (key, item) => {
+      if(['__proto__','prototype','constructor'].includes(key))throw new Error('草稿包含不支持的字段');
+      return item;
+    });
+  }
+  function validateSnapshot(input) {
+    const s=jsonCopy(input), b=s?.batch, d=b?.data;
+    if(s?.formatVersion!==1||!record(b)||!record(d)||!record(s.sources)||!record(s.results)
+      ||!['user-import','empty'].includes(s.provenance)||typeof b.name!=='string'
+      ||!/^\d{4}-(0[1-9]|1[0-2])$/.test(b.month)||!Number.isFinite(b.workdays)||b.workdays<=0||b.workdays>31
+      ||!['gross','net'].includes(d.payrollStage)||!record(d.sourceStatus)
+      ||!Array.isArray(s.results.gross)||!Array.isArray(s.results.net))throw new Error('服务器草稿格式不完整或版本不受支持');
+    if(b.draftOrigin==='demo'||Object.values(d.sourceStatus).some(st=>st?.demo===true)
+      ||(b.workbench&&Object.hasOwn(b.workbench,'demoProfiles')))throw new Error('演示数据不能保存到服务器，请新建空白批次或导入真实资料');
+    if(Object.hasOwn(d,'sourceRows')||Object.hasOwn(b,'cloud'))throw new Error('草稿包含未打包的本机数据');
+    if(s.provenance==='user-import'&&d.liveImport!==true)throw new Error('资料尚未确认为真实导入，不能保存到服务器');
+    if(s.provenance==='empty'&&(d.liveImport===true||(b.draftOrigin!==undefined&&b.draftOrigin!=='empty')||Object.keys(s.sources).length
+      ||s.results.gross.length||s.results.net.length||Object.values(d.sourceStatus).some(st=>st?.uploaded)
+      ||b.workbench?.history?.length||['gross','netGenerated','netUploaded'].some(k=>Object.keys(b.workbench?.[k]||{}).length)))throw new Error('只有新建的空白批次可以作为空白服务器草稿');
+    if(d.payrollStage!=='net'&&s.results.net.length)throw new Error('应发阶段不能包含当前实发结果');
+    const keys=new Set(sourceSheets.map(sheet=>sheet.key));
+    for(const [key,source] of Object.entries(s.sources)){
+      if(!keys.has(key)||!record(source)||!Array.isArray(source.rows)||!source.rows.every(record)
+        ||typeof source.sheetName!=='string'||!Number.isSafeInteger(source.sourceStartRow)||source.sourceStartRow<1)throw new Error('来源资料格式不正确');
+    }
+    if(![...s.results.gross,...s.results.net].every(record))throw new Error('工资结果格式不正确');
+    if(b.workbench){
+      if(!record(b.workbench)||!Array.isArray(b.workbench.history)||!['gross','netGenerated','netUploaded','reviewed'].every(k=>record(b.workbench[k])))throw new Error('人工调整记录格式不正确');
+    }
+    return s;
+  }
+  // JSON drops custom Array properties. Sources therefore travel in explicit envelopes.
+  function packCurrent() {
+    if(preview)throw new Error('请先保存或取消当前项目的修改');
+    if(importSession().busy||state.calculating)throw new Error('资料正在处理，请完成后再保存服务器草稿');
+    original.save();
+    const b=currentBatch();
+    if(Object.values(state.sourceStatus).some(st=>st?.demo===true)||Object.hasOwn(b.workbench||{},'demoProfiles')||b.draftOrigin==='demo')throw new Error('演示数据不能保存到服务器，请新建空白批次或导入真实资料');
+    if(!state.liveImport&&(b.draftOrigin!=='empty'||Object.keys(sourceRows).length))throw new Error('资料尚未确认为真实导入，不能保存到服务器');
+    const batch=jsonCopy(b);delete batch.cloud;delete batch.data.sourceRows;
+    const sources=Object.fromEntries(Object.entries(sourceRows).map(([key,rows])=>{
+      if(!Array.isArray(rows))throw new Error('来源资料不是有效数组');
+      return [key,{rows:jsonCopy(rows),sheetName:rows.sheetName??'',sourceStartRow:rows.sourceStartRow??2}];
+    }));
+    return validateSnapshot({formatVersion:1,provenance:state.liveImport?'user-import':'empty',batch,sources,
+      results:{gross:jsonCopy(generatedEmployees),net:state.payrollStage==='net'?jsonCopy(employees):[]}});
+  }
+  function restoreCloud(snapshot, cloud, {mode='copy'}={}) {
+    if(!['copy','current'].includes(mode))throw new Error('请选择恢复到当前批次或新建本机副本');
+    if(preview||importSession().busy||state.calculating)throw new Error('请先完成当前修改或资料处理');
+    const s=validateSnapshot(snapshot), b=s.batch;
+    if(typeof cloud?.id!=='string'||!cloud.id||!Number.isSafeInteger(cloud.revision)||cloud.revision<1)throw new Error('服务器草稿版本无效');
+    b.draftOrigin=s.provenance;
+    b.cloud={id:cloud.id,revision:cloud.revision,currentRevision:cloud.currentRevision??cloud.revision,updatedAt:cloud.updatedAt,ownerUserId:cloud.ownerUserId};
+    b.data.sourceRows=Object.fromEntries(Object.entries(s.sources).map(([key,source])=>{
+      const rows=source.rows;rows.sheetName=source.sheetName;rows.sourceStartRow=source.sourceStartRow;return [key,rows];
+    }));
+    const previous=currentBatch();saveBatchData();
+    if(mode==='current')state.batches.splice(state.batches.indexOf(previous),1,b);else state.batches.unshift(b);
+    state.batches.forEach(item=>{item.active=item===b;});
+    preview=null;rawProfiles.clear();profiles.splice(0,profiles.length);
+    currentMonth=b.month;currentWorkdays=b.workdays;sourceRows=structuredClone(b.data.sourceRows);
+    state.liveImport=b.data.liveImport===true;state.sourceStatus=structuredClone(b.data.sourceStatus);
+    state.payrollStage=b.data.payrollStage;makeupWorkdays=structuredClone(b.data.makeupWorkdays||[]);
+    state.emailDraft=structuredClone(b.data.emailDraft||null);state.comparison=structuredClone(b.data.comparison||[]);
+    state.grossSource=b.data.grossSource||'none';state.calculated=b.status==='已计算';
+    generatedEmployees=s.results.gross;employees=state.payrollStage==='net'?s.results.net:generatedEmployees;
+    state.selectedId=employees[0]?.id||'';b.employees=employees.length;data();
+    saveBatchData();return b;
+  }
+  function persistCloudMetadata(batch) {
+    if(!state.batches.includes(batch))throw new Error('本机批次已不存在');
+    if(batch===currentBatch())saveBatchData();else {queue=queue.then(persist);notify();}
+  }
   return {fields,key,scope,data,selected,overrides,history,value,source,ambiguous,previewChange,clearPreview,saveChange,undo,resetField,markReviewed,isReviewed,restore,orphaned,rebind,
+    packCurrent,validateSnapshot,restoreCloud,persistCloudMetadata,currentBatch,
+    subscribe:listener=>{listeners.add(listener);return ()=>listeners.delete(listener);},notifyState:notify,
     flush:async()=>{await queue;return storageError;}, get storageError(){return storageError;}, rawProfiles};
 })();

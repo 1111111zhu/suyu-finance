@@ -2,10 +2,10 @@ name: Payroll database checks
 
 on:
   pull_request:
-    paths: ['database/payroll/**', '自动化测试/payroll-db*', '运维脚本/payroll-db*', 'compose.payroll-db.yaml', 'package*.json', '.github/workflows/payroll-db.yml']
+    paths: ['database/payroll/**', 'server/payroll/**', 'public/salary/**', '自动化测试/payroll-*', '自动化测试/helpers/payroll-postgres.mjs', '运维脚本/payroll-db*', 'compose.payroll-*.yaml', 'package*.json', 'vite.config.ts', '.github/workflows/payroll-db.yml']
   push:
     branches: [main]
-    paths: ['database/payroll/**', '自动化测试/payroll-db*', '运维脚本/payroll-db*', 'compose.payroll-db.yaml', 'package*.json', '.github/workflows/payroll-db.yml']
+    paths: ['database/payroll/**', 'server/payroll/**', 'public/salary/**', '自动化测试/payroll-*', '自动化测试/helpers/payroll-postgres.mjs', '运维脚本/payroll-db*', 'compose.payroll-*.yaml', 'package*.json', 'vite.config.ts', '.github/workflows/payroll-db.yml']
   workflow_dispatch:
 
 permissions:
@@ -38,7 +38,13 @@ jobs:
       - run: npx eslint database/payroll 自动化测试/payroll-db*.mjs
       - run: npm run test:db
       - run: npm run test:db:integration
+      - run: npm run test:payroll-api
       - name: Validate database Compose configuration
         env:
           PAYROLL_DB_ADMIN_PASSWORD: temporary-validation-only
         run: docker compose -f compose.payroll-db.yaml config --quiet
+      - name: Validate merged API configuration without a production environment file
+        env:
+          PAYROLL_DB_ADMIN_PASSWORD: temporary-validation-only
+          PAYROLL_API_ENV_FILE: /dev/null
+        run: docker compose -f compose.payroll-db.yaml -f compose.payroll-api.yaml config --quiet

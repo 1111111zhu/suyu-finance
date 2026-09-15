@@ -46,9 +46,11 @@ export default defineConfig(async () => {
 
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
+      // The payroll API runs as a separate Node process; production uses Nginx.
+      proxy: { '/api/payroll': { target: 'http://127.0.0.1:3002' } },
+    },
     plugins: [
       vinext(),
       sites(),

@@ -1,6 +1,6 @@
 # 工资 PostgreSQL 基础
 
-本目录保存 PostgreSQL 17 的工资数据结构、迁移工具和服务端数据访问层。已提供公司/员工/任职、导入、结果版本、调整、复核、归档、邮件草稿及审计的数据基础。**数据库基础已完成，工资页面、登录服务及另一台机器的文件存储将在下一阶段接入。**
+本目录保存 PostgreSQL 17 的工资数据结构、迁移工具和服务端数据访问层。已提供公司/员工/任职、导入、结果版本、调整、复核、归档、邮件草稿及审计的数据基础。**工资页面现已接入管理员登录和服务器草稿保存／恢复，最新部署与使用说明见[工资网站接入与交接](../../项目文档/工资网站接入与交接.md)。**
 
 业务说明、全部表字典、ER Mermaid、修订流程、权限、命令与后续接口对照见 [工资数据库设计与部署](../../项目文档/工资数据库设计与部署.md)。工资字段详情见 [工资数据库字段映射](../../项目文档/工资数据库字段映射.md)。
 
@@ -13,6 +13,7 @@
 | [001_payroll.sql](migrations/001_payroll.sql) | 20 张 payroll 表、身份/导入/结果的约束、审计及邮件草稿状态视图 |
 | [002_salary_fields.sql](migrations/002_salary_fields.sql) | items 的 71 个工资列、公司/部门汇总视图、确认金额完整性检查 |
 | [003_integrity.sql](migrations/003_integrity.sql) | 文件位置与内容标识保护、复核、调整、批次/版本依据、事务完整提交等约束 |
+| [004_api_auth.sql](migrations/004_api_auth.sql) / [005_workspaces.sql](migrations/005_workspaces.sql) | 登录会话、限流、服务器草稿与不可变草稿版本 |
 | [fields.mjs](fields.mjs) | `payrollFields`、`normalizePayrollValues`、`fromLegacyPayrollRow`；显式字段契约，不算工资 |
 | [repository.mjs](repository.mjs) | `createPayrollRepository(pool)`、`bootstrapAdmin`、`hashPassword`、`verifyPassword`、`newRequestKey` |
 | [admin.mjs](admin.mjs) | `provisionRuntimeRole(pool,{role,password})`；CLI `bootstrap/runtime-role` |
@@ -21,7 +22,7 @@
 | [compose.payroll-db.yaml](../../compose.payroll-db.yaml) | 仅数据库、环回绑定、持久卷、健康检查、重启及日志轮转 |
 | [备份脚本](../../运维脚本/payroll-db-backup.sh) / [恢复脚本](../../运维脚本/payroll-db-restore.sh) | 同快照 custom dump + 文件元数据、产物哈希；只恢复新库 |
 
-实际表数是 **20 张 payroll 业务及支撑表 + `public.payroll_schema_migrations` 迁移台账 = 21 张实体表**，另有 3 个视图。迁移 version 为 SQL 文件名去掉 `.sql`；目录默认 `database/payroll/migrations/`。全程使用同一 client 的 advisory lock，每份 SQL 独立事务；已应用文件的 SHA256 改变或文件缺失时拒绝运行。不要在迁移 SQL 外层自行加 BEGIN/COMMIT，也不要改写已应用的迁移。
+001–003 创建 **20 张 payroll 业务及支撑表**。004–005 新增会话、登录限流、草稿索引和草稿版本 4 张表，合计 **24 张 payroll 表 + 1 张迁移台账**，另有 3 个视图。迁移 version 为 SQL 文件名去掉 `.sql`；目录默认 `database/payroll/migrations/`。全程使用同一 client 的 advisory lock，每份 SQL 独立事务；已应用文件的 SHA256 改变或文件缺失时拒绝运行。不要在迁移 SQL 外层自行加 BEGIN/COMMIT，也不要改写已应用的迁移。
 
 ## 2. 数据契约
 
@@ -80,11 +81,11 @@ bootstrap 仅初始化首个业务管理员；同 username 重试不修改原密
 )
 ```
 
-已有同名 runtime 角色会被拒绝，不重置其密码/权限。新角色读取现有 payroll 表/视图、向指定表追加记录，仅可更新允许的少数列；无账号写入、DELETE 或 payroll schema CREATE 授权。未配置 RLS、未来表自动授权或 REST 认证；这些仍由后续服务和运维负责。应用进程仅保留 runtime 的 DATABASE_URL。
+新建角色命令会拒绝已有同名 runtime，权限升级使用 `npm run db:api-grants`。新角色读取现有 payroll 表/视图、向指定表追加记录，仅可更新允许的少数列；无账号写入、工资历史 DELETE 或 payroll schema CREATE 授权；过期会话与登录限流可清理。未配置 RLS 或未来表自动授权；HTTP 登录和草稿归属控制见网站接入说明。应用进程仅保留 runtime 的 DATABASE_URL。
 
 ### 虚拟 seed 独立路径
 
-只在新的专用演示库完成迁移后运行。**不要先 bootstrap 其他账号**：seed 内部创建 `demo_admin`；生产禁止设置 opt-in 或调用 seed。真实 `PAYROLL_DEMO_PASSWORD` 通过私有环境提供，占位格式为 `REPLACE_WITH_DEMO_PASSWORD`。
+只在新建、名称匹配 `payroll_demo_*` 的专用演示库完成迁移后运行。**不要先 bootstrap 其他账号**：seed 内部创建 `demo_admin`。入口函数也要求 `allowDemo: true`，测试库须匹配 `payroll_test_*`；普通库名（如 `payroll`）和 `NODE_ENV=production` 会被代码拒绝。真实 `PAYROLL_DEMO_PASSWORD` 通过私有环境提供，占位格式为 `REPLACE_WITH_DEMO_PASSWORD`。
 
 ```bash
 (
@@ -93,7 +94,7 @@ bootstrap 仅初始化首个业务管理员；同 username 重试不修改原密
 )
 ```
 
-样例创建三家虚拟公司、同名同工号候选及实习生、预填的实发结果、逐项复核和确认。文件状态是 missing，存储配置 demo-unconfigured，没有真实文件上传。CLI 的 opt-in 不是自动生产检测，导出函数也不能代替环境隔离。
+样例创建三家虚拟公司、同名同工号候选及实习生、预填的实发结果、逐项复核和确认。文件状态是 missing，存储配置 demo-unconfigured，没有真实文件上传。数据库名称、显式开关、生产环境拒绝一起执行；正式启动和迁移均不调用 seed。
 
 ## 4. 备份恢复与文件边界
 
@@ -134,4 +135,4 @@ npm run test:db:integration
 
 恢复未完成批次可组合 `getBatch/listImports/getImport/listRuns/getRun/listAdjustments/listReviews/listFiles/listEmailDrafts`；`getEmployee` 可读回员工及完整任职变更。`listImports/listAdjustments` 接受 `(batchId,{scope}={})`，资料与调整按阶段筛选。业务页面后续接入这些服务端方法。
 
-后续 REST 路径逐一对应已有 repository 方法，详见设计文档第 7 节；这些只是设计，没有 HTTP 实现。上层还需补登录/授权、文件解析与人员确认、工资引擎调用、另机对象适配、完整恢复演练和页面接线。
+独立 HTTP 服务与页面草稿接线现已实现，详见[网站接入与交接](../../项目文档/工资网站接入与交接.md)。页面到正式人员确认/工资版本的流程、工资引擎服务端执行、另机文件适配仍是后续工作。
