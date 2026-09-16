@@ -25,3 +25,4 @@ button,input,select,textarea{font:inherit}button:focus-visible,a:focus-visible{o
 
 .upload-bottom{position:static;padding-top:18px}.wb-person-nav~.wb-detail-footer{margin-bottom:12px}
 .wb-detail-footer-end{justify-content:flex-end}
+.wb-source-row:has([data-wecom-import]){grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) auto auto}

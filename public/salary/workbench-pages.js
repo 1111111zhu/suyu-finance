@@ -8,7 +8,7 @@ globalThis.PayrollWorkbenchPages = (() => {
   const label=(name,note='',right='')=>`<div class="wb-section-head"><div><h2>${name}</h2>${note?`<p>${note}</p>`:''}</div>${right}</div>`;
   function sourceRow(sheet,compact=false){
     const st=state.sourceStatus[sheet.key]||{},busy=importSession().busy;
-    return `<div class="wb-source-row"><div class="wb-source-symbol">${sheet.icon}</div><div class="wb-source-info"><strong>${sheet.name}</strong>${compact?'':`<span>${sheet.desc}</span>${st.uploaded?`<small title="${esc(st.filename)}">${esc(st.filename)}${st.rows?' · '+st.rows+' 行':''}${st.demo?' · 示例':''}</small>`:''}`}</div><span class="wb-source-state ${st.uploaded?'ready':''}">${st.uploaded?'✓ 已就绪':sheet.key==='roster'?'先上传此表':'未上传'}</span><input type="file" accept=".xlsx" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'替换':'上传'}</button></div>`;
+    return `<div class="wb-source-row"><div class="wb-source-symbol">${sheet.icon}</div><div class="wb-source-info"><strong>${sheet.name}</strong>${compact?'':`<span>${sheet.desc}</span>${st.uploaded?`<small title="${esc(st.filename)}">${esc(st.filename)}${st.rows?' · '+st.rows+' 行':''}${st.demo?' · 示例':''}</small>`:''}`}</div><span class="wb-source-state ${st.uploaded?'ready':''}">${st.uploaded?'✓ 已就绪':sheet.key==='roster'?'先上传此表':'未上传'}</span><input type="file" accept=".xlsx" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'替换':'上传'}</button>${sheet.key==='attendance'?'<button class="btn btn-primary" data-wecom-import>企业微信导入</button>':''}</div>`;
   }
   function parameterBar(){
     const base=new Date(today.getFullYear(),today.getMonth()-1,1),defaultYear=base.getFullYear(),defaultMonth=String(base.getMonth()+1).padStart(2,'0');
@@ -18,7 +18,7 @@ globalThis.PayrollWorkbenchPages = (() => {
     return `<details class="wb-parambar"><summary><span>计薪参数</span><strong>${defaultYear}年${Number(defaultMonth)}月 · 请输入天数</strong><em>调整</em></summary><form id="payrollSettings" class="wb-parambar-panel" aria-label="调整计薪参数"><label><span>年份</span><select class="select" id="payrollYear" aria-label="计薪年份" required>${yearOptions}</select></label><label><span>月份</span><select class="select" id="payrollMonth" aria-label="计薪月份" required>${monthOptions}</select></label><label class="wb-days-field"><span>天数</span><input class="input" id="payrollDays" aria-label="计薪天数" type="number" min="0.01" max="31" step="any" value="" placeholder="" required><em>天</em></label><button class="btn btn-primary" type="submit">应用</button></form></details>`;
   }
   function upload(){
-    const net=state.payrollStage==='net',busy=importSession().busy,sheets=stageSheets(),main=sheets.filter(s=>net?s.key!=='grossUpload':!['social','fund'].includes(s.key)),done=main.filter(s=>state.sourceStatus[s.key]?.uploaded).length;
+    const net=state.payrollStage==='net',busy=importSession().busy,sheets=stageSheets(),main=sheets.filter(s=>net?s.key!=='grossUpload':!['social','fund'].includes(s.key)).sort((a,b)=>(a.key==='attendance'?-1:b.key==='attendance'?1:0)),done=main.filter(s=>state.sourceStatus[s.key]?.uploaded).length;
     const need=net?'扣款资料':'工资资料',total=employees.reduce((s,e)=>s+num(e.gross),0);
     return parameterBar()+
       `<div class="wb-upload-layout"><div class="wb-upload-main">${net?`<section class="wb-panel wb-gross-source">${label('应发工资来源',sourceRows.grossUpload?esc(state.sourceStatus.grossUpload?.filename||'上传应发表'):'',`<span class="wb-pill">${sourceRows.grossUpload?'上传文件':'自动衔接'}</span>`)}<div class="wb-source-total"><strong>¥ ${fmt(total)}</strong><span>${employees.length} 位员工</span>${btn('查看应发明细','workflow','data-stage="gross" data-route="results"')}</div><details class="wb-alternative" ${sourceRows.grossUpload?'open':''}><summary>使用已有应发工资表 <span>⌄</span></summary>${sourceRow(sheets.find(s=>s.key==='grossUpload'),true)}${sourceRows.grossUpload?'<button class="wb-link" data-remove-gross>恢复使用第一阶段结果</button>':'<p>未上传使用第一阶段生成结果，上传后以该文件为准。</p>'}</details></section>`:''}
@@ -66,6 +66,7 @@ globalThis.PayrollWorkbenchPages = (() => {
   }
   function bind(){
     if(state.view==='email')bindEmail();
+    content.querySelector('[data-wecom-import]')?.addEventListener('click',()=>{const button=content.querySelector('[data-wecom-import]');button.disabled=true;button.textContent='正在导入…';setTimeout(()=>{state.sourceStatus.attendance={uploaded:true,filename:`企业微信考勤_${currentBatch().month}.xlsx`,rows:employees.length,provider:'wecom'};saveBatchData();render('upload');showToast(`已从企业微信导入 ${employees.length} 人考勤，已写入考勤统计表（演示）`);},550);});
     content.querySelectorAll('[data-rule-anchor]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();document.getElementById(a.dataset.ruleAnchor)?.scrollIntoView({behavior:'smooth',block:'start'});}));
   }
   const legacyMapping=mapping;

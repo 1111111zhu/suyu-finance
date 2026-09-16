@@ -47,7 +47,6 @@ const groups: NavGroup[] = [
     icon: icons.payroll,
     items: [
       { id: "salary-auto", label: "自动算薪", description: "本月工资核算、资料导入与自动计算", src: "/salary/index.html?embed=1#gross/upload", icon: icons.payroll },
-      { id: "salary-attendance", label: "企业微信考勤", description: "设置自动导入时间并同步打卡数据", src: "/wecom-attendance?embed=1", icon: icons.batches },
       { id: "salary-batches", label: "历史批次", description: "查看与管理历史工资批次", src: "/salary/index.html?embed=1#batches", icon: icons.batches },
       { id: "salary-email", label: "邮件发送", description: "生成工资表邮件内容与附件", src: "/salary/index.html?embed=1#net/email", icon: icons.email },
       { id: "salary-settings", label: "核算规则", description: "查看计薪、假勤与转正规则", src: "/salary/index.html?embed=1#gross/rules", icon: icons.settings },
