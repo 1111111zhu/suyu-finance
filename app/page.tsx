@@ -22,7 +22,6 @@ const icons = {
   rd: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5M9 13h6M9 17h5" /></>,
   folder: <path d="M3 7.5h7l2-2h3l3 3v10.5H3z" />,
   bot: <><rect x="5" y="7" width="14" height="12" rx="3" /><path d="M12 3v4M8 12h.01M16 12h.01M9 16h6" /></>,
-  database: <><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" /></>,
   payroll: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16M8 14h3M8 17h6" /></>,
   batches: <><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></>,
   email: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>,
@@ -38,7 +37,6 @@ const groups: NavGroup[] = [
       { id: "rd-calculation", label: "研发费用测算", description: "上传资料并完成研发费用测算", src: "/rd-cost?embed=1", icon: icons.rd },
       { id: "rd-projects", label: "项目管理", description: "管理研发项目与费用台账", src: "/projects?embed=1", icon: icons.folder },
       { id: "rd-assistant", label: "AI 助手", description: "辅助整理研发费用场景与材料", src: "/scenario/1?embed=1", icon: icons.bot },
-      { id: "rd-data", label: "数据管理", description: "查看研发费用测算数据", src: "/rd-cost/data?embed=1", icon: icons.database },
     ],
   },
   {

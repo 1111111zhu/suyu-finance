@@ -193,7 +193,12 @@ export default function Home() {
   >("idle");
   const [message, setMessage] = useState("");
   const [complete, setComplete] = useState(false);
-  const [selectedProject, setSelectedProject] = useState(searchParams.get("project") || "demo-rd-001");
+  const [projects] = useState(() => getProjects());
+  const [selectedProject, setSelectedProject] = useState(() => {
+    const currentProjects = getProjects();
+    const requestedProject = searchParams.get("project");
+    return currentProjects.some((project) => project.id === requestedProject) ? requestedProject! : currentProjects[0]?.id || "";
+  });
   const [report, setReport] = useState<{ labor:number; freight:number; other:number; month:number } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const engine = useRef<PyodideLike | null>(null);
@@ -201,6 +206,7 @@ export default function Home() {
   const detected = kinds(files);
   const ready =
     detected.salary && detected.hours && detected.ledger && detected.balance;
+
   function prepare() {
     if (!enginePromise.current)
       enginePromise.current = initEngine()
@@ -273,7 +279,7 @@ export default function Home() {
     setComplete(false);
   }
   async function run() {
-    if (!ready) return;
+    if (!ready || !selectedProject) return;
     setPhase("running");
     setComplete(false);
     setMessage("正在浏览器本地读取 Excel、计算研发费用…");
@@ -338,7 +344,7 @@ export default function Home() {
     <WorkbenchShell>
       <div className="rd-cost-page">
         <div className="workspace">
-          <div className="rd-page-head"><div><h1 className="page-title">研发费用测算</h1><p className="page-description">本地识别 Excel，完成费用分配后自动归集到项目台账</p></div><select className="rd-btn" value={selectedProject} onChange={(event)=>setSelectedProject(event.target.value)}>{getProjects().map((project)=><option key={project.id} value={project.id}>{project.number} · {project.name}</option>)}</select></div>
+          <div className="rd-page-head"><div><h1 className="page-title">研发费用测算</h1><p className="page-description">本地识别 Excel，完成费用分配后自动归集到项目台账</p></div><select className="rd-btn" value={selectedProject} disabled={!projects.length} onChange={(event)=>setSelectedProject(event.target.value)}>{projects.length ? projects.map((project)=><option key={project.id} value={project.id}>{project.number} · {project.name}</option>) : <option value="">请先在项目管理新建项目</option>}</select></div>
           <div className="rd-stepper"><div className="rd-step active"><small>01 · PREPARE</small><strong>准备资料</strong></div><div className="rd-step"><small>02 · RECOGNIZE</small><strong>本地识别</strong></div><div className="rd-step"><small>03 · CALCULATE</small><strong>费用测算</strong></div><div className="rd-step"><small>04 · EXPORT</small><strong>入账与下载</strong></div></div>
           <label
             className={`dropzone ${dragging ? "dragging" : ""}`}
@@ -458,12 +464,13 @@ export default function Home() {
             <button
               type="button"
               className="start-button"
-              disabled={!ready || phase === "loading" || phase === "running"}
+              disabled={!ready || !selectedProject || phase === "loading" || phase === "running"}
               onClick={run}
             >
               {phase === "running" ? "正在测算…" : "开始测算"}
             </button>
           </div>
+          {!projects.length && <div className="notice">请先前往项目管理创建研发项目，再将测算结果归集到项目台账。</div>}
           {message && <div className={`notice ${phase}`}>{message}</div>}
           {complete && (
             <div className="result">

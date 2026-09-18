@@ -10,6 +10,13 @@ export type RdProject = {
   updatedAt: string;
 };
 
+export type CreateRdProjectInput = {
+  number: string;
+  name: string;
+  budget: number;
+  status?: RdProject["status"];
+};
+
 export type RdLedgerEntry = {
   id: string;
   projectId: string;
@@ -38,6 +45,50 @@ export function getProjects() { return read<RdProject[]>(PROJECTS_KEY, demoProje
 export function saveProjects(projects: RdProject[]) { write(PROJECTS_KEY, projects); }
 export function getLedger() { return read<RdLedgerEntry[]>(LEDGER_KEY, []); }
 export function saveLedger(entries: RdLedgerEntry[]) { write(LEDGER_KEY, entries); }
+
+function createProjectId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `rd-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Creates a browser-local project. Project data deliberately stays on this device. */
+export function createProject(input: CreateRdProjectInput) {
+  const number = input.number.trim().toUpperCase();
+  const name = input.name.trim();
+  const budget = Number(input.budget);
+  const projects = getProjects();
+
+  if (!number) throw new Error("请填写项目编号。");
+  if (!name) throw new Error("请填写项目名称。");
+  if (!Number.isFinite(budget) || budget < 0) throw new Error("预算金额必须是大于或等于 0 的数字。");
+  if (projects.some((project) => project.number.toUpperCase() === number)) {
+    throw new Error("该项目编号已存在，请换一个编号。");
+  }
+
+  const project: RdProject = {
+    id: createProjectId(),
+    number,
+    name,
+    budget,
+    actual: 0,
+    status: input.status ?? "init",
+    updatedAt: new Date().toISOString(),
+  };
+  saveProjects([...projects, project]);
+  return project;
+}
+
+/** Removes a project and every browser-local ledger entry that belongs to it. */
+export function deleteProject(projectId: string) {
+  const projects = getProjects();
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) throw new Error("该项目不存在或已被删除。");
+
+  saveLedger(getLedger().filter((entry) => entry.projectId !== projectId));
+  saveProjects(projects.filter((item) => item.id !== projectId));
+  return project;
+}
+
 export function recordCalculation(projectId: string, summary: { labor: number; freight: number; other: number; month: number }) {
   const now = new Date().toISOString();
   const categories = [["人员人工（含社保+公积金）", summary.labor], ["运费", summary.freight], ["其他费用", summary.other]] as const;
