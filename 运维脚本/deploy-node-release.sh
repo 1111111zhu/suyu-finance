@@ -67,6 +67,7 @@ User=$(id -un)
 WorkingDirectory=${release_dir}
 Environment=NODE_ENV=production
 Environment=PATH=${node_root}/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-/etc/suyu-finance/rd-runtime.env
 ExecStart=${node_root}/bin/npm run start -- --host 127.0.0.1 --port 3000
 Restart=on-failure
 RestartSec=5

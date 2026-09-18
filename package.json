@@ -18,6 +18,9 @@
     "test:company-profile": "node --test 自动化测试/company-profile.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:migrate": "node database/payroll/migrate.mjs migrate",
+    "db:rd:migrate": "node database/rd/migrate.mjs migrate",
+    "db:rd:provision": "node database/rd/provision.mjs provision",
+    "db:rd:grant-runtime": "node database/rd/provision.mjs grant-runtime",
     "db:status": "node database/payroll/migrate.mjs status",
     "db:bootstrap": "node database/payroll/admin.mjs bootstrap",
     "db:runtime-role": "node database/payroll/admin.mjs runtime-role",
@@ -25,6 +28,7 @@
     "db:seed:demo": "node database/payroll/demo.mjs",
     "test:db": "node --test 自动化测试/payroll-db-fields.test.mjs 自动化测试/payroll-db-tools.test.mjs",
     "test:db:integration": "node --test 自动化测试/payroll-db.integration.test.mjs",
+    "test:rd-db": "node --test 自动化测试/rd-db.integration.test.mjs",
     "payroll:api": "node server/payroll/start.mjs",
     "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs"
   },
