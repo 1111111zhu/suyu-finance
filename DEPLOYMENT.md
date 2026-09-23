@@ -78,6 +78,7 @@ server {
 密码中的特殊字符应先进行 URL 编码；文件内容按 Shell 赋值语法书写并由管理员核查。部署脚本通过 sudo 在内存中读取文件，不会复制到发布目录。首次创建数据库与角色后，执行迁移和运行账号权限配置，再单独导入已核准的 Excel。原件应放在 `/opt/suyu-finance/shared/rd-source/` 这类不随版本替换的私有目录。导入先预览，再由操作者核对差异后执行；后续导入不要求重新发布网站：
 
 ```bash
+export PATH=/opt/node-v22.13.0/bin:$PATH
 set -a
 . <(sudo -n cat /etc/suyu-finance/rd-migrate.env)
 set +a

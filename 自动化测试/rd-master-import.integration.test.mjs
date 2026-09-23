@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import XLSX from 'xlsx';
 import { openTestDatabase } from './helpers/payroll-postgres.mjs';
 import { migrate } from '../database/rd/migrate.mjs';
@@ -59,6 +60,12 @@ test('preview, apply and repeated import keep project IDs and ledger, never dele
   let database;
   try {
     await writeFile(fixture, fixtureBytes());
+    const cli = spawnSync(process.execPath, ['database/rd/import-master.mjs', fixture], {
+      cwd: new URL('..', import.meta.url),
+      env: { ...process.env, RD_DATABASE_MIGRATION_URL: '' },
+      encoding: 'utf8',
+    });
+    assert.match(cli.stderr, /Set RD_DATABASE_MIGRATION_URL/, 'CLI must recognize the positional workbook path');
     database = await openTestDatabase();
     await migrate(database.pool);
     const preview = await importMaster(database.pool, fixture);

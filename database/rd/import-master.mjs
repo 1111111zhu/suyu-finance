@@ -205,7 +205,9 @@ async function main() {
   const renames = renameIndex < 0 ? {} : JSON.parse(await readFile(required(args[renameIndex + 1], '--renames file'), 'utf8'));
   const aliasesIndex = args.indexOf('--platform-map');
   const platformAliases = aliasesIndex < 0 ? {} : JSON.parse(await readFile(required(args[aliasesIndex + 1], '--platform-map file'), 'utf8'));
-  const filePath = args.find(item => !item.startsWith('--') && item !== args[renameIndex + 1] && item !== args[aliasesIndex + 1]);
+  const filePath = args.find(item => !item.startsWith('--')
+    && (renameIndex < 0 || item !== args[renameIndex + 1])
+    && (aliasesIndex < 0 || item !== args[aliasesIndex + 1]));
   if (!filePath) throw new Error('Usage: node database/rd/import-master.mjs <master.xlsx> [--apply] [--renames old-to-new.json]');
   const url = process.env.RD_DATABASE_MIGRATION_URL;
   if (!url) throw new Error('Set RD_DATABASE_MIGRATION_URL');
