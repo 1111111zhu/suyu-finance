@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { withTransaction } from '../payroll/pool.mjs';
+import { recordProjectBatch } from './batch.mjs';
 
 const statuses = new Set(['init', 'active', 'completed']);
 const sources = new Set(['calculation', 'import', 'manual']);
@@ -30,19 +31,25 @@ function timestamp(value, name = 'timestamp') {
   return parsed.toISOString();
 }
 function project(row) {
-  return { id: row.id, number: row.number, name: row.name, status: row.status, budget: Number(row.budget), actual: Number(row.actual ?? 0), updatedAt: new Date(row.updated_at).toISOString() };
+  return { id: row.id, number: row.number, name: row.name, status: row.status, budget: Number(row.budget), actual: Number(row.actual ?? 0), updatedAt: new Date(row.updated_at).toISOString(), platformId:row.platform_id, annualPlatformCode:row.annual_platform_code ?? null, sourceYear:row.source_year, sourceName:row.source_name ?? null, projectManager:row.project_manager ?? null, rawStatus:row.raw_status ?? null, sourceRemark:row.source_remark ?? null, sourceRecords:row.source_records };
 }
 function ledger(row) {
   return { id: row.id, projectId: row.project_id, date: row.entry_date, category: row.category, amount: Number(row.amount), description: row.description, source: row.source };
 }
-const projectsSql = `SELECT p.id,p.number,p.name,p.status,p.budget,p.updated_at,COALESCE(SUM(l.amount),0) AS actual
+const projectsSql = `SELECT p.*,COALESCE(SUM(l.amount),0) AS actual
   FROM rd.projects p LEFT JOIN rd.ledger_entries l ON l.project_id=p.id
   GROUP BY p.id ORDER BY p.number`;
 
 export function createRdRepository(pool) {
+  async function listPlatforms() {
+    return (await pool.query(`SELECT p.id,p.name,p.number,
+      (SELECT count(*)::int FROM rd.projects q WHERE q.platform_id=p.id) AS "projectCount",
+      COALESCE((SELECT SUM(l.amount) FROM rd.ledger_entries l JOIN rd.projects q ON q.id=l.project_id WHERE q.platform_id=p.id),0) AS actual
+      FROM rd.platforms p ORDER BY p.sort_order,p.id`)).rows.map(p=>({...p,actual:Number(p.actual)}));
+  }
   async function listProjects() { return (await pool.query(projectsSql)).rows.map(project); }
   async function getProject(projectId) {
-    const row = (await pool.query(`SELECT p.id,p.number,p.name,p.status,p.budget,p.updated_at,COALESCE(SUM(l.amount),0) AS actual
+    const row = (await pool.query(`SELECT p.*,COALESCE(SUM(l.amount),0) AS actual
       FROM rd.projects p LEFT JOIN rd.ledger_entries l ON l.project_id=p.id
       WHERE p.id=$1 GROUP BY p.id`, [id(projectId, 'project id')])).rows[0];
     if (!row) fail('Project not found', 'RD_NOT_FOUND');
@@ -122,5 +129,5 @@ export function createRdRepository(pool) {
       return { projects: normalizedProjects.length, ledger: normalizedEntries.length, repeated: false };
     });
   }
-  return { listProjects, getProject, listLedger, createProject, removeProject, recordCalculation, exportData, importLegacy };
+  return { listPlatforms, recordProjectBatch: input=>recordProjectBatch(pool,input), listProjects, getProject, listLedger, createProject, removeProject, recordCalculation, exportData, importLegacy };
 }

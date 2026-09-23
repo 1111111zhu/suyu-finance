@@ -59,6 +59,9 @@ export async function grantRdRuntimePrivileges(pool, { runtimeRole }) {
     await client.query(`GRANT USAGE ON SCHEMA rd TO "${runtime}"`);
     await client.query(`GRANT SELECT,INSERT,DELETE ON rd.projects,rd.ledger_entries,rd.import_requests TO "${runtime}"`);
     await client.query(`GRANT UPDATE(updated_at) ON rd.projects TO "${runtime}"`);
+    await client.query(`GRANT SELECT ON rd.platforms TO "${runtime}"`);
+    await client.query(`GRANT SELECT ON rd.annual_platforms,rd.project_detail_rows TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.calculation_runs TO "${runtime}"`);
     await client.query('COMMIT');
     return { runtime };
   } catch (error) {

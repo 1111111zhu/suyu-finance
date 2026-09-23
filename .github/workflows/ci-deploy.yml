@@ -15,6 +15,22 @@ jobs:
     name: Verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: payroll_test_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d payroll_test_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PAYROLL_TEST_DATABASE_URL: postgresql://postgres:ci_test_password@127.0.0.1:5432/payroll_test_ci
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -33,11 +49,19 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Validate deployment scripts
+        run: |
+          bash -n 运维脚本/deploy-node-release.sh 运维脚本/rd-db-backup.sh 运维脚本/rd-db-restore.sh 运维脚本/rd-db-bootstrap-existing.sh
+          node --check 运维脚本/rd-pg-connection.mjs
+
       - name: Run JavaScript tests
         run: |
           npm run test:policy
           npm run test:company-profile
           node --test 自动化测试/salary.test.mjs
+
+      - name: Run RD database integration tests
+        run: node --test 自动化测试/rd-master-import.integration.test.mjs 自动化测试/rd-platform-batch.integration.test.mjs 自动化测试/rd-db.integration.test.mjs
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -115,6 +139,18 @@ jobs:
             -o IdentitiesOnly=yes \
             "$archive" "${SERVER_USER}@${SERVER_HOST}:/tmp/"
 
+      - name: Bootstrap dedicated RD database on first release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -p "$SERVER_PORT" \
+            -i ~/.ssh/suyu_finance_deploy \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            "${SERVER_USER}@${SERVER_HOST}" \
+            'if sudo -n test -f /etc/suyu-finance/rd-runtime.env && sudo -n test -f /etc/suyu-finance/rd-migrate.env; then echo "RD private config already present"; else sudo -n bash -s -- payroll-prod-payroll-db-1; fi' \
+            < 运维脚本/rd-db-bootstrap-existing.sh
+
       - name: Activate release on Tencent Cloud
         shell: bash
         run: |
@@ -129,4 +165,4 @@ jobs:
       - name: Verify public website
         if: env.SITE_URL != ''
         shell: bash
-        run: curl --retry 8 --retry-all-errors --retry-delay 3 --fail --silent --show-error "$SITE_URL/" >/dev/null
+        run: curl --retry 8 --retry-all-errors --retry-delay 3 --fail --silent --show-error "${SITE_URL%/}/" >/dev/null

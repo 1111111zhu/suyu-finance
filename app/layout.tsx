@@ -3,7 +3,7 @@ import "./globals.css";
 import "./overrides.css";
 
 export const metadata: Metadata = {
-  title: "研发台账测算 | 研发智能体",
+  title: "研发台账测算 | 财务系统",
   description: "上传工资表、工时表、明细账和科目组合表，在浏览器本地完成研发台账测算。",
 };
 
