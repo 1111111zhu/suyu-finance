@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "vinext dev",
+    "dev:rd-local": "node --env-file=.env.local 自动化脚本/start-rd-local.mjs",
+    "test:rd-platforms": "node --test 自动化测试/rd-master-import.integration.test.mjs 自动化测试/rd-platform-batch.integration.test.mjs 自动化测试/rd-db.integration.test.mjs",
     "build": "vinext build",
     "start": "vinext start",
     "sync:policies": "node 自动化脚本/sync-policies.mjs && node 自动化脚本/write-policy-applications.mjs",
@@ -18,6 +20,9 @@
     "test:company-profile": "node --test 自动化测试/company-profile.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:migrate": "node database/payroll/migrate.mjs migrate",
+    "db:rd:migrate": "node database/rd/migrate.mjs migrate",
+    "db:rd:provision": "node database/rd/provision.mjs provision",
+    "db:rd:grant-runtime": "node database/rd/provision.mjs grant-runtime",
     "db:status": "node database/payroll/migrate.mjs status",
     "db:bootstrap": "node database/payroll/admin.mjs bootstrap",
     "db:runtime-role": "node database/payroll/admin.mjs runtime-role",
@@ -25,6 +30,7 @@
     "db:seed:demo": "node database/payroll/demo.mjs",
     "test:db": "node --test 自动化测试/payroll-db-fields.test.mjs 自动化测试/payroll-db-tools.test.mjs",
     "test:db:integration": "node --test 自动化测试/payroll-db.integration.test.mjs",
+    "test:rd-db": "node --test 自动化测试/rd-db.integration.test.mjs",
     "payroll:api": "node server/payroll/start.mjs",
     "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs"
   },

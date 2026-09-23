@@ -2,11 +2,11 @@
 
 /* eslint-disable @next/next/no-html-link-for-pages -- Vinext production navigation requires full-page anchors. */
 
-import { ChangeEvent, DragEvent, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import "./rd-cost.css";
 import { WorkbenchShell } from "./workbench-shell";
-import { getProjects, recordCalculation } from "./rd-store";
+import { listProjects, recordCalculation, type RdProject } from "./rd-client";
 
 type PyodideLike = {
   FS: {
@@ -193,12 +193,9 @@ export default function Home() {
   >("idle");
   const [message, setMessage] = useState("");
   const [complete, setComplete] = useState(false);
-  const [projects] = useState(() => getProjects());
-  const [selectedProject, setSelectedProject] = useState(() => {
-    const currentProjects = getProjects();
-    const requestedProject = searchParams.get("project");
-    return currentProjects.some((project) => project.id === requestedProject) ? requestedProject! : currentProjects[0]?.id || "";
-  });
+  const [projects, setProjects] = useState<RdProject[]>([]);
+  const [projectsError, setProjectsError] = useState("");
+  const [selectedProject, setSelectedProject] = useState("");
   const [report, setReport] = useState<{ labor:number; freight:number; other:number; month:number } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const engine = useRef<PyodideLike | null>(null);
@@ -206,6 +203,23 @@ export default function Home() {
   const detected = kinds(files);
   const ready =
     detected.salary && detected.hours && detected.ledger && detected.balance;
+
+  useEffect(() => {
+    let active = true;
+    const requestedProject = searchParams.get("project");
+    listProjects()
+      .then((nextProjects) => {
+        if (!active) return;
+        setProjects(nextProjects);
+        setSelectedProject((current) => nextProjects.some((project) => project.id === requestedProject)
+          ? requestedProject!
+          : nextProjects.some((project) => project.id === current)
+            ? current
+            : nextProjects[0]?.id || "");
+      })
+      .catch((error) => { if (active) setProjectsError(error instanceof Error ? error.message : "项目数据加载失败。"); });
+    return () => { active = false; };
+  }, [searchParams]);
 
   function prepare() {
     if (!enginePromise.current)
@@ -297,7 +311,7 @@ export default function Home() {
       const value = (raw && typeof raw === "object" && "toJs" in raw && typeof (raw as {toJs:()=>unknown}).toJs === "function") ? (raw as {toJs:()=>unknown}).toJs() as Record<string, unknown> : {};
       const summary = { labor: Number(value.labor_total || 0), freight: Number(value.freight_total || 0), other: Number(value.other_total || 0), month: Number(value.month || new Date().getMonth() + 1) };
       setReport(summary);
-      recordCalculation(selectedProject, summary);
+      await recordCalculation({ projectId: selectedProject, ...summary, year: new Date().getFullYear() });
       const blob = new Blob(
         [runtime.FS.readFile("/work/研发成本测算结果.xlsx")],
         {
@@ -344,7 +358,7 @@ export default function Home() {
     <WorkbenchShell>
       <div className="rd-cost-page">
         <div className="workspace">
-          <div className="rd-page-head"><div><h1 className="page-title">研发费用测算</h1><p className="page-description">本地识别 Excel，完成费用分配后自动归集到项目台账</p></div><select className="rd-btn" value={selectedProject} disabled={!projects.length} onChange={(event)=>setSelectedProject(event.target.value)}>{projects.length ? projects.map((project)=><option key={project.id} value={project.id}>{project.number} · {project.name}</option>) : <option value="">请先在项目管理新建项目</option>}</select></div>
+          <div className="rd-page-head"><div><h1 className="page-title">研发费用测算</h1><p className="page-description">本地识别 Excel，完成费用分配后自动归集到项目台账</p>{projectsError && <p className="ui-field-error" role="alert">{projectsError}</p>}</div><select className="rd-btn" value={selectedProject} disabled={!projects.length} onChange={(event)=>setSelectedProject(event.target.value)}>{projects.length ? projects.map((project)=><option key={project.id} value={project.id}>{project.number} · {project.name}</option>) : <option value="">请先在项目管理新建项目</option>}</select></div>
           <div className="rd-stepper"><div className="rd-step active"><small>01 · PREPARE</small><strong>准备资料</strong></div><div className="rd-step"><small>02 · RECOGNIZE</small><strong>本地识别</strong></div><div className="rd-step"><small>03 · CALCULATE</small><strong>费用测算</strong></div><div className="rd-step"><small>04 · EXPORT</small><strong>入账与下载</strong></div></div>
           <label
             className={`dropzone ${dragging ? "dragging" : ""}`}

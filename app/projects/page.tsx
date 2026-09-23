@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { WorkbenchShell } from "../rd-cost/workbench-shell";
 import {
   createProject,
   deleteProject,
-  getProjects,
   type RdProject,
-} from "../rd-cost/rd-store";
+  listProjects,
+} from "../rd-cost/rd-client";
 import "../rd-cost/rd-cost.css";
 import "./projects.css";
 
@@ -48,7 +48,9 @@ export default function ProjectsPage() {
   const searchParams = useSearchParams();
   const embedded = searchParams.get("embed") === "1";
   const suffix = embedded ? "?embed=1" : "";
-  const [projects, setProjects] = useState<RdProject[]>(() => getProjects());
+  const [projects, setProjects] = useState<RdProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState<ProjectForm>(emptyForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [pendingDelete, setPendingDelete] = useState<RdProject | null>(null);
@@ -56,6 +58,15 @@ export default function ProjectsPage() {
   const createDialog = useRef<HTMLDialogElement>(null);
   const deleteDialog = useRef<HTMLDialogElement>(null);
   const projectNameInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    listProjects()
+      .then((items) => { if (active) setProjects(items); })
+      .catch((error) => { if (active) setLoadError(error instanceof Error ? error.message : "项目数据加载失败。"); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   function announce(message: string) {
     setToast(message);
@@ -73,7 +84,7 @@ export default function ProjectsPage() {
     createDialog.current?.close();
   }
 
-  function submitProject(event: FormEvent<HTMLFormElement>) {
+  async function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: FormErrors = {};
     const budget = Number(form.budget);
@@ -88,8 +99,8 @@ export default function ProjectsPage() {
     }
 
     try {
-      const project = createProject({ ...form, budget });
-      setProjects(getProjects());
+      const project = await createProject({ ...form, budget });
+      setProjects((items) => [...items, project].sort((left, right) => left.number.localeCompare(right.number)));
       closeCreateDialog();
       announce(`已创建项目：${project.number}`);
       router.push(`/projects/${project.id}${suffix}`);
@@ -104,11 +115,11 @@ export default function ProjectsPage() {
     deleteDialog.current?.showModal();
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!pendingDelete) return;
     try {
-      const project = deleteProject(pendingDelete.id);
-      setProjects(getProjects());
+      const project = await deleteProject(pendingDelete.id);
+      setProjects((items) => items.filter((item) => item.id !== project.id));
       deleteDialog.current?.close();
       setPendingDelete(null);
       announce(`已删除项目及其费用台账：${project.number}`);
@@ -123,12 +134,12 @@ export default function ProjectsPage() {
         <div>
           <p className="rd-projects-kicker">RESEARCH PROJECTS</p>
           <h1 id="projects-title">项目管理</h1>
-          <p>维护浏览器本地的研发项目、预算和费用归集状态。</p>
+          <p>维护数据库中的研发项目、预算和费用归集状态。</p>
         </div>
-        <button className="ui-button ui-button--accent" type="button" onClick={openCreateDialog}>＋ 新建项目</button>
+        <div style={{ display: "flex", gap: 8 }}><Link className="ui-button ui-button--ghost" href={`/rd-cost/data${suffix}`}>数据备份与迁移</Link><button className="ui-button ui-button--accent" type="button" onClick={openCreateDialog}>＋ 新建项目</button></div>
       </div>
 
-      {projects.length ? <div className="rd-project-grid">
+      {loading ? <div className="ui-empty rd-project-empty"><h3>正在加载项目数据</h3><p>请稍候…</p></div> : loadError ? <div className="ui-empty rd-project-empty"><h3>项目数据暂不可用</h3><p>{loadError}</p></div> : projects.length ? <div className="rd-project-grid">
         {projects.map((project) => {
           const rate = progress(project);
           return <article className="rd-project-card" key={project.id}>
@@ -162,9 +173,9 @@ export default function ProjectsPage() {
 
       <dialog className="ui-dialog rd-project-dialog" ref={createDialog} aria-labelledby="create-project-title">
         <form onSubmit={submitProject}>
-          <div className="ui-dialog-head"><div><p className="rd-dialog-kicker">BROWSER-LOCAL</p><h2 id="create-project-title">新建研发项目</h2></div><button className="ui-button ui-button--ghost ui-button--icon" type="button" aria-label="关闭新建项目对话框" onClick={closeCreateDialog}>×</button></div>
+          <div className="ui-dialog-head"><div><p className="rd-dialog-kicker">RD DATABASE</p><h2 id="create-project-title">新建研发项目</h2></div><button className="ui-button ui-button--ghost ui-button--icon" type="button" aria-label="关闭新建项目对话框" onClick={closeCreateDialog}>×</button></div>
           <div className="ui-dialog-body rd-project-form">
-            <p className="rd-dialog-description">项目信息仅保存在当前浏览器，可随时导出本地数据备份。</p>
+            <p className="rd-dialog-description">项目信息将保存到公司内网研发数据库，可在数据管理页导出备份。</p>
             <label className="ui-field"><span>项目名称</span><input ref={projectNameInput} className="ui-input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? "project-name-error" : undefined} placeholder="例如：高寒环境燃料电池研发" />{errors.name && <small className="ui-field-error" id="project-name-error">{errors.name}</small>}</label>
             <label className="ui-field"><span>项目编号</span><input className="ui-input" value={form.number} onChange={(event) => setForm({ ...form, number: event.target.value })} aria-invalid={Boolean(errors.number)} aria-describedby={errors.number ? "project-number-error" : undefined} placeholder="例如：RD2026-003" />{errors.number && <small className="ui-field-error" id="project-number-error">{errors.number}</small>}</label>
             <div className="rd-project-form-row"><label className="ui-field"><span>预算金额（元）</span><input className="ui-input" inputMode="decimal" type="number" min="0" step="0.01" value={form.budget} onChange={(event) => setForm({ ...form, budget: event.target.value })} aria-invalid={Boolean(errors.budget)} aria-describedby={errors.budget ? "project-budget-error" : undefined} placeholder="0" />{errors.budget && <small className="ui-field-error" id="project-budget-error">{errors.budget}</small>}</label><label className="ui-field"><span>项目状态</span><select className="ui-select" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as RdProject["status"] })}><option value="init">初始化</option><option value="active">进行中</option><option value="completed">已完成</option></select></label></div>
@@ -175,7 +186,7 @@ export default function ProjectsPage() {
 
       <dialog className="ui-dialog rd-project-dialog" ref={deleteDialog} aria-labelledby="delete-project-title" onClose={() => setPendingDelete(null)}>
         <div className="ui-dialog-head"><div><p className="rd-dialog-kicker rd-dialog-kicker-danger">IRREVERSIBLE</p><h2 id="delete-project-title">删除项目？</h2></div><button className="ui-button ui-button--ghost ui-button--icon" type="button" aria-label="关闭删除项目对话框" onClick={() => deleteDialog.current?.close()}>×</button></div>
-        <div className="ui-dialog-body"><p className="rd-dialog-description">将删除 <strong>{pendingDelete?.number} · {pendingDelete?.name}</strong>，以及该项目下的所有本地费用台账记录。此操作无法撤销。</p></div>
+        <div className="ui-dialog-body"><p className="rd-dialog-description">将删除 <strong>{pendingDelete?.number} · {pendingDelete?.name}</strong>，以及该项目下的所有费用台账记录。此操作无法撤销。</p></div>
         <div className="ui-dialog-footer"><button className="ui-button ui-button--ghost" type="button" onClick={() => deleteDialog.current?.close()}>取消</button><button className="ui-button ui-button--danger" type="button" onClick={confirmDelete}>确认删除</button></div>
       </dialog>
 

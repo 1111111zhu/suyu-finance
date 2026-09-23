@@ -1,0 +1,30 @@
+services:
+  rd-db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${RD_DB_NAME:-rd_finance}
+      POSTGRES_USER: ${RD_DB_ADMIN_USER:-rd_admin}
+      POSTGRES_PASSWORD: ${RD_DB_ADMIN_PASSWORD:?Set RD_DB_ADMIN_PASSWORD in a private environment file}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+      TZ: UTC
+      PGTZ: UTC
+    command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=UTC", "-c", "password_encryption=scram-sha-256"]
+    ports:
+      - "127.0.0.1:${RD_DB_PORT:-5433}:5432"
+    volumes:
+      - rd-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  rd-db-data:
