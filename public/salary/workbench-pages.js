@@ -8,7 +8,9 @@ globalThis.PayrollWorkbenchPages = (() => {
   const label=(name,note='',right='')=>`<div class="wb-section-head"><div><h2>${name}</h2>${note?`<p>${note}</p>`:''}</div>${right}</div>`;
   function sourceRow(sheet,compact=false){
     const st=state.sourceStatus[sheet.key]||{},busy=importSession().busy;
-    return `<div class="wb-source-row"><div class="wb-source-symbol">${sheet.icon}</div><div class="wb-source-info"><strong>${sheet.name}</strong>${compact?'':`<span>${sheet.desc}</span>${st.uploaded?`<small title="${esc(st.filename)}">${esc(st.filename)}${st.rows?' · '+st.rows+' 行':''}${st.demo?' · 示例':''}</small>`:''}`}</div><span class="wb-source-state ${st.uploaded?'ready':''}">${st.uploaded?'✓ 已就绪':sheet.key==='roster'?'先上传此表':'未上传'}</span><input type="file" accept=".xlsx" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'替换':'上传'}</button>${sheet.key==='attendance'?'<button class="btn btn-primary" data-wecom-import>企业微信导入</button>':''}</div>`;
+    const wecomNote=sheet.key==='roster'&&!compact?'<small class="wb-source-integration-note">企微通讯录可供核对人员与部门；计薪仍以花名册为准</small>':'';
+    const directoryButton=sheet.key==='roster'&&!compact?'<button type="button" class="btn" data-wecom-directory>查看企微通讯录</button>':'';
+    return `<div class="wb-source-row"><div class="wb-source-symbol">${sheet.icon}</div><div class="wb-source-info"><strong>${sheet.name}</strong>${compact?'':`<span>${sheet.desc}</span>${st.uploaded?`<small title="${esc(st.filename)}">${esc(st.filename)}${st.rows?' · '+st.rows+' 行':''}${st.demo?' · 示例':''}</small>`:''}${wecomNote}`}</div><span class="wb-source-state ${st.uploaded?'ready':''}">${st.uploaded?'✓ 已就绪':sheet.key==='roster'?'先上传此表':'未上传'}</span><input type="file" accept=".xlsx" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'替换':'上传'}</button>${directoryButton}</div>`;
   }
   function parameterBar(){
     const base=new Date(today.getFullYear(),today.getMonth()-1,1),defaultYear=base.getFullYear(),defaultMonth=String(base.getMonth()+1).padStart(2,'0');
@@ -66,7 +68,6 @@ globalThis.PayrollWorkbenchPages = (() => {
   }
   function bind(){
     if(state.view==='email')bindEmail();
-    content.querySelector('[data-wecom-import]')?.addEventListener('click',()=>{const button=content.querySelector('[data-wecom-import]');button.disabled=true;button.textContent='正在导入…';setTimeout(()=>{state.sourceStatus.attendance={uploaded:true,filename:`企业微信考勤_${currentBatch().month}.xlsx`,rows:employees.length,provider:'wecom'};saveBatchData();render('upload');showToast(`已从企业微信导入 ${employees.length} 人考勤，已写入考勤统计表（演示）`);},550);});
     content.querySelectorAll('[data-rule-anchor]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();document.getElementById(a.dataset.ruleAnchor)?.scrollIntoView({behavior:'smooth',block:'start'});}));
   }
   const legacyMapping=mapping;

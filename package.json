@@ -32,7 +32,7 @@
     "test:db:integration": "node --test 自动化测试/payroll-db.integration.test.mjs",
     "test:rd-db": "node --test 自动化测试/rd-db.integration.test.mjs",
     "payroll:api": "node server/payroll/start.mjs",
-    "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs"
+    "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs 自动化测试/wecom-directory.test.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",

@@ -46,6 +46,10 @@ async function grantApiPrivileges(client,role) {
   await client.query(`GRANT UPDATE(name,month,revision,updated_at) ON payroll.workspaces TO "${role}"`);
   await client.query(`GRANT SELECT,INSERT,DELETE ON payroll.auth_sessions,payroll.auth_login_limits TO "${role}"`);
   await client.query(`GRANT UPDATE(failures) ON payroll.auth_login_limits TO "${role}"`);
+  await client.query(`GRANT SELECT,INSERT ON payroll.wecom_directory_syncs,payroll.wecom_departments,payroll.wecom_members TO "${role}"`);
+  await client.query(`GRANT UPDATE(synced_at,department_count,member_count) ON payroll.wecom_directory_syncs TO "${role}"`);
+  await client.query(`GRANT UPDATE(name,parent_id,leader_userid,active,observed_at) ON payroll.wecom_departments TO "${role}"`);
+  await client.query(`GRANT UPDATE(name,department_ids,direct_leader_userid,position,active,observed_at) ON payroll.wecom_members TO "${role}"`);
 }
 
 async function main() {
