@@ -1,0 +1,9 @@
+.wb-wecom-directory{width:min(920px,calc(100vw - 32px));max-width:920px}
+.wb-wecom-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.wb-wecom-head p{margin:0 0 14px;line-height:1.6}
+.wb-wecom-toolbar{display:flex;gap:10px;margin:12px 0}
+.wb-wecom-toolbar .input{flex:1;min-width:0}
+.wb-wecom-table{max-height:48vh;overflow:auto}
+.wb-wecom-table .wb-table{width:100%}
+.wb-wecom-directory [data-wecom-status]{min-height:20px}
+@media(max-width:620px){.wb-wecom-head,.wb-wecom-toolbar{flex-direction:column}.wb-wecom-toolbar .input,.wb-wecom-toolbar .btn{width:100%}}

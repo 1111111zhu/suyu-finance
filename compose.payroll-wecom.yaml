@@ -1,0 +1,11 @@
+# Optional override for read-only Enterprise WeChat directory sync.
+# Include it only when WECOM_DIRECTORY_SYNC_ENABLED=1 in the private API env file.
+services:
+  payroll-api:
+    secrets:
+      - source: wecom_app_secret
+        target: wecom_app_secret
+
+secrets:
+  wecom_app_secret:
+    file: ${WECOM_APP_SECRET_HOST_FILE:?Set the absolute private WeCom Secret file path}

@@ -47,7 +47,7 @@ export function loginClientAddress(req,trustedProxies=[]) {
   const forwarded=normalizedAddress(req.headers['x-real-ip']);
   return trusted && forwarded!=='unknown'?forwarded:direct;
 }
-export function createPayrollHandler({pool,publicOrigin,production=false,bodyLimit=20*1024*1024,trustedProxies=[]}) {
+export function createPayrollHandler({pool,publicOrigin,production=false,bodyLimit=20*1024*1024,trustedProxies=[],wecomDirectory=null}) {
   let origin;
   try { origin=new URL(publicOrigin); } catch { throw new Error('Invalid PAYROLL_PUBLIC_ORIGIN'); }
   if (!['http:','https:'].includes(origin.protocol) || origin.origin!==publicOrigin || origin.username || origin.password) throw new Error('PAYROLL_PUBLIC_ORIGIN must contain only a valid website origin');
@@ -84,6 +84,18 @@ export function createPayrollHandler({pool,publicOrigin,production=false,bodyLim
       if (path==='/api/payroll/logout' && method==='POST') {
         await auth.logout(token);
         return respond(res,200,{ok:true,data:{user:null}}, {'Set-Cookie':cookie('',0)});
+      }
+      if (path==='/api/payroll/wecom-directory' && method==='GET') {
+        if (!wecomDirectory) throw error('WECOM_NOT_CONFIGURED','企业微信通讯录尚未配置',503);
+        return respond(res,200,{ok:true,data:await wecomDirectory.snapshot()});
+      }
+      if (path==='/api/payroll/wecom-directory/sync' && method==='POST') {
+        if (!wecomDirectory) throw error('WECOM_NOT_CONFIGURED','企业微信通讯录尚未配置',503);
+        const alreadyRunning=wecomDirectory.syncing();
+        if (!alreadyRunning) void wecomDirectory.sync().catch(() => {
+          process.stderr.write('Enterprise WeChat directory sync failed; see the authenticated directory status.\n');
+        });
+        return respond(res,202,{ok:true,data:{syncing:true,alreadyRunning}});
       }
       const actorId=session.user.id;
       const segments=path.slice('/api/payroll/'.length).split('/');
