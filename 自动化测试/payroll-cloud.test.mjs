@@ -380,11 +380,14 @@ test('cloud controls survive header redraw; login clears password and escapes un
   await c.logout(); assert.equal(a.element('cloudList').innerHTML, '');
 });
 
-test('new cloud assets are outside the redrawn header and loaded after core/UI', () => {
+test('cloud module remains available without mounting legacy controls in the current page', () => {
   const html = fs.readFileSync(new URL('index.html',base),'utf8');
-  assert.match(html, /<\/header>\s*<section id="payrollCloud"/);
-  assert.ok(html.indexOf('src="./workbench-cloud.js"') > html.indexOf('src="./workbench-ui.js"'));
-  assert.match(html, /href="\.\/workbench-cloud\.css"/);
+  // The current workbench deliberately leaves the legacy cloud UI unmounted.
+  // Client behavior is exercised above by loading the module explicitly.
+  assert.doesNotMatch(html, /id=["']payrollCloud["']/);
+  assert.doesNotMatch(html, /src=["']\.\/workbench-cloud\.js["']/);
+  assert.doesNotMatch(html, /href=["']\.\/workbench-cloud\.css["']/);
+  assert.ok(fs.existsSync(new URL('workbench-cloud.css', base)));
   assert.doesNotMatch(fs.readFileSync(new URL('workbench-cloud.js',base),'utf8'), /localStorage\s*[.[]|document\.cookie|setInterval/);
 });
 
