@@ -268,12 +268,16 @@ globalThis.PayrollWorkbench = (() => {
       const ready=b.status==='已计算' || b.status==='已归档';
       const netReady=ready && state.payrollStage==='net';
       const rows=netReady?employees:generatedEmployees;
-      b.personnelAnalysis={updatedAt:new Date().toISOString(),people:rows.map(e=>{
+      const people=rows.map(e=>{
         const valid=ready && !e.payrollBlocked && !e.regularizationBlocked && !e.payrollSourceBlocked && !String(e.exception||'').split('；').filter(x=>x && !x.includes('转正日期不在当前计薪月份')).length;
         const netValid=valid && netReady && !(e.deductionIssues||[]).length;
         const contributions=state.sourceStatus.netSocial?.uploaded && state.sourceStatus.netFund?.uploaded;
         return {name:e.name,employeeNumber:String(e.employeeNumber||''),dept:e.dept||'',company:e.company||'',status:e.isIntern?'实习生':e.status||'在职',gross:valid?e.gross:null,net:netValid?e.net:null,cost:netValid&&contributions?e.companyCost:null};
-      })};
+      });
+      // View refreshes and cloud packing may save repeatedly without changing personnel data.
+      // Preserve the timestamp so an unchanged snapshot remains identical for sync and retry.
+      if(!b.personnelAnalysis || JSON.stringify(b.personnelAnalysis.people)!==JSON.stringify(people))
+        b.personnelAnalysis={updatedAt:new Date().toISOString(),people};
     }
 if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=structuredClone(profiles);if(!hydrating)queue=queue.then(persist);notify();};
   async function restore(){

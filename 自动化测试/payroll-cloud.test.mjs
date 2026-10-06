@@ -418,8 +418,18 @@ test('editing after successful save updates banner to unsynced; hostile server m
   const s = server(), a = app({fetch:s.fetch}), c = await a.Cloud.init();
   await c.login('admin','secret-password'); a.imported(); await c.save();
   assert.match(a.element('cloudMessage').textContent, /已保存/);
+  const analysisBefore = plain(a.W.currentBatch().personnelAnalysis);
+  a.run('saveBatchData();saveBatchData();');
+  assert.deepEqual(plain(a.W.currentBatch().personnelAnalysis), analysisBefore,
+    'unchanged local saves preserve personnel content and its analysis timestamp');
+  assert.match(a.element('cloudMessage').textContent, /已保存/,
+    'view refreshes must not mark an unchanged server snapshot dirty');
   a.run("PayrollWorkbench.saveChange(employees[0],'otherAdd',40,'保存后的修改');");
   assert.match(a.element('cloudMessage').textContent, /尚未确认同步/); assert.doesNotMatch(a.element('cloudMessage').textContent, /已保存/);
+  a.run("PayrollWorkbench.currentBatch().personnelAnalysis.updatedAt='2000-01-01T00:00:00.000Z';generatedEmployees[0].dept='更新研发部门';saveBatchData();");
+  assert.equal(a.W.currentBatch().personnelAnalysis.people[0].dept, '更新研发部门');
+  assert.notEqual(a.W.currentBatch().personnelAnalysis.updatedAt, '2000-01-01T00:00:00.000Z',
+    'actual personnel changes receive a new analysis timestamp');
   const attack = '<img src=x onerror=alert(1)>', b = app({fetch:async url => url.endsWith('/session')
     ? response({user:{id:'admin-x',username:'admin',displayName:attack},csrfToken:'token'}) : failure(503,attack)});
   const d = await b.Cloud.init(); await assert.rejects(d.refresh());
