@@ -57,11 +57,24 @@ export async function grantRdRuntimePrivileges(pool, { runtimeRole }) {
     if (!attributes || attributes.rolsuper || attributes.rolcreatedb || attributes.rolcreaterole) throw new Error('Expected an existing restricted RD runtime role.');
     await client.query('BEGIN');
     await client.query(`GRANT USAGE ON SCHEMA rd TO "${runtime}"`);
-    await client.query(`GRANT SELECT,INSERT,DELETE ON rd.projects,rd.ledger_entries,rd.import_requests TO "${runtime}"`);
-    await client.query(`GRANT UPDATE(updated_at) ON rd.projects TO "${runtime}"`);
-    await client.query(`GRANT SELECT ON rd.platforms TO "${runtime}"`);
+    await client.query(`REVOKE DELETE ON rd.projects,rd.ledger_entries,rd.import_requests FROM "${runtime}"`);
+    await client.query(`GRANT DELETE ON rd.ledger_entries TO "${runtime}"`);
+    await client.query(`REVOKE UPDATE,DELETE ON rd.payroll_labor_snapshots,rd.artifact_registry FROM "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT,DELETE ON rd.access_sessions,rd.access_oauth_states TO "${runtime}"`);
+    await client.query(`GRANT UPDATE(role,display_name,checked_at) ON rd.access_sessions TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.payroll_labor_snapshots TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT,UPDATE ON rd.payroll_sync_tasks,rd.payroll_labor_current TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.projects,rd.ledger_entries,rd.import_requests TO "${runtime}"`);
+    await client.query(`GRANT UPDATE(updated_at,status,completed_at,deleted_at,deletion_group) ON rd.projects TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.platforms TO "${runtime}"`);
+    await client.query(`GRANT UPDATE(deleted_at,deletion_group) ON rd.platforms TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.result_files,rd.artifact_registry TO "${runtime}"`);
     await client.query(`GRANT SELECT ON rd.annual_platforms,rd.project_detail_rows TO "${runtime}"`);
-    await client.query(`GRANT SELECT,INSERT ON rd.calculation_runs TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT,UPDATE ON rd.calculation_runs TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.platform_ledger_entries TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT,UPDATE ON rd.analysis_imports TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.analysis_import_lines TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT ON rd.project_documents TO "${runtime}"`);
     await client.query('COMMIT');
     return { runtime };
   } catch (error) {

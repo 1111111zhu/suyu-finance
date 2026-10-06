@@ -4,5 +4,5 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: Context) {
-  try { assertRdAuthorized(request); return Response.json({ ledger: await rdRepository().listLedger((await context.params).id) }); } catch (error) { return rdError(error); }
+  try { await assertRdAuthorized(request); return Response.json({ ledger: await rdRepository().listLedger((await context.params).id) }); } catch (error) { return rdError(error); }
 }

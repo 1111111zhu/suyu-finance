@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    assertRdAuthorized(request);
+    await assertRdAuthorized(request);
     assertSameOrigin(request);
     return Response.json(await rdRepository().importLegacy(await jsonBody(request)), { status: 201 });
   } catch (error) { return rdError(error); }

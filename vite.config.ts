@@ -3,6 +3,8 @@ import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
 import { defineConfig } from 'vite';
 import hostingConfig from './.openai/hosting.json';
+import { accessViteMiddleware } from './server/access/vite-middleware.mjs';
+import { payrollViteMiddleware } from './server/payroll/vite-middleware.mjs';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
@@ -47,17 +49,16 @@ export default defineConfig(async () => {
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
     server: {
+      host: process.env.RD_LOCAL_PREVIEW ? '127.0.0.1' : undefined,
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
-      // The payroll API runs as a separate Node process; production uses Nginx.
-      proxy: { '/api/payroll': { target: 'http://127.0.0.1:3002' } },
     },
     plugins: [
+      ...(process.env.RD_LOCAL_PREVIEW ? [accessViteMiddleware(), payrollViteMiddleware()] : []),
       vinext(),
-      sites(),
-      cloudflare({
+      ...process.env.RD_LOCAL_PREVIEW ? [] : [sites(), cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
         config: localBindingConfig,
-      }),
+      })],
     ],
   };
 });

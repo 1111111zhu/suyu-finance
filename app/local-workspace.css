@@ -10,3 +10,13 @@
   .local-subnav-item{min-height:34px;font-size:13px}
   .local-subnav-item>svg:first-child{width:16px;height:16px;flex-basis:16px}
 }
+
+/* Expanded groups stay in the menu flow, so their items cannot cover one another. */
+@media(max-width:640px){
+  :root{--local-sidebar:155px}
+  .local-sidebar{padding:20px 12px}
+  .local-nav-toggle,.local-subnav-item{justify-content:flex-start;font-size:13px;gap:8px;padding:7px 4px}
+  .local-nav-toggle span,.local-subnav-item span{display:inline;white-space:normal}
+  .local-nav-group.expanded .local-subnav{position:static;width:auto;margin-left:15px;padding:2px 0;border:0;box-shadow:none;background:transparent}
+  .local-nav-group.expanded .local-subnav-item{padding:7px 2px;font-size:12px}
+}

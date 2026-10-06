@@ -46,7 +46,7 @@ globalThis.PayrollWorkbench = (() => {
   function calculatedGross(profile,month,days) {
     const k=key(profile), o=overrides(profile,'gross');
     rawProfiles.set(k,structuredClone(profile));
-    const roster=profile.rosterRow?sourceRows.roster?.[profile.rosterRow-2]:null;
+    const roster=profile.rosterRow?sourceRows.roster?.[profile.rosterRow-(sourceRows.roster?.sourceStartRow||2)]:null;
     const p={...profile,employeeNumber:String(rowValue(roster,['工号','员工编号','员工工号'])||profile.employeeNumber||profile.id)};
     for(const [field,value] of Object.entries(o)) if(!computedFields.has(field)) p[field]=value;
     if(Object.hasOwn(o,'actualPaidDays')) p.paidDayIssues=(p.paidDayIssues||[]).filter(x=>!(/实发薪天数|未上传考勤|考勤统计表中未找到/.test(x)));
@@ -262,7 +262,20 @@ globalThis.PayrollWorkbench = (() => {
   };
   function openDB(){return new Promise((resolve,reject)=>{if(!globalThis.indexedDB){reject(new Error('本地存储不可用'));return;}const req=indexedDB.open('payroll-workbench-local',1);req.onupgradeneeded=()=>req.result.createObjectStore('workspace');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
   async function persist(){const snapshot=structuredClone(state.batches);try{const db=await openDB();await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(snapshot,'batches');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();storageError='';}catch(e){storageError=e.message||'无法保存到本机';}}
-  saveBatchData=()=>{original.save();if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=structuredClone(profiles);if(!hydrating)queue=queue.then(persist);notify();};
+  saveBatchData=()=>{original.save();
+    const b=currentBatch(), real=state.liveImport && b.draftOrigin!=='demo' && !Object.values(state.sourceStatus).some(st=>st?.demo);
+    if(real){
+      const ready=b.status==='已计算' || b.status==='已归档';
+      const netReady=ready && state.payrollStage==='net';
+      const rows=netReady?employees:generatedEmployees;
+      b.personnelAnalysis={updatedAt:new Date().toISOString(),people:rows.map(e=>{
+        const valid=ready && !e.payrollBlocked && !e.regularizationBlocked && !e.payrollSourceBlocked && !String(e.exception||'').split('；').filter(x=>x && !x.includes('转正日期不在当前计薪月份')).length;
+        const netValid=valid && netReady && !(e.deductionIssues||[]).length;
+        const contributions=state.sourceStatus.netSocial?.uploaded && state.sourceStatus.netFund?.uploaded;
+        return {name:e.name,employeeNumber:String(e.employeeNumber||''),dept:e.dept||'',company:e.company||'',status:e.isIntern?'实习生':e.status||'在职',gross:valid?e.gross:null,net:netValid?e.net:null,cost:netValid&&contributions?e.companyCost:null};
+      })};
+    }
+if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=structuredClone(profiles);if(!hydrating)queue=queue.then(persist);notify();};
   async function restore(){
     hydrating=true;
     try{const db=await openDB();const saved=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('batches');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});db.close();

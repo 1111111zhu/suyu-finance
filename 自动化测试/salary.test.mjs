@@ -12,6 +12,55 @@ function app(){
  vm.runInContext('render=()=>{};showToast=()=>{};',context);
  return code=>vm.runInContext(code,context);
 }
+function directory(){
+ const context=vm.createContext({document:{getElementById:()=>null},window:{},Date});
+ vm.runInContext(fs.readFileSync(new URL('../public/salary/payroll-engine.js',import.meta.url),'utf8'),context);
+ vm.runInContext(fs.readFileSync(new URL('../public/salary/personnel-directory.js',import.meta.url),'utf8'),context);
+ return code=>vm.runInContext(code,context);
+}
+test('personnel collection uses payroll roster field mapping without position fallback or bank upload',()=>{
+ const run=directory();
+ const headers=['银行卡号','职位','员工状态','姓名','工号','签约公司','三级部门','员工类型','入职时间','转正日期'];
+ run(`globalThis.testHeaders=${JSON.stringify(headers)}`);
+ run('globalThis.testMap=PayrollEngine.rosterFieldMap(testHeaders)');
+ assert.equal(run('testMap.map.name'),'姓名');
+ assert.equal(run('testMap.map.company'),'签约公司');
+ assert.equal(run('testMap.map.regularizationDate'),'转正日期');
+ run("globalThis.testRoster={headers:testHeaders,index:0,grid:[testHeaders,['6222000011112222','工程师','入职','张三','001','甲公司','研发三部','试用','2026-09-02','2026-10-01']],mapping:testMap,confirmed:new Set()}");
+ const row=JSON.parse(run('JSON.stringify(PersonnelDirectory.normalizedRows(testRoster)[0])'));
+ assert.equal(row.values.status,'入职');
+ assert.equal(row.values.join,'2026-09-02');
+ assert.equal(row.values.regularizationDate,'2026-10-01');
+ assert.equal(row.values.bankCard,undefined);
+ const payload=JSON.parse(run('JSON.stringify(PersonnelDirectory.rosterRowsForApi({...testRoster,rows:PersonnelDirectory.normalizedRows(testRoster)})[0])'));
+ assert.equal(payload.department,null);
+ assert.equal(payload.thirdDepartment,'研发三部');
+ assert.equal(payload.employeeNumber,'001');
+ assert.equal(JSON.stringify(payload).includes('6222000011112222'),false);
+ assert.match(run('PersonnelDirectory.render()'),/登录后显示真实人员数据/);
+});
+test('personnel collection distinguishes current WeCom state, roster history and missing payroll months',()=>{
+ const run=directory();
+ run("PersonnelDirectory.data.user={username:'admin'};PersonnelDirectory.data.directory={configured:true,syncedAt:'2026-09-24T03:00:00Z',fresh:true,departments:[{id:'1',name:'总公司',parentId:'',order:1}],members:[{userid:'w1',name:'甲',departmentIds:['1'],employeeId:'e1'}]};");
+ run("PersonnelDirectory.data.events=[{userid:'w1',type:'regularization_recorded',label:'转正日期（花名册记载）',effectiveOn:'2026-07-05',eventAt:'2026-07-05T00:00:00Z',detectedAt:'2026-09-24T03:00:00Z',source:'花名册',sourceDetail:{fileName:'七月花名册.xlsx',sheetName:'在职',rowNumber:3},reason:'需核对计薪月'}];");
+ run("PersonnelDirectory.data.tab='events'");
+ const events=run('PersonnelDirectory.render()');
+ assert.match(events,/2026-07-05（花名册记载）/);
+ assert.match(events,/七月花名册.xlsx/);
+ assert.match(events,/导入记录于/);
+ run("PersonnelDirectory.data.summary={months:[{month:'2026-06',totalNet:100,headcount:1,averageNet:100,cumulativeNet:100,missing:false},{month:'2026-07',totalNet:null,headcount:null,averageNet:null,cumulativeNet:null,missing:true}],people:[]};PersonnelDirectory.data.tab='payroll'");
+ const payroll=run('PersonnelDirectory.render()');
+ assert.match(payroll,/月度实发总额柱状图与区间累计实发折线图/);
+ assert.match(payroll,/无已确认数据（不计为 0）/);
+ assert.match(payroll,/¥ 100.00/);
+ run("PersonnelDirectory.data.conflicts=[{field:'department',reason:'花名册部门与企微部门不同',rosterValue:'旧部门',wecomValue:'新部门',rosterSource:{fileName:'七月花名册.xlsx',sheetName:'在职',rowNumber:3}}];PersonnelDirectory.data.tab='conflicts'");
+ const conflicts=run('PersonnelDirectory.render()');
+ assert.match(conflicts,/七月花名册.xlsx/);
+ assert.match(conflicts,/旧部门/);
+ assert.doesNotMatch(conflicts,/\[object Object\]/);
+ run("PersonnelDirectory.data.tab='current';PersonnelDirectory.data.linkUserid='w1';PersonnelDirectory.data.candidates=[];PersonnelDirectory.data.directory.members[0].employeeId=null");
+ assert.match(run('PersonnelDirectory.render()'),/新建工资员工记录并关联/);
+});
 test('manual month and fractional days update results and export without losing imported employees',()=>{
  const run=app();
  run("sourceRows={roster:[{姓名:'测试',是否入离职:'在职'}],salary:[{姓名:'测试',基本工资:1000}],attendance:[{姓名:'测试',实发薪天数:18,'事假(天)':0.5}]};state.liveImport=true;");
@@ -392,7 +441,7 @@ test('gross payroll export keeps other reduction independent and only leaves unc
  assert.match(run("savedBook['应发工资表'].A5.c[0].t"),/其他工资项目继续生成/);
 });
 
-test('intern roster headers match whenever the header contains internship text and basic salary takes priority',()=>{
+test('explicit internship roster aliases and basic-salary priority are supported',()=>{
  const run=app();
  for(const header of ['是否实习','是否实习生','本月是否为实习生','实习标识']) {
   run(`sourceRows={roster:[{姓名:'正式甲','${header}':'否'},{姓名:'实习甲','${header}':' 是 '}],attendance:[{姓名:'正式甲',实发薪天数:22},{姓名:'实习甲',实发薪天数:18.5}],salary:[{姓名:'正式甲',基本工资:1000},{姓名:'实习甲',基本工资:9999}],other:[{姓名:'实习甲',其他减:500,其他代扣:400}],tax:[{姓名:'实习甲',税:300}]};state.liveImport=true;setInternDailyRate('实习甲',200);recalculateEmployees();`);
@@ -427,7 +476,7 @@ test('intern mapping controls, export contract and salary slip show the basic-sa
  const run=app();captureExports(run);
  run("sourceRows={roster:[{姓名:'正式',是否实习:'否'},{姓名:'实习',是否实习生:'是'}],attendance:[{姓名:'正式',实发薪天数:22},{姓名:'实习',实发薪天数:7.5}],salary:[{姓名:'正式',基本工资:1000},{姓名:'实习',基本工资:9999}]};state.liveImport=true;setInternDailyRate('实习',300);state.payrollStage='gross';recalculateEmployees();");
  assert.match(run('renderMapping()'),/实习生工资设置/);
- assert.match(run('renderMapping()'),/任一表头包含“实习”/);
+ assert.match(run('renderMapping()'),/不模糊匹配其他包含“实习”的列/);
  assert.equal(run('exportHeaders().length'),run('PayrollEngine.fields.length+PayrollEngine.netFields.length-8'));
  assert.equal(run("exportRow(employees.find(e=>e.name==='正式'))[exportHeaders().indexOf('是否实习生')]"),'');
  assert.equal(run("exportRow(employees.find(e=>e.name==='实习'))[exportHeaders().indexOf('是否实习生')]"),'是');

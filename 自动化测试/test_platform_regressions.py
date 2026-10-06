@@ -109,6 +109,7 @@ class PlatformRegressionTests(unittest.TestCase):
             match.group(1)
             .replace(r"\n", "\n")
             .replace('${paths.join(",")}', 'Path("/work/input_1.xlsx")')
+            .replace('${accountingYear}', '2025')
         )
         compile(calculation_source, "browser_calculation_template.py", "exec")
 

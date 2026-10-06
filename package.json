@@ -7,15 +7,12 @@
   },
   "scripts": {
     "dev": "vinext dev",
+    "dev:3220": "RD_LOCAL_PREVIEW=1 node --env-file=.env.local node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3220 --strictPort",
     "dev:rd-local": "node --env-file=.env.local 自动化脚本/start-rd-local.mjs",
-    "test:rd-platforms": "node --test 自动化测试/rd-master-import.integration.test.mjs 自动化测试/rd-platform-batch.integration.test.mjs 自动化测试/rd-db.integration.test.mjs",
+    "test:rd-platforms": "node --test 自动化测试/rd-master-import.integration.test.mjs 自动化测试/rd-platform-batch.integration.test.mjs 自动化测试/rd-db.integration.test.mjs 自动化测试/rd-trash.integration.test.mjs",
+    "test:rd-http": "node --test 自动化测试/rd-management-http.integration.test.mjs",
     "build": "vinext build",
     "start": "vinext start",
-    "sync:policies": "node 自动化脚本/sync-policies.mjs && node 自动化脚本/write-policy-applications.mjs",
-    "presync:policies": "npm run test:policy",
-    "check:policy-integrity": "node 自动化脚本/check-policy-integrity.mjs",
-    "check:policy-links": "node 自动化脚本/check-policy-links.mjs",
-    "test:policy": "node --test 自动化测试/policy-matcher.test.mjs",
     "sync:company-profile": "node 自动化脚本/sync-company-profile.mjs",
     "test:company-profile": "node --test 自动化测试/company-profile.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
@@ -32,7 +29,7 @@
     "test:db:integration": "node --test 自动化测试/payroll-db.integration.test.mjs",
     "test:rd-db": "node --test 自动化测试/rd-db.integration.test.mjs",
     "payroll:api": "node server/payroll/start.mjs",
-    "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs"
+    "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs 自动化测试/wecom-directory.test.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",

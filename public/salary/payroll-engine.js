@@ -1,9 +1,9 @@
 /* Shared browser/Node payroll data rules. No file, network or UI side effects. */
 globalThis.PayrollEngine = (() => {
   const fields = [
-    ['姓名','name','text'],['公司','company','text'],['一级部门','dept','text',['部门','一级部门名称']],
-    ['二级部门','subdept','text',['二级部门名称']],['银行卡号','bankCard','text'],['开户行','bankName','text',['银行']],
-    ['是否入离职','status','text'],['入职日期','join','date'],['离职日期','leave','date'],
+    ['姓名','name','text',['员工姓名']],['公司','company','text',['签约公司']],['一级部门','dept','text',['部门','一级部门名称']],
+    ['二级部门','subdept','text',['二级部门名称']],['银行卡号','bankCard','text',['银行卡']],['开户行','bankName','text',['银行','开户银行']],
+    ['是否入离职','status','text',['员工状态','在职状态','入离职状态']],['入职日期','join','date',['入职时间','入职日']],['离职日期','leave','date',['离职时间','离职日']],
     ['应发薪','workdays','number',['应发薪天数']],['实发薪天数','payableDays','number'],
     ['基本工资','base','money',['工资基数']],['岗位工资','post','money'],['绩效基数','perfBase','money'],
     ['绩效分数','effectiveScore','number',['绩效系数']],['绩效工资','performancePay','money'],['工资小计','subtotal','money'],
@@ -14,7 +14,7 @@ globalThis.PayrollEngine = (() => {
     ['事假天数','personal','number',['事假(天)']],['旷工天数','absent','number',['旷工(天)']],
     ['假勤扣薪天数','deductDays','number'],['假勤扣款','attendanceDeduct','money'],['其他减','otherReduction','money'],
     ['应发工资','gross','money'],['个人社保','social','money',['个人总计']],['个人公积金','fund','money',['个人缴纳']],
-    ['是否实习生','isIntern','intern',['是否实习','实习标识']],['日薪','dailyRate','money'],
+    ['是否实习生','isIntern','intern',['是否实习','实习标识','本月是否为实习生','实习']],['日薪','dailyRate','money'],
     ['转正日期','regularizationDate','date',['转正日','转正时间']],
     ['转正前应出勤天数','probationWorkdays','number',['试用期应出勤天数','转正前出勤天数','试用期计薪天数']],
     ['转正后应出勤天数','regularWorkdays','number',['转正后出勤天数','转正后计薪天数']],
@@ -29,6 +29,25 @@ globalThis.PayrollEngine = (() => {
     ['公司缴纳公积金','companyFund','money',['公司缴纳','公司缴纳（公积金）']],['公司总成本','companyCost','money'],['备注','remark','text']
   ];
   const key = value => String(value ?? '').trim().replace(/\s+/g,'').replace(/（/g,'(').replace(/）/g,')');
+  // A roster is mapped by explicit labels, never by column order or fuzzy substrings.
+  // Keep salary-facing aliases in fields/netFields in sync with database/payroll/fields.mjs.
+  const rosterFields = Object.freeze([
+    ['name','姓名',['员工姓名']],
+    ['employeeNumber','工号',['员工编号','员工工号']],
+    ['company','公司',['签约公司']],
+    ['dept','一级部门',['一级部门名称','部门']],
+    ['subdept','二级部门',['二级部门名称']],
+    ['thirdDept','三级部门',['三级部门名称']],
+    ['position','职位',['岗位','岗位名称','职务']],
+    ['status','是否入离职',['员工状态','在职状态','入离职状态']],
+    ['employmentType','员工类型',['人员类型','用工类型','员工类别']],
+    ['isIntern','是否实习生',['是否实习','实习标识','本月是否为实习生','实习']],
+    ['join','入职日期',['入职时间','入职日']],
+    ['leave','离职日期',['离职时间','离职日']],
+    ['regularizationDate','转正日期',['转正日','转正时间']],
+    ['bankCard','银行卡号',['银行卡']],
+    ['bankName','开户行',['开户银行','银行']]
+  ]);
   const nameKey = value => String(value ?? '').trim();
   const blank = value => value == null || (typeof value === 'string' && !value.trim());
   const intern = value => ['是','实习生','1','TRUE','Y'].includes(String(value ?? '').trim().toUpperCase());
@@ -44,7 +63,112 @@ globalThis.PayrollEngine = (() => {
   function canonicalHeader(header) {
     const found=[...fields,...netFields].find(([label,,,aliases=[]])=>[label,...aliases].some(alias=>key(alias)===key(header)));
     if (found) return found[0];
-    return key(header).includes('实习') ? '是否实习生' : key(header);
+    return key(header);
+  }
+  function rosterIssue(field,reason,headers,message) { return {field,reason,headers,message}; }
+  function rosterFieldMap(headers) {
+    const map={},sources={},issues=[];
+    const names=Array.from(headers || [],header=>String(header ?? '').trim()).filter(Boolean);
+    for(const [field,label,aliases] of rosterFields) {
+      const standard=names.filter(header=>key(header)===key(label));
+      const alternative=names.filter(header=>aliases.some(alias=>key(header)===key(alias)));
+      const matches=[...standard,...alternative];
+      if(!matches.length) {
+        if(field==='name') issues.push(rosterIssue(field,'missing',[],`缺少必需表头“${label}”`));
+        continue;
+      }
+      if(standard.length===1) {map[field]=standard[0];sources[field]=standard[0];}
+      else if(!standard.length && alternative.length===1) {map[field]=alternative[0];sources[field]=alternative[0];}
+      if(matches.length>1) issues.push(rosterIssue(field,'ambiguous',matches,`“${label}”匹配到多列：${matches.join('、')}；${map[field]?'已优先使用标准表头，':'无法自动选择，'}请人工核对`));
+    }
+    return {map,issues,sources};
+  }
+  function validDateParts(year,month,day) {
+    if(year<1 || month<1 || month>12) return false;
+    const leap=year%4===0 && (year%100!==0 || year%400===0);
+    return day>=1 && day<=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][month-1];
+  }
+  function rosterDate(value) {
+    if(blank(value)) return '';
+    if(Object.prototype.toString.call(value)==='[object Date]') {
+      if(Number.isNaN(value.getTime())) return null;
+      return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
+    }
+    if(typeof value==='number') {
+      if(!Number.isFinite(value) || value<1 || value>2958465) return null;
+      const date=new Date(Date.UTC(1899,11,30)+Math.floor(value)*86400000);
+      return date.toISOString().slice(0,10);
+    }
+    const match=String(value).trim().match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})(?:日)?$/);
+    if(!match || !validDateParts(Number(match[1]),Number(match[2]),Number(match[3]))) return null;
+    return `${match[1]}-${match[2].padStart(2,'0')}-${match[3].padStart(2,'0')}`;
+  }
+  function rosterStatus(value) {
+    const token=String(value ?? '').trim();
+    if(['在职','正常','在岗','正职','转正','调动','调岗'].includes(token)) return '在职';
+    if(['入职','新入职','本月入职'].includes(token)) return '入职';
+    if(['离职','已离职','本月离职'].includes(token)) return '离职';
+    return null;
+  }
+  function rosterEmploymentType(value) {
+    const token=String(value ?? '').trim();
+    if(['正式','正式员工','正式工','正职','全职'].includes(token)) return '正式';
+    if(['试用','试用期','试用员工','试用期员工'].includes(token)) return '试用';
+    if(['实习','实习生','实习员工'].includes(token)) return '实习';
+    // Occupational categories establish non-intern status, not regularization.
+    if(['技术人员','经理','普通员工'].includes(token)) return token;
+    return null;
+  }
+  function rosterInternFlag(value) {
+    if(typeof value==='boolean') return value;
+    const token=String(value ?? '').trim().toUpperCase();
+    if(['是','实习','实习生','1','TRUE','Y'].includes(token)) return true;
+    if(['否','非实习生','0','FALSE','N'].includes(token)) return false;
+    return null;
+  }
+  function normalizeRosterRow(rawRow, headerMap=rosterFieldMap(Object.keys(rawRow || {}))) {
+    const mapping=headerMap?.map || headerMap || {},values={},sources={},issues=[...(headerMap?.issues || [])];
+    for(const [field,label] of rosterFields) {
+      const header=mapping[field];if(!header) continue;
+      sources[field]=header;
+      const raw=rawRow?.[header];
+      if(blank(raw)) continue;
+      if(['join','leave','regularizationDate'].includes(field)) {
+        const value=rosterDate(raw);
+        if(value===null) issues.push(rosterIssue(field,'invalid',[header],`“${label}”日期无效，请使用真实的 YYYY-MM-DD 日期`));
+        else values[field]=value;
+      } else if(field==='status') {
+        const value=rosterStatus(raw);
+        if(value===null) issues.push(rosterIssue(field,'invalid',[header],`“${label}”取值无法判定入职、在职或离职，请人工核对`));
+        else values[field]=value;
+      } else if(field==='employmentType') {
+        const value=rosterEmploymentType(raw);
+        if(value===null) issues.push(rosterIssue(field,'invalid',[header],`“${label}”取值无法判定正式、试用或实习，请人工核对`));
+        else values[field]=value;
+      } else if(field==='isIntern') {
+        const value=header===mapping.employmentType
+          ? (rosterEmploymentType(raw)===null ? null : rosterEmploymentType(raw)==='实习')
+          : rosterInternFlag(raw);
+        if(value===null) issues.push(rosterIssue(field,'invalid',[header],`“${label}”取值无法判定是否实习，请人工核对`));
+        else values[field]=value;
+      } else {
+        if(['employeeNumber','bankCard'].includes(field) && typeof raw!=='string')
+          issues.push(rosterIssue(field,'text-required',[header],`“${label}”必须在 Excel 中保存为文本，数字单元格可能丢失前导零，请核对原表`));
+        values[field]=String(raw).trim();
+      }
+    }
+    if(!values.name) issues.push(rosterIssue('name','missing',sources.name?[sources.name]:[],'姓名为空，无法建立工资人员关联'));
+    if(!values.status && !issues.some(issue=>issue.field==='status')) issues.push(rosterIssue('status','missing',sources.status?[sources.status]:[],'员工状态缺失，不能确认计薪月入离职规则'));
+    if(values.status==='入职' && !values.join && !issues.some(issue=>issue.field==='join'))
+      issues.push(rosterIssue('join','missing',sources.join?[sources.join]:[],'入职状态缺少入职日期，不能确认入职 15 日绩效规则'));
+    if(values.status==='离职' && !values.leave && !issues.some(issue=>issue.field==='leave'))
+      issues.push(rosterIssue('leave','missing',sources.leave?[sources.leave]:[],'离职状态缺少离职日期，不能确认离职记录'));
+    if(values.isIntern===undefined && !values.employmentType && !issues.some(issue=>['employmentType','isIntern'].includes(issue.field)))
+      issues.push(rosterIssue('employmentType','missing',[], '缺少明确的员工类型或是否实习标识，不能确认工资类型'));
+    if(values.employmentType && values.isIntern!==undefined && (values.employmentType==='实习')!==values.isIntern)
+      issues.push(rosterIssue('isIntern','conflict',[sources.employmentType,sources.isIntern],`“${sources.employmentType}”与“${sources.isIntern}”的实习身份不一致，请人工核对`));
+    if(values.isIntern===undefined && values.employmentType) {values.isIntern=values.employmentType==='实习';sources.isIntern=sources.employmentType;}
+    return {values,issues,sources};
   }
   function canonicalRow(row) {
     const result={};
@@ -201,5 +325,5 @@ globalThis.PayrollEngine = (() => {
       return e;
     });
   }
-  return {fields,netFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
+  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();

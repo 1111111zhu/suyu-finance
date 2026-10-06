@@ -1,0 +1,13 @@
+.rd-management-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.rd-management-actions .ui-button--icon svg { width:18px; height:18px; }
+.rd-management-dialog { margin:auto; max-height:calc(100dvh - 32px); max-width:calc(100vw - 32px); overflow-y:auto; }
+.rd-management-dialog .ui-dialog-body { overflow-wrap:anywhere; }
+.rd-trash-list { list-style:none; margin:0; padding:0; }
+.rd-trash-list li { border-top:1px solid var(--ui-line); padding:14px 0; }
+.rd-trash-list li:first-child { border-top:0; }
+.rd-trash-list h3 { margin:0 0 5px; font-size:14px; }
+.rd-trash-list p { margin:5px 0; font-size:12px; color:var(--ui-muted); }
+.rd-management-summary { margin:0; display:grid; gap:12px; }
+.rd-management-summary dt { font-size:12px; color:var(--ui-muted); }
+.rd-management-summary dd { margin:3px 0 0; font-size:14px; }
+.rd-management-inline { display:flex; gap:8px; align-items:center; justify-content:flex-end; }

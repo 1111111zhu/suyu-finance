@@ -1,0 +1,9 @@
+@import "../../../设计规范/设计令牌/tokens.css";
+@import "../../../设计规范/样式/components.css";
+.rd-results { --rd-line:var(--ui-line); --rd-accent:var(--ui-accent); --rd-text:var(--ui-text); --rd-muted:var(--ui-muted); max-width:1160px; margin:0 auto; color:var(--ui-ink); font-family:var(--ui-font-sans); }
+.rd-results .rd-actions label { display:grid; gap:8px; color:var(--ui-muted); font-size:12px; }
+.rd-results .rd-btn { display:inline-flex; align-items:center; justify-content:center; min-height:38px; text-decoration:none; }
+.rd-results button:disabled { opacity:.5; cursor:not-allowed; }
+.rd-results .rd-card-body { padding:22px; }
+.rd-results .rd-page-head { flex-wrap:wrap; }
+.rd-results ul { padding-left:20px; line-height:1.8; }

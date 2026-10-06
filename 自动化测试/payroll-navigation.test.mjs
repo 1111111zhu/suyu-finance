@@ -42,8 +42,8 @@ test('default entry opens the first gross upload step even when payroll data exi
 test('legacy single-view history route opens the batch list instead of the upload page',async()=>{
   const a=await app('#batches');
   assert.equal(a.window.location.hash,'#gross/batches');
-  assert.match(a.element('content').innerHTML,/历史批次/);
-  assert.match(a.element('content').innerHTML,/打开批次/);
+  assert.match(a.element('content').innerHTML,/批次管理/);
+  assert.match(a.element('content').innerHTML,/查看明细/);
   assert.doesNotMatch(a.element('content').innerHTML,/拖入 Excel，自动识别资料/);
 });
 
@@ -98,6 +98,10 @@ test('status filter includes roster statuses and calculated people tags',async()
     {...calcSalary({id:'E',name:'实习戊',company:'溯驭',dept:'研发',status:'在职',base:1000,actualPaidDays:12}),isIntern:true},
     {...calcSalary({id:'F',name:'异动己',company:'溯驭',dept:'研发',status:'在职',base:1000,actualPaidDays:22}),grossAdjustment:100}
   ];state.payrollStage='gross';state.status='全部状态';render('results');`);
+  assert.doesNotMatch(a.element('content').innerHTML, /id="wbCompany"|全部公司/);
+  assert.match(a.element('content').innerHTML, /id="wbDept"/);
+  assert.match(a.element('content').innerHTML, /id="wbStatus"[^>]*><option>全部状态<\/option>/);
+  assert.doesNotMatch(a.element('content').innerHTML, /更多筛选/);
   assert.match(a.element('content').innerHTML,/>转正</);
   assert.match(a.element('content').innerHTML,/>实习生</);
   assert.match(a.element('content').innerHTML,/>薪资异动</);
@@ -107,6 +111,15 @@ test('status filter includes roster statuses and calculated people tags',async()
   a.run("state.status='实习生';render('results');");
   assert.match(a.element('content').innerHTML,/实习戊/);
   assert.doesNotMatch(a.element('content').innerHTML,/转正丁/);
+});
+
+test('removing the company selector cannot leave an invisible company filter active',async()=>{
+  const a=await app();
+  a.run("state.company='不存在的公司';render('results');");
+  const html=a.element('content').innerHTML;
+  assert.doesNotMatch(html,/id="wbCompany"/);
+  assert.match(html,/张三/);
+  assert.match(html,/id="wbStatus"/);
 });
 
 test('step navigation respects unsaved edits and import-in-progress guards',async()=>{

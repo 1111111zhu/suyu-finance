@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { createPayrollRepository } from '../../database/payroll/repository.mjs';
 import { createAuthService,normalizedAddress } from './auth.mjs';
 import { createWorkspaceService } from './workspaces.mjs';
+import { createPayrollSummaryService } from './payroll-summary.mjs';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function error(code,message,status) { return Object.assign(new Error(message),{code,status}); }
@@ -32,7 +33,7 @@ function cookieValue(req,name) {
   return /^[a-zA-Z0-9_-]{40,128}$/.test(token)?token:null;
 }
 function publicError(e) {
-  const statuses={PAYROLL_AUTH_FAILED:401,PAYROLL_RATE_LIMIT:429,PAYROLL_FORBIDDEN:403,PAYROLL_NOT_FOUND:404,PAYROLL_CONFLICT:409,PAYROLL_IDEMPOTENCY_CONFLICT:409,PAYROLL_FROZEN:409,PAYROLL_STALE:409,PAYROLL_VALIDATION:422,PAYROLL_DEMO_REJECTED:422,PAYROLL_TOO_LARGE:413};
+  const statuses={PAYROLL_AUTH_FAILED:401,PAYROLL_RATE_LIMIT:429,PAYROLL_FORBIDDEN:403,PAYROLL_NOT_FOUND:404,PAYROLL_CONFLICT:409,PAYROLL_IDEMPOTENCY_CONFLICT:409,PAYROLL_FROZEN:409,PAYROLL_STALE:409,PAYROLL_VALIDATION:422,PAYROLL_DEMO_REJECTED:422,PAYROLL_TOO_LARGE:413,PAYROLL_UNAVAILABLE:503,WECOM_NOT_CONFIGURED:503};
   const status=e.status||statuses[e.code];
   if (status) return {status,code:e.code,message:e.message};
   if (/^(22|23)/.test(e.code||'')) return {status:422,code:'PAYROLL_DATA_INVALID',message:'数据字段、人员关联或结果状态不符合要求，请核对后重试'};
@@ -47,7 +48,7 @@ export function loginClientAddress(req,trustedProxies=[]) {
   const forwarded=normalizedAddress(req.headers['x-real-ip']);
   return trusted && forwarded!=='unknown'?forwarded:direct;
 }
-export function createPayrollHandler({pool,publicOrigin,production=false,bodyLimit=20*1024*1024,trustedProxies=[]}) {
+export function createPayrollHandler({pool,publicOrigin,production=false,bodyLimit=20*1024*1024,trustedProxies=[],personnelService=null,corpId=null,confirmationService=null,wecomDirectory=null,workspaceAuth=null}) {
   let origin;
   try { origin=new URL(publicOrigin); } catch { throw new Error('Invalid PAYROLL_PUBLIC_ORIGIN'); }
   if (!['http:','https:'].includes(origin.protocol) || origin.origin!==publicOrigin || origin.username || origin.password) throw new Error('PAYROLL_PUBLIC_ORIGIN must contain only a valid website origin');
@@ -57,6 +58,8 @@ export function createPayrollHandler({pool,publicOrigin,production=false,bodyLim
   const cookieName=secure?'__Host-payroll_session':'payroll_session';
   const cookie=(token,maxAge)=>`${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure?'; Secure':''}`;
   const auth=createAuthService(pool),db=createPayrollRepository(pool),workspaces=createWorkspaceService(pool);
+  const payrollSummary=createPayrollSummaryService({pool,corpId});
+  const legacyDirectory=wecomDirectory||personnelService;
   return async function handler(req,res) {
     try {
       const url=new URL(req.url,'http://internal.invalid');
@@ -71,12 +74,13 @@ export function createPayrollHandler({pool,publicOrigin,production=false,bodyLim
       const writing=!['GET','HEAD'].includes(method);
       if (writing && (req.headers.origin!==origin.origin || req.headers['sec-fetch-site']==='cross-site')) throw error('PAYROLL_ORIGIN','请从本网站提交操作',403);
       const token=cookieValue(req,cookieName);
-      if (path==='/api/payroll/login' && method==='POST') {
+      if (workspaceAuth && path==='/api/payroll/login') throw error('PAYROLL_LOGIN_DISABLED','请使用企业微信工作台登录',403);
+      if (!workspaceAuth && path==='/api/payroll/login' && method==='POST') {
         const body=await readJSON(req,4096);
         const session=await auth.login({username:body.username,password:body.password,clientAddress:loginClientAddress(req,trustedProxies)});
         return respond(res,200,{ok:true,data:{user:session.user,csrfToken:session.csrfToken}}, {'Set-Cookie':cookie(session.token,8*60*60)});
       }
-      const session=token?await auth.authenticate(token):null;
+      const session=workspaceAuth?await workspaceAuth(req):token?await auth.authenticate(token):null;
       if (path==='/api/payroll/session' && method==='GET') return respond(res,200,{ok:true,data:session?{user:session.user,csrfToken:session.csrfToken}:{user:null}});
       if (!session) throw error('PAYROLL_AUTH_REQUIRED','请先登录工资管理员账号',401);
       if (writing && (!session.csrfToken || req.headers['x-csrf-token']!==session.csrfToken)) throw error('PAYROLL_CSRF','登录状态已变更，请刷新后重试',403);
@@ -85,7 +89,42 @@ export function createPayrollHandler({pool,publicOrigin,production=false,bodyLim
         await auth.logout(token);
         return respond(res,200,{ok:true,data:{user:null}}, {'Set-Cookie':cookie('',0)});
       }
+      if (path==='/api/payroll/wecom-directory' && method==='GET') {
+        if (!legacyDirectory) throw error('WECOM_NOT_CONFIGURED','企业微信通讯录尚未配置',503);
+        return respond(res,200,{ok:true,data:await legacyDirectory.snapshot()});
+      }
+      if (path==='/api/payroll/wecom-directory/sync' && method==='POST') {
+        if (!legacyDirectory) throw error('WECOM_NOT_CONFIGURED','企业微信通讯录尚未配置',503);
+        const alreadyRunning=legacyDirectory.syncing();
+        if (!alreadyRunning) void legacyDirectory.sync().catch(() => {
+          process.stderr.write('Enterprise WeChat directory sync failed; see the authenticated directory status.\n');
+        });
+        return respond(res,202,{ok:true,data:{syncing:true,alreadyRunning}});
+      }
       const actorId=session.user.id;
+      if (path.startsWith('/api/payroll/personnel/')) {
+        const part=path.slice('/api/payroll/personnel/'.length);
+        let result;
+        if (part==='payroll-summary' && method==='GET') result=await payrollSummary.summary(Object.fromEntries(url.searchParams));
+        else if (part==='directory' && method==='GET') result=personnelService ? await personnelService.snapshot()
+          : {configured:false,syncedAt:null,fresh:false,departmentCount:0,memberCount:0,syncing:false,
+            lastError:'企业微信只读应用尚未由管理员在服务端配置',departments:[],members:[]};
+        else if (part==='identity-options' && method==='GET') result=corpId ? (await pool.query(`SELECT l.userid,l.employee_id AS "employeeId",
+            COALESCE(m.name,e.name) AS name,COALESCE(m.active,false) AS active
+            FROM payroll.wecom_employee_links l JOIN payroll.employees e ON e.id=l.employee_id
+            LEFT JOIN payroll.wecom_members m ON m.corp_id=l.corp_id AND m.userid=l.userid
+            WHERE l.corp_id=$1 ORDER BY name,l.userid`,[corpId])).rows : [];
+        else {
+          if (!personnelService) throw error('WECOM_NOT_CONFIGURED','企业微信只读应用尚未在服务端配置；请管理员设置凭据后再同步',503);
+          if (part==='directory/sync' && method==='POST') result=await personnelService.sync();
+          else if (part==='events' && method==='GET') result=await personnelService.listEvents(Object.fromEntries(url.searchParams));
+          else if (part==='rosters' && method==='POST') result=await personnelService.importRoster({...body,actorId});
+          else if (part==='conflicts' && method==='GET') result=await personnelService.listConflicts(Object.fromEntries(url.searchParams));
+          else if (part==='links' && method==='POST') result=await personnelService.link({...body,actorId});
+          else throw error('PAYROLL_NOT_FOUND','接口不存在',404);
+        }
+        return respond(res,200,{ok:true,data:result});
+      }
       const segments=path.slice('/api/payroll/'.length).split('/');
       const [resource,id,action,version]=segments;
       if (id && !UUID.test(id)) throw error('PAYROLL_BAD_ID','记录编号格式无效',400);
@@ -97,6 +136,14 @@ export function createPayrollHandler({pool,publicOrigin,production=false,bodyLim
         else if (segments.length===2 && method==='PUT') result=await workspaces.save({actorId,id,expectedRevision:body.expectedRevision,requestKey:body.requestKey,snapshot:body.snapshot});
         else if (action==='versions' && segments.length===3 && method==='GET') result=await workspaces.versions(actorId,id);
         else if (action==='versions' && segments.length===4 && method==='GET' && /^[1-9]\d{0,8}$/.test(version)) result=await workspaces.get(actorId,id,Number(version));
+        else if (action==='confirm' && segments.length===3 && method==='GET') result=(await pool.query(`SELECT c.workspace_revision AS revision,c.batch_id AS "batchId",c.run_id AS "runId",
+          c.confirmed_at AS "confirmedAt" FROM payroll.workspace_confirmations c
+          JOIN payroll.workspaces w ON w.id=c.workspace_id WHERE c.workspace_id=$1 AND w.owner_id=$2
+          ORDER BY c.workspace_revision DESC LIMIT 1`,[id,actorId])).rows[0]||null;
+        else if (action==='confirm' && segments.length===3 && method==='POST') {
+          if (!confirmationService) throw error('PAYROLL_UNAVAILABLE','正式工资确认服务尚未就绪',503);
+          result=await confirmationService.confirm({...body,actorId,workspaceId:id});
+        }
         else throw error('PAYROLL_NOT_FOUND','接口不存在',404);
         return respond(res,200,{ok:true,data:result});
       }

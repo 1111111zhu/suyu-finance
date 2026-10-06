@@ -82,9 +82,15 @@ const fieldsByKey = new Map(payrollFields.map(field => [field.key, field]));
 
 // Explicit aliases only: an unfamiliar header containing “实习” is not inferred.
 const legacyAliases = {
+  name: ['员工姓名'],
+  company: ['签约公司'],
   dept: ['部门', '一级部门名称'],
   subdept: ['二级部门名称'],
-  bankName: ['银行'],
+  bankCard: ['银行卡'],
+  bankName: ['银行', '开户银行'],
+  status: ['员工状态', '在职状态', '入离职状态'],
+  join: ['入职时间', '入职日'],
+  leave: ['离职时间', '离职日'],
   workdays: ['应发薪天数'],
   base: ['工资基数'],
   effectiveScore: ['绩效系数'],
@@ -100,7 +106,7 @@ const legacyAliases = {
   otherReduction: ['其他减项'],
   social: ['个人总计'],
   fund: ['个人缴纳'],
-  isIntern: ['是否实习', '实习标识'],
+  isIntern: ['是否实习', '实习标识', '本月是否为实习生', '实习'],
   dailyRate: ['实习生日薪'],
   regularizationDate: ['转正日', '转正时间'],
   probationWorkdays: ['试用期应出勤天数', '转正前出勤天数', '试用期计薪天数'],

@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
-    assertRdAuthorized(request);
+    await assertRdAuthorized(request);
     const data = await rdRepository().exportData();
     return new Response(JSON.stringify(data, null, 2), {
       headers: {

@@ -7,7 +7,7 @@ rule_set:
 
 identification:
   # 项目编码正则只是结构候选；正式识别还会核对项目名称、两行表头和数字矩阵。
-  project_code_pattern: '^RD[0-9A-Z]+(?:-[0-9A-Z]+)*$'
+  project_code_pattern: '^R[DC][0-9A-Z]+(?:-[0-9A-Z]+)*$'
   minimum_project_columns: 2
   minimum_employee_rows: 2
   auto_confirm_threshold: 0.70

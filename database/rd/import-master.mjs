@@ -97,7 +97,13 @@ function projectValues(project) {
   };
 }
 
-function status(raw) { return raw === '运行' ? 'active' : raw === '完成' ? 'completed' : 'init'; }
+function status(raw) {
+  if (raw === '运行') return 'active';
+  if (raw === '暂停' || raw === '暂缓') return 'paused';
+  if (raw === '停止' || raw === '关闭') return 'stopped';
+  if (raw === '完成') return 'completed';
+  return 'init';
+}
 
 async function existingState(client) {
   const platforms = await client.query('SELECT id,name,number FROM rd.platforms');

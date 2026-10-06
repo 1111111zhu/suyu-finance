@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import sys
+import tempfile
 import unicodedata
 from collections import OrderedDict, defaultdict
 from copy import copy
@@ -36,7 +37,7 @@ PACK_INFO = {"id": "rd_cost_workflow_v1", "name": "一键综合核算（工时�
 MONEY = Decimal("0.01")
 DISPLAY_RATE = Decimal("0.0001")
 TOLERANCE = Decimal("0.000001")
-PROJECT_RE = re.compile(r"^RD[0-9A-Z]+(?:-[0-9A-Z]+)*$", re.I)
+PROJECT_RE = re.compile(r"^R[DC][0-9A-Z]+(?:-[0-9A-Z]+)*$", re.I)
 MONTH_RE = re.compile(r"(?:1[0-2]|[1-9]|一|二|三|四|五|六|七|八|九|十|十一|十二)月")
 CHINESE_MONTHS = {
     "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
@@ -644,7 +645,7 @@ def allocate_salary(
 def parse_dimension_text(values: Iterable[Any]) -> tuple[str, str, str, str]:
     text = " / ".join(norm(value) for value in values if norm(value))
     fee = re.search(r"费用项目[^\[]*\[([A-Z0-9_]+)\]\s*([^/]+)", text, re.I)
-    project = re.search(r"研发项目[^\[]*\[(RD[0-9A-Z-]+)\]\s*([^/]+)", text, re.I)
+    project = re.search(r"研发项目[^\[]*\[(R[DC][0-9A-Z-]+)\]\s*([^/]+)", text, re.I)
     return (
         fee.group(1).upper() if fee else "",
         norm(fee.group(2)) if fee else "",
@@ -686,7 +687,7 @@ def parse_summary_sheet(path: Path, ws: Any, warnings: list[str]) -> tuple[list[
         rule = fee_rule_for_text(source_fee)
         if rule is None:
             continue
-        parsed = re.search(r"(RD[0-9A-Z]+(?:-[0-9A-Z]+)*)\s*(.*)", project_text, re.I)
+        parsed = re.search(r"(R[DC][0-9A-Z]+(?:-[0-9A-Z]+)*)\s*(.*)", project_text, re.I)
         if not parsed:
             if not project_text and COST_RULES.get("summary_input", {}).get("blank_project_policy") == "rd9999_public_allocation":
                 project_code, project_name = "RD9999", "研发公摊"
@@ -915,7 +916,7 @@ def parse_combination_summary_sheet(
                     current_fee_name = known_rule["name"]
         if not current_fee_code or not project_text or fee_text.endswith("小计"):
             continue
-        project_match = re.search(r"(RD\s*[0-9A-Z]+(?:\s*-\s*[0-9A-Z]+)*)\s*(.*)", project_text, re.I)
+        project_match = re.search(r"(R[DC]\s*[0-9A-Z]+(?:\s*-\s*[0-9A-Z]+)*)\s*(.*)", project_text, re.I)
         if project_match is None:
             warnings.append(f"{ws.title}!{get_column_letter(project_col)}{row} 未识别研发项目，未进入费用分配")
             continue
@@ -1023,13 +1024,13 @@ def parse_ledger_file(path: Path, warnings: list[str]) -> tuple[list[LedgerRecor
             if (
                 posting_date in (None, "")
                 and voucher_no in (None, "")
-                and re.search(r"RD\s*[0-9A-Z]+", summary, re.I) is None
+                and re.search(r"R[DC]\s*[0-9A-Z]+", summary, re.I) is None
             ):
                 continue
             project_code = code_key(ws.cell(row, project_col).value) if project_col else fixed_project_code
             project_name = norm(ws.cell(row, project_name_col).value) if project_name_col else fixed_project_name
             if not project_code:
-                parsed = re.search(r"(RD[0-9A-Z]+(?:-[0-9A-Z]+)*)\s+([^,，;；]+)", summary, re.I)
+                parsed = re.search(r"(R[DC][0-9A-Z]+(?:-[0-9A-Z]+)*)\s+([^,，;；]+)", summary, re.I)
                 if parsed:
                     project_code, project_name = code_key(parsed.group(1)), norm(parsed.group(2))
             records.append(LedgerRecord(
@@ -3137,6 +3138,8 @@ def build_output(
     dimension_ledger_path: Path | list[Path],
     expense_detail_paths: list[Path],
     output_path: Path,
+    accounting_year: int | None = None,
+    accounting_month: int | None = None,
 ) -> dict[str, Any]:
     dimension_paths = dimension_ledger_path if isinstance(dimension_ledger_path, list) else [dimension_ledger_path]
     source_paths = [hours_path, salary_path, *dimension_paths, *expense_detail_paths]
@@ -3192,7 +3195,7 @@ def build_output(
     expense_detail_records, expense_detail_month = read_expense_detail_workbooks(
         expense_detail_paths, warnings
     )
-    month = ledger_month or expense_detail_month or salary_month or 1
+    month = accounting_month or ledger_month or expense_detail_month or salary_month or 1
     hours_month = hours_workbook_month(hours_path, layout.sheet)
     if hours_month and hours_month != month:
         warnings.append(
@@ -3272,6 +3275,27 @@ def build_output(
         "salary_source": salary_source,
         "ledger_records": len(expense_detail_records),
     }
+    years = set()
+    for record in [*effective_records, *expense_detail_records]:
+        if record.source_kind in {"summary", "combination_summary"}:
+            continue
+        value = norm(record.fiscal_year)
+        if re.fullmatch(r"20[0-9]{2}(?:\.0)?", value):
+            years.add(int(float(value)))
+        elif isinstance(record.posting_date, (date, datetime)):
+            years.add(record.posting_date.year)
+    if len(years) > 1:
+        raise RuleError("上传明细包含多个会计年度，请按年度分批测算")
+    detected_year = next(iter(years)) if years else None
+    if accounting_year is not None and (not isinstance(accounting_year, int) or not 2000 <= accounting_year <= 2100):
+        raise RuleError("核算年度无效")
+    if detected_year and accounting_year and detected_year != accounting_year:
+        raise RuleError(f"上传明细年度为{detected_year}，请修改核算年度后重新测算")
+    effective_year = detected_year or accounting_year
+    if effective_year:
+        for record in effective_records:
+            if record.source_kind in {"summary", "combination_summary"}:
+                record.fiscal_year = effective_year
     output_sheets = write_template_output(
         hours_path,
         layout,
@@ -3288,7 +3312,120 @@ def build_output(
         output_path,
         warnings,
     )
-    return {**audit_data, "month": month, "warnings": warnings, "output_sheets": output_sheets, "application_candidates": application_candidates}
+    # Export the exact rounded project/category matrix used by the fixed workbook.
+    # Freight is already one of these categories; do not add audit other_total again.
+    project_costs = []
+    for code, project in projects.items():
+        costs = [{"category": header, "amount": format(money(values.get(code, Decimal("0"))), ".2f")}
+                 for header, values in master_costs.items()]
+        total = sum((Decimal(item["amount"]) for item in costs), Decimal("0"))
+        project_costs.append({"code": code, "name": project.name, "costs": costs, "total": format(total, ".2f")})
+    return {**audit_data, "month": month, "year": detected_year,
+            "period_years": sorted(years), "project_costs": project_costs,
+            "cost_total": format(sum((Decimal(p["total"]) for p in project_costs), Decimal("0")), ".2f"),
+            "warnings": warnings, "output_sheets": output_sheets, "application_candidates": application_candidates}
+def input_workbook_period(path: Path) -> tuple[int, set[int]]:
+    """Inspect every sheet, never silently select the first of several periods.
+
+    Multi-month row/column layouts require explicit source splitting; a shared
+    payroll or timesheet must never be reused for another month's allocation.
+    """
+    months: set[int] = set()
+    years: set[int] = set()
+
+    def inspect_label(value: Any) -> None:
+        label = norm(value)
+        for match in re.finditer(r"(?<!\d)(20\d{2})年", label):
+            years.add(int(match.group(1)))
+        for match in re.finditer(r"(?<!\d)(0?[1-9]|1[0-2]|十一|十二|十|[一二三四五六七八九])月", label):
+            token = match.group(1)
+            months.add(CHINESE_MONTHS[token] if token in CHINESE_MONTHS else int(token))
+        for match in re.finditer(r"(?<!\d)(20\d{2})[-年/.](0?[1-9]|1[0-2])(?=[月/._\-日\s]|$)", label):
+            years.add(int(match.group(1)))
+            months.add(int(match.group(2)))
+
+    inspect_label(path.stem)
+    wb = load_workbook(path, data_only=True, read_only=False)
+    try:
+        for ws in wb.worksheets:
+            inspect_label(ws.title)
+            for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 40), max_col=min(ws.max_column, 120)):
+                for cell in row:
+                    # Only textual period labels, not project IDs or ordinary numbers.
+                    if isinstance(cell.value, str):
+                        inspect_label(cell.value)
+    finally:
+        wb.close()
+    records, inferred, _ = parse_ledger_file(path, [])
+    if inferred:
+        months.add(inferred)
+    for record in records:
+        if record_month(record):
+            months.add(record_month(record))
+        inspect_label(record.posting_date)
+        fiscal_year = norm(record.fiscal_year)
+        if re.fullmatch(r"20\d{2}(?:\.0)?", fiscal_year):
+            years.add(int(float(fiscal_year)))
+    if len(months) > 1:
+        raise RuleError(f"{path.name}包含不一致或多个期间（" + "、".join(f"{m}月" for m in sorted(months))
+                        + "），请按月分别提供工时、工资及费用工作簿；不能自动共用或混算")
+    return next(iter(months), 0), years
+
+
+def build_outputs(paths: list[Path], output_dir: Path, accounting_year: int | None = None) -> dict[str, Any]:
+    """Calculate independently labelled monthly file sets using the fixed template.
+
+    Validate all groups before calculation and publish files only after every
+    month succeeds. Inputs and the template remain read-only.
+    """
+    if not OUTPUT_TEMPLATE.is_file():
+        raise RuleError(f"缺少固定输出模板：{OUTPUT_TEMPLATE.name}")
+    template = load_workbook(OUTPUT_TEMPLATE, read_only=True)
+    try:
+        required = {"研发项目主表", "研发人员工时统计", TEMPLATE_MONTH_SHEET}
+        if not required.issubset(template.sheetnames):
+            raise RuleError("固定输出模板工作表结构不完整")
+    finally:
+        template.close()
+    if not paths:
+        raise RuleError("请上传待核算文件")
+    groups: dict[int, list[Path]] = defaultdict(list)
+    years: set[int] = set()
+    for path in paths:
+        month, source_years = input_workbook_period(path)
+        groups[month].append(path)
+        years.update(source_years)
+    if len(years) > 1:
+        raise RuleError("上传资料包含多个会计年度，请按年度分批测算")
+    if years and accounting_year and years != {accounting_year}:
+        raise RuleError("上传资料年度与核算年度不一致，请修改核算年度后重新测算")
+    known_months = set(groups) - {0}
+    if len(known_months) > 1 and 0 in groups:
+        raise RuleError("多月测算无法确定以下文件的月份：" + "、".join(path.name for path in groups[0])
+                        + "。请在文件名或表头标明真实月份，不能共用工资或工时")
+    if len(known_months) == 1 and 0 in groups:
+        groups[next(iter(known_months))].extend(groups.pop(0))
+    classified = []
+    for month in sorted(groups):
+        try:
+            classified.append((month, classify_input_workbooks(groups[month])))
+        except RuleError as exc:
+            raise RuleError(f"{month}月资料不完整或不唯一：{exc}") from exc
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+    with tempfile.TemporaryDirectory(prefix="rd-months-", dir=output_dir) as staging:
+        for month, inputs in classified:
+            staged_path = Path(staging) / f"研发费用测算_{accounting_year or next(iter(years), '年度待确认')}_{month or 1:02d}月.xlsx"
+            result = build_output(inputs["hours"], inputs["salary"], inputs["dimension_ledger"],
+                                  inputs["expense_ledgers"], staged_path,
+                                  accounting_year=accounting_year, accounting_month=month or None)
+            destination = output_dir / staged_path.name
+            if destination.exists():
+                raise RuleError(f"结果文件已存在，请使用新的输出目录：{destination.name}")
+            results.append({**result, "output_path": str(destination), "_staged": staged_path})
+        for result in results:
+            shutil.copy2(result.pop("_staged"), result["output_path"])
+    return {"results": results}
 
 
 def main(argv: list[str] | None = None) -> int:

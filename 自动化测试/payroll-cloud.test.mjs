@@ -348,14 +348,13 @@ test('pending save cannot be replayed under another administrator or contain a d
   const calls = s.calls.length; await assert.rejects(c.save(), /演示/); assert.equal(s.calls.length, calls);
 });
 
-test('cloud/UI initialization waits for IndexedDB hydration, runs once, and only checks session', async () => {
-  const s = server(), disk = storage(); disk.gate = deferred(); const a = app({disk,fetch:s.fetch,auto:true});
+test('unified 3220 workbench does not initialize the old administrator cloud panel', async () => {
+  const s = server(), disk = storage(), a = app({disk,fetch:s.fetch,auto:true});
   const first = a.Cloud.init(), second = a.Cloud.init(); assert.equal(first, second);
-  await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(s.calls.length, 0); assert.equal(disk.reads, 1);
-  disk.gate.resolve(); await first;
-  assert.deepEqual(s.calls.map(x => x.method + ' ' + x.url), ['GET /api/payroll/session']);
-  assert.equal(a.element('.topbar').events.click.length, 1); assert.equal(a.element('payrollCloud').events.click.length, 1);
-  assert.equal(a.element('cloudLoginForm').events.submit.length, 1);
+  await first;
+  assert.equal(s.calls.length, 0);
+  assert.equal(disk.reads, 1);
+  assert.equal(a.element('payrollCloud').hidden, true);
 });
 
 test('unavailable session leaves the initialized local UI usable with a visible connection error', async () => {
@@ -380,11 +379,9 @@ test('cloud controls survive header redraw; login clears password and escapes un
   await c.logout(); assert.equal(a.element('cloudList').innerHTML, '');
 });
 
-test('new cloud assets are outside the redrawn header and loaded after core/UI', () => {
+test('unified 3220 salary page no longer loads administrator login assets', () => {
   const html = fs.readFileSync(new URL('index.html',base),'utf8');
-  assert.match(html, /<\/header>\s*<section id="payrollCloud"/);
-  assert.ok(html.indexOf('src="./workbench-cloud.js"') > html.indexOf('src="./workbench-ui.js"'));
-  assert.match(html, /href="\.\/workbench-cloud\.css"/);
+  assert.doesNotMatch(html, /id="payrollCloud"|src="\.\/workbench-cloud\.js"|href="\.\/workbench-cloud\.css"/);
   assert.doesNotMatch(fs.readFileSync(new URL('workbench-cloud.js',base),'utf8'), /localStorage\s*[.[]|document\.cookie|setInterval/);
 });
 

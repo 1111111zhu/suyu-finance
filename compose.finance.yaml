@@ -1,0 +1,53 @@
+# Sole production website on 3220; database has no host port.
+name: suyu-finance
+services:
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    env_file: ["${FINANCE_DB_ENV_FILE:?Absolute private database environment file required}"]
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: [postgres, -c, password_encryption=scram-sha-256]
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./运维脚本/finance-db-init.sh:/docker-entrypoint-initdb.d/10-finance.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: ["${FINANCE_RUNTIME_ENV_FILE:?Absolute private runtime environment file required}"]
+    environment:
+      NODE_ENV: production
+      RD_LOCAL_PREVIEW: "1"
+      HOST: 0.0.0.0
+      PORT: "3220"
+      FINANCE_STORAGE_DIR: /app/storage
+      RD_STORAGE_DIR: /app/storage/rd
+    ports: ["127.0.0.1:3220:3220"]
+    volumes:
+      - files:/app/storage
+      - ${FINANCE_WECOM_SECRET_FILE:?Absolute private WeCom secret file required}:/run/secrets/wecom_app_secret:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, --input-type=module, -e, "const r=await fetch('http://127.0.0.1:3220/',{signal:AbortSignal.timeout(4000)});process.exit(r.status===200?0:1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  migrate:
+    profiles: [maintenance]
+    build: .
+    env_file: ["${FINANCE_MIGRATION_ENV_FILE:?Absolute private migration environment file required}"]
+    entrypoint: [bash, 运维脚本/finance-migrate.sh]
+    depends_on:
+      postgres: {condition: service_healthy}
+volumes:
+  database:
+  files:

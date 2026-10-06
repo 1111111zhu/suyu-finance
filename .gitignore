@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+/.local/
 /.pnp
 .pnp.*
 .yarn/*
@@ -29,6 +30,7 @@ yarn-error.log*
 
 # local environment
 .env*
+.wecom-directory-secret
 
 # deployment and generated files
 .vercel

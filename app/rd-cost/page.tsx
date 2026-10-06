@@ -6,7 +6,7 @@ import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import "./rd-cost.css";
 import { WorkbenchShell } from "./workbench-shell";
-import { listProjects, recordCalculation, type RdProject } from "./rd-client";
+import { confirmProjectBatch, listProjects, type RdProject, type CalculationBatch } from "./rd-client";
 
 type PyodideLike = {
   FS: {
@@ -23,7 +23,19 @@ declare global {
   }
 }
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-const REVISION = "20260902-application-candidates-v22";
+const MAX_SOURCE_BYTES = 30 * 1024 * 1024;
+function blobBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("归档文件读取失败，未确认入账。"));
+    reader.onload = () => typeof reader.result === "string"
+      ? resolve(reader.result.slice(reader.result.indexOf(",") + 1))
+      : reject(new Error("归档文件读取失败。"));
+    reader.readAsDataURL(blob);
+  });
+}
+const money = (value: number) => `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const REVISION = "20260921-project-cost-matrix-v23";
 const PYODIDE_INDEXES = [
   "https://unpkg.com/pyodide@0.28.2/",
   "https://cdn.jsdelivr.net/pyodide/v0.28.2/full/",
@@ -195,27 +207,27 @@ export default function Home() {
   const [complete, setComplete] = useState(false);
   const [projects, setProjects] = useState<RdProject[]>([]);
   const [projectsError, setProjectsError] = useState("");
-  const [selectedProject, setSelectedProject] = useState("");
-  const [report, setReport] = useState<{ labor:number; freight:number; other:number; month:number } | null>(null);
+  const [accountingYear,setAccountingYear]=useState(new Date().getFullYear());
+  const [accountingScope,setAccountingScope]=useState("苏州");
+  const [bookedProjects,setBookedProjects]=useState(0);
+  const [bookedPlatformOnly,setBookedPlatformOnly]=useState(0);
+  const [bookedPlatformAmount,setBookedPlatformAmount]=useState("0.00");
+  const [report, setReport] = useState<{ labor:number; material:number; freight:number; other:number; total:number; month:number } | null>(null);
+  const [pendingBatch,setPendingBatch]=useState<CalculationBatch|null>(null);
+  const [outputWorkbook,setOutputWorkbook]=useState<Blob|null>(null);
+  const [reviewing,setReviewing]=useState(false);
   const input = useRef<HTMLInputElement>(null);
   const engine = useRef<PyodideLike | null>(null);
   const enginePromise = useRef<Promise<PyodideLike> | null>(null);
   const detected = kinds(files);
-  const ready =
-    detected.salary && detected.hours && detected.ledger && detected.balance;
+  const ready = detected.salary && detected.hours && detected.balance;
 
   useEffect(() => {
     let active = true;
-    const requestedProject = searchParams.get("project");
     listProjects()
       .then((nextProjects) => {
         if (!active) return;
         setProjects(nextProjects);
-        setSelectedProject((current) => nextProjects.some((project) => project.id === requestedProject)
-          ? requestedProject!
-          : nextProjects.some((project) => project.id === current)
-            ? current
-            : nextProjects[0]?.id || "");
       })
       .catch((error) => { if (active) setProjectsError(error instanceof Error ? error.message : "项目数据加载失败。"); });
     return () => { active = false; };
@@ -250,8 +262,15 @@ export default function Home() {
             item.lastModified === file.lastModified,
         ) === index,
     );
+    if (combined.length > 20 || combined.reduce((sum, file) => sum + file.size, 0) > MAX_SOURCE_BYTES) {
+      setPhase("error");
+      setMessage("每批最多 20 个文件，来源文件合计不能超过 30 MB。请拆分资料后重试。");
+      return;
+    }
     setFiles(combined);
     setComplete(false);
+    setPendingBatch(null);
+    setOutputWorkbook(null);
     if (!combined.length) {
       setPhase("idle");
       setMessage("");
@@ -262,7 +281,7 @@ export default function Home() {
     prepare()
       .then(() => {
         setPhase("ready");
-        setMessage("文件已在本地识别。请补充所有待上传资料后开始测算。");
+        setMessage("文件已在本地识别。必需资料为工资表、工时表和科目余额表；明细账可选。");
       })
       .catch((error) => {
         setPhase("error");
@@ -291,9 +310,11 @@ export default function Home() {
       ),
     );
     setComplete(false);
+    setPendingBatch(null);
+    setOutputWorkbook(null);
   }
   async function run() {
-    if (!ready || !selectedProject) return;
+    if (!ready || !projects.length || !accountingScope.trim()) return;
     setPhase("running");
     setComplete(false);
     setMessage("正在浏览器本地读取 Excel、计算研发费用…");
@@ -306,27 +327,30 @@ export default function Home() {
         paths.push(`Path(${JSON.stringify(target)})`);
       }
       const raw = await runtime.runPythonAsync(
-        `from pathlib import Path\nfrom rd_cost_workflow_v1.engine import build_output, classify_input_workbooks\nclassified = classify_input_workbooks([${paths.join(",")}])\nresult = build_output(classified["hours"], classified["salary"], classified["dimension_ledger"], classified["expense_ledgers"], Path("/work/研发成本测算结果.xlsx"))\nresult`,
+        `from pathlib import Path\nimport json\nfrom rd_cost_workflow_v1.engine import build_output, classify_input_workbooks\nclassified = classify_input_workbooks([${paths.join(",")}])\nresult = build_output(classified["hours"], classified["salary"], classified["dimension_ledger"], classified["expense_ledgers"], Path("/work/研发成本测算结果.xlsx"), accounting_year=${accountingYear})\njson.dumps(result, ensure_ascii=False, default=str)`,
       );
-      const value = (raw && typeof raw === "object" && "toJs" in raw && typeof (raw as {toJs:()=>unknown}).toJs === "function") ? (raw as {toJs:()=>unknown}).toJs() as Record<string, unknown> : {};
-      const summary = { labor: Number(value.labor_total || 0), freight: Number(value.freight_total || 0), other: Number(value.other_total || 0), month: Number(value.month || new Date().getMonth() + 1) };
+      if (typeof raw !== "string") throw new Error("未取得逐项目计算结果，未入账。");
+      const value = JSON.parse(raw);
+      if (value.period_years?.length>1) throw new Error("上传明细包含多个会计年度，请按年度分批测算。");
+      if (value.year && value.year!==accountingYear) throw new Error(`上传明细年度为 ${value.year}，请将核算年度改为 ${value.year} 后重新测算。`);
+      const costs=(value.project_costs as CalculationBatch["projects"]).flatMap(p=>p.costs);
+      const categoryTotal=(category:string)=>costs.filter(c=>c.category===category).reduce((s,c)=>s+Math.round(Number(c.amount)*100),0)/100;
+      const total=Number(value.cost_total),labor=categoryTotal("人员人工（含社保+公积金）"),material=categoryTotal("直接材料"),freight=categoryTotal("运费");
+      const summary = { labor, material, freight, other:Math.round((total-labor-material-freight)*100)/100, total, month:Number(value.month) };
       setReport(summary);
-      await recordCalculation({ projectId: selectedProject, ...summary, year: new Date().getFullYear() });
+      const evidence=await Promise.all(files.map(async file=>({name:file.name,sha256:Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await file.arrayBuffer())),b=>b.toString(16).padStart(2,"0")).join("")})));
+      const batch:CalculationBatch={requestKey:crypto.randomUUID(),scope:accountingScope.trim(),year:accountingYear,month:Number(value.month),total:value.cost_total,projects:value.project_costs,files:evidence};
       const blob = new Blob(
-        [runtime.FS.readFile("/work/研发成本测算结果.xlsx")],
+        [new Uint8Array(runtime.FS.readFile("/work/研发成本测算结果.xlsx")).buffer],
         {
           type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         },
       );
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "研发成本测算结果_网页本地版.xlsx";
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setPendingBatch(batch);
+      setOutputWorkbook(blob);
       setPhase("ready");
-      setComplete(true);
-      setMessage("测算完成，结果已下载。");
+      setComplete(false);
+      setMessage("测算已完成，金额尚未入账。请逐项目复核后确认。");
     } catch (error) {
       setPhase("error");
       setMessage(
@@ -335,6 +359,21 @@ export default function Home() {
           : "测算已停止，请检查上传文件。",
       );
     }
+  }
+  async function confirmRun(){
+    if(!pendingBatch||!outputWorkbook||reviewing)return;
+    setReviewing(true);setPhase("running");setMessage("正在确认项目与平台费用归属…");
+    try{
+      const resultFile={filename:`研发成本测算结果_${pendingBatch.year}-${String(pendingBatch.month).padStart(2,"0")}.xlsx`,base64:await blobBase64(outputWorkbook)};
+      const sourceFiles=await Promise.all(files.map(async (file,index)=>({name:file.name,sha256:pendingBatch.files[index].sha256,base64:await blobBase64(file)})));
+      const confirmed=await confirmProjectBatch({...pendingBatch,resultFile,sourceFiles});
+      setBookedProjects(confirmed.projectCount);
+      setBookedPlatformOnly(confirmed.platformOnlyCount);
+      setBookedPlatformAmount(confirmed.platformOnlyTotal);
+      const url=URL.createObjectURL(outputWorkbook),link=document.createElement("a");link.href=url;link.download=`研发成本测算结果_${pendingBatch.year}-${String(pendingBatch.month).padStart(2,"0")}.xlsx`;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+      setPendingBatch(null);setOutputWorkbook(null);setPhase("ready");setComplete(true);setMessage("已确认入账，已归档原始资料和模板结果文件，并保留本次确认版本。");
+    }catch(error){setPhase("error");setMessage(error instanceof Error?`确认未完成：${error.message}`:"确认未完成，请重试。");}
+    finally{setReviewing(false);}
   }
   const displayName = (card: { key: Kind; name: string; description: string }) =>
     card.key === "balance" ? (
@@ -348,18 +387,19 @@ export default function Home() {
         <p>{card.description}</p>
       </>
     );
-  const cards: { key: Kind; name: string; description: string }[] = [
-    { key: "salary", name: "工资表", description: "研发人员的工资及薪酬发放明细" },
-    { key: "hours", name: "工时表", description: "研发人员的工时记录及投入明细" },
-    { key: "ledger", name: "明细账", description: "研发费用相关科目的明细账" },
-    { key: "balance", name: "科目余额表", description: "研发费用相关科目的期末余额表" },
+  const cards: { key: Kind; name: string; description: string; required:boolean }[] = [
+    { key: "salary", name: "工资表", description: "研发人员的工资及薪酬发放明细", required:true },
+    { key: "hours", name: "工时表", description: "研发人员的工时记录及投入明细", required:true },
+    { key: "ledger", name: "明细账", description: "可选：补充凭证明细", required:false },
+    { key: "balance", name: "科目余额表", description: "费用金额的主要来源", required:true },
   ];
   return (
     <WorkbenchShell>
       <div className="rd-cost-page">
         <div className="workspace">
-          <div className="rd-page-head"><div><h1 className="page-title">研发费用测算</h1><p className="page-description">本地识别 Excel，完成费用分配后自动归集到项目台账</p>{projectsError && <p className="ui-field-error" role="alert">{projectsError}</p>}</div><select className="rd-btn" value={selectedProject} disabled={!projects.length} onChange={(event)=>setSelectedProject(event.target.value)}>{projects.length ? projects.map((project)=><option key={project.id} value={project.id}>{project.number} · {project.name}</option>) : <option value="">请先在项目管理新建项目</option>}</select></div>
-          <div className="rd-stepper"><div className="rd-step active"><small>01 · PREPARE</small><strong>准备资料</strong></div><div className="rd-step"><small>02 · RECOGNIZE</small><strong>本地识别</strong></div><div className="rd-step"><small>03 · CALCULATE</small><strong>费用测算</strong></div><div className="rd-step"><small>04 · EXPORT</small><strong>入账与下载</strong></div></div>
+          <div className="rd-page-head"><div><h1 className="page-title">研发费用测算</h1><p className="page-description">按项目编码自动归集研发费用，平台金额同步汇总</p>{projectsError && <p className="ui-field-error" role="alert">{projectsError}</p>}</div><a className="rd-btn" href={"/projects"+(searchParams.get("embed")==="1"?"?embed=1":"")}>平台管理 →</a></div>
+          <div className="rd-actions" style={{marginBottom:20}}><label>核算主体 <select className="rd-btn" value={accountingScope} onChange={e=>setAccountingScope(e.target.value)} disabled={phase==="running"}><option>苏州</option><option>杭州</option><option>连云港</option></select></label><label>核算年度 <input className="rd-btn" aria-label="核算年度" type="number" min="2000" max="2100" value={accountingYear} onChange={e=>setAccountingYear(Number(e.target.value))} disabled={phase==="running"} style={{width:110}}/></label><span>不同月份累加；同一主体、同一月份重新确认时替换该月结果。</span></div>
+        <div className="rd-stepper"><div className="rd-step active"><small>01 · PREPARE</small><strong>准备资料</strong></div><div className="rd-step"><small>02 · RECOGNIZE</small><strong>本地识别</strong></div><div className="rd-step"><small>03 · CALCULATE</small><strong>费用测算</strong></div><div className={`rd-step ${complete?"active":""}`}><small>04 · REVIEW</small><strong>人工复核与入账</strong></div></div>
           <label
             className={`dropzone ${dragging ? "dragging" : ""}`}
             onDragOver={(event) => {
@@ -406,7 +446,7 @@ export default function Home() {
               <>
                 <CloudIcon />
                 <strong>点击选择或将文件拖入此处</strong>
-                <span>支持多个 .xlsx 文件，单个文件 ≤ 20MB</span>
+                <span>工资表、工时表、科目余额表必需；明细账可不传。单个文件 ≤ 20MB</span>
               </>
             )}
           </label>
@@ -420,7 +460,7 @@ export default function Home() {
                 >
                   <div className="document-card-top">
                     <ExcelIcon />
-                    <div>{displayName(card)}</div>
+                    <div>{displayName(card)}<span className={`rd-required-tag ${card.required?"required":"optional"}`}>{card.required?"必需":"可选"}</span></div>
                   </div>
                   <div className="card-rule" />
                   <div className={`card-status ${uploaded ? "success" : ""}`}>
@@ -473,23 +513,24 @@ export default function Home() {
                 <path d="M12 3 5 6v5c0 4.2 2.9 8 7 10 4.1-2 7-5.8 7-10V6z" fill="currentColor" stroke="none" />
                 <path d="m9 12 2 2 4-4" />
               </Icon>
-              所有Excel仅在当前浏览器本地处理，不上传服务器
+              原始 Excel 在当前浏览器本地计算；只有人工确认后，测算金额才写入研发数据库
             </p>
             <button
               type="button"
               className="start-button"
-              disabled={!ready || !selectedProject || phase === "loading" || phase === "running"}
+              disabled={!ready || !projects.length || phase === "loading" || phase === "running"}
               onClick={run}
             >
               {phase === "running" ? "正在测算…" : "开始测算"}
             </button>
           </div>
-          {!projects.length && <div className="notice">请先前往项目管理创建研发项目，再将测算结果归集到项目台账。</div>}
+          {!projects.length && <div className="notice">请先在研发项目中建立项目并设置平台归属。</div>}
           {message && <div className={`notice ${phase}`}>{message}</div>}
+          {pendingBatch&&<section className="rd-review-panel"><div className="rd-project-section-head"><div><p className="rd-projects-kicker">REVIEW BEFORE POSTING</p><h2>{pendingBatch.year} 年 {pendingBatch.month} 月测算复核</h2></div><strong className="rd-review-total">¥{Number(pendingBatch.total).toLocaleString("zh-CN",{minimumFractionDigits:2})}</strong></div><p>以下金额目前只是本地计算草稿。确认后，能匹配项目的费用计入项目；仅能确定平台的费用单列为平台直归费用，不分摊到具体项目。无法唯一确定平台时整批不入账；本月已有结果会被替换。</p><div className="rd-review-table-wrap"><table className="rd-review-table"><thead><tr><th>项目／平台编号</th><th>项目／平台名称</th><th className="numeric">金额合计</th><th>费用分类金额</th></tr></thead><tbody>{pendingBatch.projects.map(project=><tr key={project.code}><td>{project.code}</td><td>{project.name}</td><td className="numeric">¥{Number(project.total).toLocaleString("zh-CN",{minimumFractionDigits:2})}</td><td>{project.costs.filter(item=>Number(item.amount)!==0).map(item=>`${item.category} ${money(Number(item.amount))}`).join("；")||"无费用"}</td></tr>)}</tbody></table></div><div className="rd-review-actions"><button className="rd-btn" type="button" onClick={()=>{setPendingBatch(null);setOutputWorkbook(null);setMessage("已取消本次草稿，数据库未变更。");}} disabled={reviewing}>取消本次测算</button><button className="start-button" type="button" onClick={confirmRun} disabled={reviewing}>{reviewing?"正在确认…":"确认并入账"}</button></div></section>}
           {complete && (
             <div className="result">
-              研发费用测算已完成，结果文件已保存至浏览器下载目录，结果已自动入账当前项目。
-              {report && <div className="rd-grid rd-grid-4" style={{marginTop:14}}>{[["直接人工",report.labor],["运费",report.freight],["其他费用",report.other],["测算月份",`${report.month} 月`]].map(([label,value])=><div key={label as string}><div className="rd-stat-label">{label}</div><strong>{typeof value === "number" ? `¥${value.toLocaleString()}` : value}</strong></div>)}</div>}
+              研发费用测算已完成，结果文件已下载。已归集到 {bookedProjects} 个具体项目{bookedPlatformOnly>0?`；另有 ${bookedPlatformOnly} 条无法匹配具体项目的费用 ${money(Number(bookedPlatformAmount))} 已直接计入对应平台总费用。`:"，平台金额已同步汇总。"}
+              {report && <div className="rd-grid rd-grid-4" style={{marginTop:14}}>{[["直接人工",report.labor],["直接材料",report.material],["运费",report.freight],["其他费用（不含运费）",report.other],["研发费用合计",report.total],["测算月份",`${report.month} 月`]].map(([label,value])=><div key={label as string}><div className="rd-stat-label">{label}</div><strong>{typeof value === "number" ? `¥${value.toLocaleString("zh-CN",{minimumFractionDigits:2})}` : value}</strong></div>)}</div>}
             </div>
           )}
         </div>

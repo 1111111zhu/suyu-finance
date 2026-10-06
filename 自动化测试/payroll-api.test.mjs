@@ -51,6 +51,27 @@ test('cross-site, missing-origin and missing-CSRF writes never reach payroll sto
   assert.equal((await call('/login',{method:'POST',body:{username:'api_admin',password},auth:null,headers:{Origin:'https://evil.example'}})).status,403);
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM payroll.workspaces')).rows[0].n,0);
 });
+test('WeCom directory stays behind payroll login and manual sync requires CSRF',async()=>{
+  assert.equal((await call('/wecom-directory',{auth:null})).status,401);
+  assert.equal((await call('/wecom-directory')).status,503);
+  let reads=0,syncs=0;
+  const directory={snapshot:async()=>{reads++;return {syncedAt:null,departments:[],members:[]};},syncing:()=>false,sync:async()=>{syncs++;}};
+  const directoryServer=createPayrollServer({pool,publicOrigin:origin,wecomDirectory:directory});
+  await new Promise(resolve=>directoryServer.listen(0,'127.0.0.1',resolve));
+  const endpoint='http://127.0.0.1:'+directoryServer.address().port+'/api/payroll/wecom-directory';
+  const send=(path,{headers={},...options}={})=>fetch(endpoint+path,{...options,headers:{Origin:origin,Cookie:session.cookie,...headers}});
+  try {
+    assert.equal((await send('',{headers:{Origin:origin}})).status,200);
+    assert.equal(reads,1);
+    assert.equal((await send('/sync',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}'})).status,403);
+    assert.equal(syncs,0);
+    assert.equal((await send('/sync',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json','X-CSRF-Token':session.csrfToken},body:'{}'})).status,202);
+    assert.equal(syncs,1);
+  } finally {
+    directoryServer.closeAllConnections();
+    await new Promise(resolve=>directoryServer.close(resolve));
+  }
+});
 test('saving then restoring a workspace retains raw null/zero, source coordinates and frozen outputs',async()=>{
   const input=snapshot(),requestKey=randomUUID();
   const saved=await call('/workspaces',{method:'POST',body:{requestKey,snapshot:input}});

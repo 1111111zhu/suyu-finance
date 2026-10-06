@@ -1,6 +1,6 @@
 # 工资 PostgreSQL 基础
 
-本目录保存 PostgreSQL 17 的工资数据结构、迁移工具和服务端数据访问层。已提供公司/员工/任职、导入、结果版本、调整、复核、归档、邮件草稿及审计的数据基础。**工资页面现已接入管理员登录和服务器草稿保存／恢复，最新部署与使用说明见[工资网站接入与交接](../../项目文档/工资网站接入与交接.md)。**
+本目录保存 PostgreSQL 17 的工资数据结构、迁移工具和服务端数据访问层。已提供公司/员工/任职、导入、结果版本、调整、复核、归档、邮件草稿及审计的数据基础。工资页面已接入管理员登录、服务器草稿及真实批次确认；人员归集与企业微信接入说明见[人员归集与工资确认接入](../../项目文档/人员归集与工资确认接入.md)。
 
 业务说明、全部表字典、ER Mermaid、修订流程、权限、命令与后续接口对照见 [工资数据库设计与部署](../../项目文档/工资数据库设计与部署.md)。工资字段详情见 [工资数据库字段映射](../../项目文档/工资数据库字段映射.md)。
 
@@ -14,6 +14,7 @@
 | [002_salary_fields.sql](migrations/002_salary_fields.sql) | items 的 71 个工资列、公司/部门汇总视图、确认金额完整性检查 |
 | [003_integrity.sql](migrations/003_integrity.sql) | 文件位置与内容标识保护、复核、调整、批次/版本依据、事务完整提交等约束 |
 | [004_api_auth.sql](migrations/004_api_auth.sql) / [005_workspaces.sql](migrations/005_workspaces.sql) | 登录会话、限流、服务器草稿与不可变草稿版本 |
+| [006_personnel.sql](migrations/006_personnel.sql) / [007_workspace_confirmation.sql](migrations/007_workspace_confirmation.sql) | 企微只读快照、人员异动、辅助花名册、身份关联与正式工资确认来源 |
 | [fields.mjs](fields.mjs) | `payrollFields`、`normalizePayrollValues`、`fromLegacyPayrollRow`；显式字段契约，不算工资 |
 | [repository.mjs](repository.mjs) | `createPayrollRepository(pool)`、`bootstrapAdmin`、`hashPassword`、`verifyPassword`、`newRequestKey` |
 | [admin.mjs](admin.mjs) | `provisionRuntimeRole(pool,{role,password})`；CLI `bootstrap/runtime-role` |
@@ -22,7 +23,7 @@
 | [compose.payroll-db.yaml](../../compose.payroll-db.yaml) | 仅数据库、环回绑定、持久卷、健康检查、重启及日志轮转 |
 | [备份脚本](../../运维脚本/payroll-db-backup.sh) / [恢复脚本](../../运维脚本/payroll-db-restore.sh) | 同快照 custom dump + 文件元数据、产物哈希；只恢复新库 |
 
-001–003 创建 **20 张 payroll 业务及支撑表**。004–005 新增会话、登录限流、草稿索引和草稿版本 4 张表，合计 **24 张 payroll 表 + 1 张迁移台账**，另有 3 个视图。迁移 version 为 SQL 文件名去掉 `.sql`；目录默认 `database/payroll/migrations/`。全程使用同一 client 的 advisory lock，每份 SQL 独立事务；已应用文件的 SHA256 改变或文件缺失时拒绝运行。不要在迁移 SQL 外层自行加 BEGIN/COMMIT，也不要改写已应用的迁移。
+迁移 001–007 覆盖工资、登录、草稿、人员归集与正式确认。迁移 version 为 SQL 文件名去掉 `.sql`；目录默认 `database/payroll/migrations/`。全程使用同一 client 的 advisory lock，每份 SQL 独立事务；已应用文件的 SHA256 改变或文件缺失时拒绝运行。不要在迁移 SQL 外层自行加 BEGIN/COMMIT，也不要改写已应用的迁移。
 
 ## 2. 数据契约
 
@@ -135,4 +136,4 @@ npm run test:db:integration
 
 恢复未完成批次可组合 `getBatch/listImports/getImport/listRuns/getRun/listAdjustments/listReviews/listFiles/listEmailDrafts`；`getEmployee` 可读回员工及完整任职变更。`listImports/listAdjustments` 接受 `(batchId,{scope}={})`，资料与调整按阶段筛选。业务页面后续接入这些服务端方法。
 
-独立 HTTP 服务与页面草稿接线现已实现，详见[网站接入与交接](../../项目文档/工资网站接入与交接.md)。页面到正式人员确认/工资版本的流程、工资引擎服务端执行、另机文件适配仍是后续工作。
+独立 HTTP 服务、页面草稿与真实导入批次的正式确认流程已经接线，详见[网站接入与交接](../../项目文档/工资网站接入与交接.md)和[人员归集与工资确认接入](../../项目文档/人员归集与工资确认接入.md)。企业微信实际同步仍须配置现有只读应用凭据；工资引擎服务端独立执行和另机文件适配不在本次范围。

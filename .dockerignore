@@ -10,3 +10,13 @@ outputs
 work
 *.dump
 *.backup
+
+storage
+
+backups
+
+.local
+
+*.env
+
+*secret*

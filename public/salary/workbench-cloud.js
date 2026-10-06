@@ -181,6 +181,39 @@ globalThis.PayrollWorkbenchCloud = (() => {
         if(localError) message += '。本机存储不可用，请保留页面；服务器草稿仍可再次读取';
         tone = localError ? 'error' : 'success'; return batch;
       }),
+      prepareConfirmation: () => perform('正在核对正式入库条件', async () => {
+        authenticated(); UI?.prepareCloud('save');
+        const batch=W.currentBatch(), current=api.currentStatus();checkOwner(batch);
+        if(!current.synced||!batch.cloud?.id) throw new CloudError('请先保存当前真实工资批次到服务器，再做正式确认');
+        const snapshot=W.packCurrent();
+        if(snapshot.provenance!=='user-import'||snapshot.batch.data.payrollStage!=='net'||!snapshot.results.net.length)
+          throw new CloudError('只有真实导入且完成实发工资计算的批次可以确认入库');
+        const saved=await request('/workspaces/'+encodeURIComponent(batch.cloud.id));
+        workspace(saved,true,W);
+        if(saved.revision!==batch.cloud.revision||canonical(saved.snapshot)!==canonical(snapshot))
+          throw new CloudError('服务器版本与当前页面不一致，请重新保存并核对');
+        const existing=await request('/workspaces/'+encodeURIComponent(batch.cloud.id)+'/confirm');
+        if(existing?.revision===saved.revision) throw new CloudError('当前版本已经确认入库；如需修订，请修改并保存新版本');
+        const directory=await request('/personnel/directory');
+        if(!directory?.configured||!directory.syncedAt) throw new CloudError('企业微信只读通讯录尚未接入或未完成首次同步，不能核对身份');
+        const options=await request('/personnel/identity-options');
+        if(!Array.isArray(options)) throw new CloudError('员工身份关联列表格式无效');
+        message=`请逐名选择已确认的企微／工资员工关联，共 ${snapshot.results.net.length} 人；确认后该版本进入正式统计`;
+        return {snapshot,options,workspaceId:saved.id,revision:saved.revision};
+      }),
+      confirm: (mappings,expectedWorkspaceId,expectedRevision) => perform('正在核对并确认正式工资', async () => {
+        authenticated();UI?.prepareCloud('save');
+        const batch=W.currentBatch(),current=api.currentStatus();checkOwner(batch);
+        if(!current.synced||!batch.cloud?.id) throw new CloudError('本机内容有新修改，请先再次保存服务器草稿');
+        if(batch.cloud.id!==expectedWorkspaceId||batch.cloud.revision!==expectedRevision)
+          throw new CloudError('核对期间已切换或修改批次，请重新打开确认面板');
+        const snapshot=W.packCurrent();
+        if(!Array.isArray(mappings)||mappings.length!==snapshot.results.net.length) throw new CloudError('请逐名确认所有工资员工身份');
+        const result=await request('/workspaces/'+encodeURIComponent(batch.cloud.id)+'/confirm',{
+          method:'POST',body:JSON.stringify({requestKey:requestKey(),revision:batch.cloud.revision,mappings})});
+        message=`${result.month} 工资已正式确认入库 · ${result.employeeCount} 人；人员归集统计将读取此版本`;
+        tone='success';return result;
+      }),
       currentStatus: () => {
         const batch = W.currentBatch(), cloud = batch.cloud;
         try {
@@ -199,9 +232,28 @@ globalThis.PayrollWorkbenchCloud = (() => {
     };
     return api;
   }
-  let client, root, initializing;
+  let client, root, initializing, confirmationData = null;
   const el = id => root?.querySelector('#' + id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function showConfirmation(data) {
+    confirmationData=data;
+    const panel=el('cloudConfirmPanel'), roster=data.snapshot.sources.roster;
+    const rosterOptions=(roster?.rows||[]).map((raw,index)=>{
+      const row=roster.sourceStartRow+index;
+      const label=String(raw['姓名']||raw['员工姓名']||'').trim();
+      return {row,label};
+    });
+    panel.innerHTML=`<div class="wb-confirm-heading"><h2>正式工资确认 · ${esc(data.snapshot.batch.month)}</h2><p>逐人核对企微人员、工资员工 ID 与本批花名册来源行。未确认身份、转正或计薪字段冲突将由服务器阻断；此操作不会修改历史版本。</p></div>
+      <label class="wb-confirm-reason">本批逐人核对原因<input class="input" id="cloudConfirmReason" placeholder="例如：已对照工号、部门与原始花名册逐人核实" autocomplete="off"></label>
+      <div class="wb-confirm-list">${data.snapshot.results.net.map((person,index)=>`<div class="wb-confirm-item" data-confirm-index="${index}">
+        <div><strong>${esc(person.name)}</strong><span>${esc(person.company||'')} · ${esc(person.dept||'')} · 实发 ${esc(person.net??'待核对')}</span></div>
+        <label>花名册来源行<select data-confirm="roster"><option value="">请选择</option>${rosterOptions.map(option=>`<option value="${option.row}" ${person.rosterRow===option.row?'selected':''}>第 ${option.row} 行 · ${esc(option.label)}</option>`).join('')}</select></label>
+        <label>企微／工资员工关联<select data-confirm="employee"><option value="">请选择</option>${data.options.map(option=>`<option value="${esc(option.employeeId)}">${esc(option.name)} · ${esc(option.userid)}${option.active?'':'（历史成员）'}</option>`).join('')}</select></label>
+      </div>`).join('')}</div>
+      <label class="wb-confirm-check"><input type="checkbox" id="cloudConfirmAcknowledge">我已逐人核对来源行和身份，确认将本版实发工资入库</label>
+      <div class="wb-cloud-actions"><button type="button" class="btn btn-primary" data-cloud="submit-confirm">确认正式入库</button><button type="button" class="btn" data-cloud="close-confirm">取消</button></div>`;
+    panel.hidden=false;
+  }
   function paint() {
     if(!root || !client) return;
     const s = client.status(), current = client.currentStatus();
@@ -213,6 +265,7 @@ globalThis.PayrollWorkbenchCloud = (() => {
     el('cloudLocal').textContent = PayrollWorkbench.storageError ? '本机存储不可用，请保留页面并检查浏览器存储。' : '本机草稿继续保留；服务器草稿仅用于恢复核算工作。';
     el('cloudSave').disabled = s.busy || !s.user || current.blocked;
     el('cloudSave').textContent = current.pending ? '重试上次服务器保存' : '保存到服务器';
+    el('cloudConfirm').disabled = s.busy || !s.user || !current.synced;
     el('cloudLogout').hidden = !s.user; el('cloudLoginToggle').hidden = !!s.user;
     el('cloudReload').hidden = !current.conflict;
     for(const id of ['cloudListButton','cloudLogout','cloudReload']) el(id).disabled = s.busy || !s.user;
@@ -222,14 +275,32 @@ globalThis.PayrollWorkbenchCloud = (() => {
     el('cloudList').innerHTML = s.list === null ? '' : `<h2>服务器草稿列表</h2>${s.list.length ? s.list.map(row => `<div class="wb-cloud-item"><div><strong>${esc(row.name)}</strong><span>${esc(row.month)} · 版本 ${row.revision} · ${esc(row.updatedAt)}</span></div><button type="button" class="btn" data-cloud="restore" data-id="${esc(row.id)}" ${s.busy?'disabled':''}>恢复为本机副本</button></div>`).join('') : '<p>暂无服务器草稿</p>'}`;
   }
   function mount() {
-    root.innerHTML = `<div class="wb-cloud-row"><div><strong>服务器草稿</strong><span id="cloudAccount" class="wb-cloud-account"></span><p id="cloudLocal"></p></div><div class="wb-cloud-actions"><button type="button" class="btn btn-primary" id="cloudSave" data-cloud="save">保存到服务器</button><button type="button" class="btn" id="cloudListButton" data-cloud="list">服务器草稿列表</button><button type="button" class="btn" id="cloudLoginToggle" data-cloud="login-form">管理员登录</button><button type="button" class="btn" id="cloudLogout" data-cloud="logout" hidden>退出</button><button type="button" class="wb-link" id="cloudReconnect" data-cloud="session">检查连接</button></div></div>
+    root.innerHTML = `<div class="wb-cloud-row"><div><strong>服务器草稿与正式入库</strong><span id="cloudAccount" class="wb-cloud-account"></span><p id="cloudLocal"></p></div><div class="wb-cloud-actions"><button type="button" class="btn btn-primary" id="cloudSave" data-cloud="save">保存到服务器</button><button type="button" class="btn" id="cloudConfirm" data-cloud="prepare-confirm">核对并确认入库</button><button type="button" class="btn" id="cloudListButton" data-cloud="list">服务器草稿列表</button><button type="button" class="btn" id="cloudLoginToggle" data-cloud="login-form">管理员登录</button><button type="button" class="btn" id="cloudLogout" data-cloud="logout" hidden>退出</button><button type="button" class="wb-link" id="cloudReconnect" data-cloud="session">检查连接</button></div></div>
       <p id="cloudCurrent" class="wb-cloud-current"></p><p id="cloudMessage" role="status" aria-live="polite"></p><button type="button" class="btn" id="cloudReload" data-cloud="reload" hidden>重新加载服务器版本</button>
-      <form id="cloudLoginForm" class="wb-cloud-login" hidden><label>管理员账号<input class="input" id="cloudUsername" name="username" autocomplete="username" required></label><label>密码<input class="input" id="cloudPassword" name="password" type="password" autocomplete="current-password" required></label><button class="btn btn-primary" id="cloudLoginSubmit" type="submit">登录</button><button class="btn" type="button" data-cloud="cancel-login">取消</button></form><div id="cloudList" class="wb-cloud-list" hidden></div>`;
+      <form id="cloudLoginForm" class="wb-cloud-login" hidden><label>管理员账号<input class="input" id="cloudUsername" name="username" autocomplete="username" required></label><label>密码<input class="input" id="cloudPassword" name="password" type="password" autocomplete="current-password" required></label><button class="btn btn-primary" id="cloudLoginSubmit" type="submit">登录</button><button class="btn" type="button" data-cloud="cancel-login">取消</button></form><div id="cloudList" class="wb-cloud-list" hidden></div><section id="cloudConfirmPanel" class="wb-confirm-panel" hidden></section>`;
     root.addEventListener('click', event => {
       const button = event.target.closest('[data-cloud]'); if(!button || button.disabled) return;
       const action = button.dataset.cloud;
       if(action === 'login-form') { el('cloudLoginForm').hidden = !el('cloudLoginForm').hidden; if(!el('cloudLoginForm').hidden) el('cloudUsername').focus(); return; }
       if(action === 'cancel-login') { el('cloudPassword').value = ''; el('cloudLoginForm').hidden = true; return; }
+      if(action === 'close-confirm') { confirmationData=null;el('cloudConfirmPanel').hidden=true;return; }
+      if(action === 'prepare-confirm') {client.prepareConfirmation().then(showConfirmation).catch(()=>{});return;}
+      if(action === 'submit-confirm') {
+        if(!confirmationData) return;
+        const panel=el('cloudConfirmPanel');
+        const reason=panel.querySelector('#cloudConfirmReason')?.value?.trim();
+        if(!reason || !panel.querySelector('#cloudConfirmAcknowledge')?.checked) {
+          el('cloudMessage').textContent='请填写逐人核对原因并勾选确认';el('cloudMessage').dataset.tone='error';return;
+        }
+        const rows=[...panel.querySelectorAll('[data-confirm-index]')];
+        const mappings=rows.map(row=>({resultIndex:Number(row.dataset.confirmIndex),rosterRow:Number(row.querySelector('[data-confirm="roster"]').value),
+          employeeId:row.querySelector('[data-confirm="employee"]').value,reason}));
+        if(mappings.length!==confirmationData.snapshot.results.net.length||mappings.some(row=>!row.rosterRow||!row.employeeId)) {
+          el('cloudMessage').textContent='请为每人选择花名册行和企微／工资员工关联';el('cloudMessage').dataset.tone='error';return;
+        }
+        client.confirm(mappings,confirmationData.workspaceId,confirmationData.revision)
+          .then(()=>{confirmationData=null;panel.hidden=true;}).catch(()=>{});return;
+      }
       const operations = {save:()=>client.save(), list:()=>client.refresh(), session:()=>client.session(), logout:()=>client.logout(),
         restore:()=>client.restore(button.dataset.id), reload:()=>client.restore(PayrollWorkbench.currentBatch().cloud?.id)};
       operations[action]?.().catch(() => {}); // perform() already displays a safe, actionable error.
@@ -249,6 +320,15 @@ globalThis.PayrollWorkbenchCloud = (() => {
     return client;
   }
   function init() { return initializing ||= initialize(); }
+  // The unified 3220 workbench is intentionally local-only. Do not expose a
+  // second-service login, server-draft controls, or a misleading connection
+  // error in the payroll interface.
+  function disableForUnifiedWorkbench() {
+    const panel=document.getElementById('payrollCloud');
+    if(panel) { panel.innerHTML=''; panel.hidden=true; }
+    return Promise.resolve(null);
+  }
+  initializing=globalThis.__PAYROLL_TEST__?null:disableForUnifiedWorkbench();
   if(!globalThis.__PAYROLL_TEST__) init().catch(error => {
     const banner = document.getElementById('payrollCloud');
     if(banner) banner.textContent = '服务器草稿入口未能加载：' + error.message + '。本机工作台可继续使用。';

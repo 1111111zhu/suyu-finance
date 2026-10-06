@@ -46,6 +46,14 @@ async function grantApiPrivileges(client,role) {
   await client.query(`GRANT UPDATE(name,month,revision,updated_at) ON payroll.workspaces TO "${role}"`);
   await client.query(`GRANT SELECT,INSERT,DELETE ON payroll.auth_sessions,payroll.auth_login_limits TO "${role}"`);
   await client.query(`GRANT UPDATE(failures) ON payroll.auth_login_limits TO "${role}"`);
+  await client.query(`GRANT SELECT,INSERT ON payroll.wecom_directory_syncs,payroll.wecom_departments,payroll.wecom_members,
+    payroll.wecom_events,payroll.wecom_employee_links,payroll.personnel_rosters,payroll.personnel_roster_rows,
+    payroll.workspace_confirmations TO "${role}"`);
+  await client.query(`GRANT UPDATE(synced_at,department_count,member_count) ON payroll.wecom_directory_syncs TO "${role}"`);
+  await client.query(`GRANT UPDATE(name,parent_id,display_order,leader_userid,active,observed_at) ON payroll.wecom_departments TO "${role}"`);
+  await client.query(`GRANT UPDATE(name,department_ids,direct_leader_userid,position,active,observed_at) ON payroll.wecom_members TO "${role}"`);
+  await client.query(`GRANT UPDATE(employee_id,reason,updated_by,updated_at) ON payroll.wecom_employee_links TO "${role}"`);
+  await client.query(`GRANT UPDATE(employee_id,wecom_userid,linked_by,linked_at) ON payroll.personnel_roster_rows TO "${role}"`);
 }
 
 async function main() {

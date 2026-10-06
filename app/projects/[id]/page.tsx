@@ -1,96 +1,49 @@
 "use client";
 
+import {useAccess} from "../../use-access";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { WorkbenchShell } from "../../rd-cost/workbench-shell";
-import {
-  deleteProject,
-  listLedger,
-  readProject,
-  type RdProject,
-  type RdLedgerEntry,
-} from "../../rd-cost/rd-client";
+import { listLedger, listPlatforms, listProjectDocuments, readProject, updateProjectStatus, type RdLedgerEntry, type RdPlatform, type RdProject, type RdProjectDocument } from "../../rd-cost/rd-client";
+import { AnimatedAmount, TrendChart } from "../trend-chart";
 import "../../rd-cost/rd-cost.css";
 import "../projects.css";
 
-const statusLabels: Record<RdProject["status"], string> = {
-  init: "初始化",
-  active: "进行中",
-  completed: "已完成",
-};
+const money=(n:number)=>"¥"+n.toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const pieColors=["#4278d4","#22a17a","#e6a23c","#8b6bd6","#e56c62","#4fa9b7","#8b9aab"];
+const statusLabels:Record<RdProject["status"],string>={init:"待开始",active:"进行中",paused:"暂停",stopped:"停止",completed:"已完成"};
 
-function statusClass(status: RdProject["status"]) {
-  return status === "init" ? "ui-badge--warning" : "ui-badge--success";
-}
+export default function ProjectDetailPage(){
+  const access=useAccess();
 
-export default function ProjectDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const embedded = searchParams.get("embed") === "1";
-  const suffix = embedded ? "?embed=1" : "";
-  const [project, setProject] = useState<RdProject | null | undefined>(undefined);
-  const [ledger, setLedger] = useState<RdLedgerEntry[]>([]);
-  const [loadError, setLoadError] = useState("");
-  const [message, setMessage] = useState("");
-  const deleteDialog = useRef<HTMLDialogElement>(null);
+  const {id}=useParams<{id:string}>(),params=useSearchParams(),embedded=params.get("embed")==="1";
+  const [project,setProject]=useState<RdProject|null>(null),[ledger,setLedger]=useState<RdLedgerEntry[]>([]),[platforms,setPlatforms]=useState<RdPlatform[]>([]),[documents,setDocuments]=useState<RdProjectDocument[]>([]),[error,setError]=useState(""),[saving,setSaving]=useState(false),[statusDraft,setStatusDraft]=useState<RdProject["status"]>("init");
+  useEffect(()=>{if(!access.loaded)return;let live=true;Promise.all([readProject(id),access.manager?listLedger(id):Promise.resolve([]),listPlatforms(),access.manager?listProjectDocuments(id):Promise.resolve([])]).then(([p,l,ps,docs])=>{if(live){setProject(p);setStatusDraft(p.status);setLedger(l);setPlatforms(ps);setDocuments(docs);}}).catch(e=>{if(live)setError(e instanceof Error?e.message:"项目数据加载失败。");});return()=>{live=false;};},[id,access.loaded,access.manager]);
+  const points=useMemo(()=>{const totals=new Map<string,number>();ledger.forEach(entry=>{const month=entry.date.slice(0,7);totals.set(month,(totals.get(month)||0)+entry.amount);});return [...totals].sort(([a],[b])=>a.localeCompare(b)).map(([month,total])=>({month,total}));},[ledger]);
+  const categories=useMemo(()=>{const totals=new Map<string,number>();ledger.forEach(entry=>totals.set(entry.category,(totals.get(entry.category)||0)+entry.amount));return [...totals].sort((a,b)=>b[1]-a[1]);},[ledger]);
+  if(error)return <WorkbenchShell><section className="ui-empty rd-project-empty"><h3>项目数据暂不可用</h3><p role="alert">{error}</p><Link className="ui-button ui-button--accent" href={`/projects${embedded?"?embed=1":""}`}>返回项目清单</Link></section></WorkbenchShell>;
+  if(!project)return <WorkbenchShell><div className="ui-empty rd-project-empty"><h3>正在读取项目资料</h3><p>请稍候…</p></div></WorkbenchShell>;
 
-  useEffect(() => {
-    let active = true;
-    Promise.all([readProject(id), listLedger(id)])
-      .then(([nextProject, nextLedger]) => { if (active) { setProject(nextProject); setLedger(nextLedger); } })
-      .catch((error) => { if (active) { setProject(null); setLoadError(error instanceof Error ? error.message : "项目数据加载失败。"); } });
-    return () => { active = false; };
-  }, [id]);
-
-  async function removeProject() {
-    if (!project) return;
-    try {
-      await deleteProject(project.id);
-      deleteDialog.current?.close();
-      router.replace(`/projects${suffix}`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "删除失败，请刷新后重试。");
-    }
+  const platform=platforms.find(item=>item.id===project.platformId),rate=project.budget?project.actual/project.budget*100:0;
+  const confirmedTotal=categories.reduce((sum,[,amount])=>sum+Math.max(0,amount),0);
+  const circumference=2*Math.PI*50;
+  let pieOffset=0;
+  async function saveStatus(){
+    if(!project||statusDraft===project.status)return;setSaving(true);
+    try{const updated=await updateProjectStatus(project.id,statusDraft);setProject(updated);setStatusDraft(updated.status);}
+    catch(e){setError(e instanceof Error?e.message:"项目状态更新失败。");}
+    finally{setSaving(false);}
   }
-
-  if (project === undefined) return <WorkbenchShell><section className="ui-empty rd-project-empty"><h3>正在加载项目数据</h3><p>请稍候…</p></section></WorkbenchShell>;
-  if (!project) return <WorkbenchShell><section className="ui-empty rd-project-empty"><h3>{loadError ? "项目数据暂不可用" : "项目不存在"}</h3><p>{loadError || "它可能已被删除。"}</p><Link className="ui-button ui-button--accent" href={`/projects${suffix}`}>返回项目管理</Link></section></WorkbenchShell>;
-
-  const rate = project.budget ? project.actual / project.budget * 100 : 0;
-  const updated = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(new Date(project.updatedAt));
-  const calculateHref = `/rd-cost?${new URLSearchParams({ project: project.id, ...(embedded ? { embed: "1" } : {}) }).toString()}`;
-  const scenarioHref = `/scenario/1${embedded ? "?embed=1" : ""}`;
-
-  return <WorkbenchShell>
-    <section className="rd-project-detail" aria-labelledby="project-detail-title">
-      <Link className="ui-text-action rd-project-back" href={`/projects${suffix}`}>← 返回项目管理</Link>
-      <div className="rd-projects-head rd-project-detail-head">
-        <div>
-          <div className="rd-project-title-line"><p className="rd-projects-kicker">{project.number}</p><span className={`ui-badge ${statusClass(project.status)}`}>{statusLabels[project.status]}</span></div>
-          <h1 id="project-detail-title">{project.name}</h1>
-          <p>查看已归集的费用台账，继续测算或管理该研发项目。</p>
-        </div>
-        <div className="rd-project-detail-actions"><Link className="ui-button ui-button--ghost" href={scenarioHref}>AI 助手</Link><Link className="ui-button ui-button--accent" href={calculateHref}>开始测算</Link><button className="ui-button ui-button--danger" type="button" onClick={() => deleteDialog.current?.showModal()}>删除项目</button></div>
-      </div>
-
-      <div className="rd-project-summary-grid">
-        <section className="ui-card rd-project-stat"><p>预算总额</p><strong>¥{project.budget.toLocaleString()}</strong></section>
-        <section className="ui-card rd-project-stat"><p>已归集费用</p><strong>¥{project.actual.toLocaleString()}</strong></section>
-        <section className="ui-card rd-project-stat"><p>预算执行率</p><strong>{rate.toFixed(1)}%</strong><div className="ui-progress" role="progressbar" aria-label="预算执行率" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(rate, 100)}><div className="ui-progress-fill" style={{ width: `${Math.min(100, Math.max(0, rate))}%` }} /></div></section>
-        <section className="ui-card rd-project-stat"><p>台账记录</p><strong>{ledger.length}</strong><span>{rate > 80 ? "接近预算预警线" : "处于正常范围"}</span></section>
-      </div>
-
-      <section className="rd-project-information" aria-labelledby="project-information-title"><h2 id="project-information-title">项目基本信息</h2><dl className="ui-keyvalue"><div><dt>项目编号</dt><dd>{project.number}</dd></div><div><dt>项目状态</dt><dd>{statusLabels[project.status]}</dd></div><div><dt>最近更新</dt><dd>{updated}</dd></div></dl></section>
-
-        <section className="ui-card rd-project-ledger" aria-labelledby="project-ledger-title"><div className="rd-project-section-head"><div><p className="rd-projects-kicker">LEDGER</p><h2 id="project-ledger-title">费用台账明细</h2></div><span className="ui-pill ui-pill--success">数据库归集</span></div>{ledger.length ? <div className="ui-table-wrap"><table className="ui-table"><thead><tr><th>日期</th><th>费用类别</th><th>说明</th><th className="ui-numeric">金额</th><th>来源</th></tr></thead><tbody>{ledger.map((entry) => <tr key={entry.id}><td>{entry.date}</td><td>{entry.category}</td><td>{entry.description}</td><td className="ui-numeric">¥{entry.amount.toLocaleString()}</td><td><span className="ui-badge">{entry.source === "calculation" ? "测算入账" : entry.source === "import" ? "导入" : "手动"}</span></td></tr>)}</tbody></table></div> : <div className="ui-empty"><h3>暂无费用台账记录</h3><p>完成一次研发费用测算后，结果会自动归集到这里。</p><Link className="ui-button ui-button--accent" href={calculateHref}>开始测算</Link></div>}</section>
-
-      <dialog className="ui-dialog rd-project-dialog" ref={deleteDialog} aria-labelledby="delete-project-title">
-        <div className="ui-dialog-head"><div><p className="rd-dialog-kicker rd-dialog-kicker-danger">IRREVERSIBLE</p><h2 id="delete-project-title">删除项目？</h2></div><button className="ui-button ui-button--ghost ui-button--icon" type="button" aria-label="关闭删除项目对话框" onClick={() => deleteDialog.current?.close()}>×</button></div>
-        <div className="ui-dialog-body"><p className="rd-dialog-description">将删除 <strong>{project.number} · {project.name}</strong>，以及该项目下的所有费用台账记录。此操作无法撤销。</p>{message && <p className="ui-field-error" role="alert">{message}</p>}</div>
-        <div className="ui-dialog-footer"><button className="ui-button ui-button--ghost" type="button" onClick={() => deleteDialog.current?.close()}>取消</button><button className="ui-button ui-button--danger" type="button" onClick={removeProject}>确认删除</button></div>
-      </dialog>
-    </section>
-  </WorkbenchShell>;
+  return <WorkbenchShell><section className="rd-project-detail" aria-labelledby="project-detail-title">
+    <Link className="ui-text-action rd-project-back" href={`/projects${embedded?"?embed=1":""}`}>← 返回项目清单</Link>
+    <div className="rd-projects-head rd-project-detail-head"><div><div className="rd-project-title-line"><p className="rd-projects-kicker">{project.number}</p><span className={`ui-badge ${project.status==="active"||project.status==="completed"?"ui-badge--success":project.status==="stopped"?"ui-badge--danger":"ui-badge--warning"}`}>{statusLabels[project.status]}</span></div><h1 id="project-detail-title">{project.name}</h1><p>{platform?.number?`${platform.number} · `:""}{platform?.name||"平台待确认"}</p></div><div className="rd-project-detail-actions">{access.manager&&project.status!=="completed"&&<div className="rd-project-status-editor"><label htmlFor="project-status-select">项目状态</label><select id="project-status-select" value={statusDraft} onChange={event=>setStatusDraft(event.target.value as RdProject["status"])}><option value="init">待开始</option><option value="active">进行中</option><option value="paused">暂停</option><option value="stopped">停止</option><option value="completed">已完成</option></select><button className="ui-button ui-button--ghost" type="button" onClick={saveStatus} disabled={saving||statusDraft===project.status}>{saving?"正在保存…":"保存状态"}</button></div>}{access.manager&&<Link className="ui-button ui-button--accent" href={`/rd-cost${embedded?"?embed=1":""}`}>费用测算</Link>}</div></div>
+    {access.loaded&&!access.manager&&<p className="rd-project-empty-note">当前可查看项目预算及累计费用；来源材料和费用明细仅经理可查看。</p>}
+    <div className="rd-project-summary-grid"><section className="ui-card rd-project-stat"><p>累计研发费用</p><strong><AnimatedAmount value={project.actual}/></strong><span>按各月已确认结果累计</span></section><section className="ui-card rd-project-stat"><p>经费预算</p><strong>{money(project.budget)}</strong><span>来自立项书 OCR 并经人工核对</span></section><section className="ui-card rd-project-stat"><p>预算执行率</p><strong>{rate.toFixed(1)}%</strong><div className="ui-progress" role="progressbar" aria-label="预算执行率" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100,Math.max(0,rate))}><div className="ui-progress-fill" style={{width:`${Math.min(100,Math.max(0,rate))}%`}}/></div></section>{access.manager&&<section className="ui-card rd-project-stat"><p>费用类别</p><strong>{categories.length}</strong><span>{ledger.length} 条已确认费用明细</span></section>}</div>
+    {access.manager&&<section className="ui-card rd-project-trend-card rd-project-detail-trend"><div className="rd-project-section-head"><div><p className="rd-projects-kicker">PROJECT COST</p><h2>月度与累计费用</h2></div></div><TrendChart points={points} label={`${project.name}每月费用与累计费用`}/></section>}
+    {access.manager&&<section className="ui-card rd-project-composition" aria-labelledby="project-composition-title"><div className="rd-project-section-head"><div><p className="rd-projects-kicker">COST COMPOSITION</p><h2 id="project-composition-title">累计费用构成</h2><p className="rd-project-composition-note">按已确认的直接人工、运费等费用类别统计</p></div><strong className="rd-project-composition-total">{money(confirmedTotal)}</strong></div>{confirmedTotal>0?<div className="rd-project-composition-content"><div className="rd-project-pie-wrap"><svg className="rd-project-pie" viewBox="0 0 120 120" role="img" aria-label={`累计费用构成，总额${money(confirmedTotal)}`}><circle className="rd-project-pie-track" cx="60" cy="60" r="50"/><g>{categories.filter(([,amount])=>amount>0).map(([category,amount],index)=>{const portion=amount/confirmedTotal,length=portion*circumference,offset=pieOffset;pieOffset+=length;return <circle key={category} className="rd-project-pie-segment" cx="60" cy="60" r="50" stroke={pieColors[index%pieColors.length]} strokeDasharray={`${length} ${circumference-length}`} strokeDashoffset={-offset}/>;})}</g></svg><div className="rd-project-pie-center"><span>已确认费用</span><strong>{money(confirmedTotal)}</strong></div></div><ul className="rd-project-composition-legend">{categories.filter(([,amount])=>amount>0).map(([category,amount],index)=><li key={category}><span className="rd-project-legend-label"><i style={{backgroundColor:pieColors[index%pieColors.length]}}/><span>{category}</span></span><span className="rd-project-legend-value">{money(amount)}<strong>{(amount/confirmedTotal*100).toFixed(1)}%</strong></span></li>)}</ul></div>:<p className="rd-project-composition-empty">目前还没有已确认的费用，确认研发费用测算后会显示直接人工、运费等构成及占比。</p>}</section>}
+    <section className="rd-project-information" aria-labelledby="project-information-title"><h2 id="project-information-title">项目资料</h2><dl className="ui-keyvalue"><div><dt>项目编号</dt><dd>{project.number}</dd></div><div><dt>归属平台</dt><dd>{platform?.name||"未设置"}</dd></div><div><dt>项目状态</dt><dd>{statusLabels[project.status]}</dd></div><div><dt>项目起止时间</dt><dd>{project.startDate||"—"} 至 {project.endDate||"—"}</dd></div><div><dt>最近更新</dt><dd>{new Intl.DateTimeFormat("zh-CN",{dateStyle:"medium"}).format(new Date(project.updatedAt))}</dd></div><div><dt>完成时间</dt><dd>{project.completedAt?new Intl.DateTimeFormat("zh-CN",{dateStyle:"medium"}).format(new Date(project.completedAt)):"—"}</dd></div></dl></section>
+    {access.manager&&<section className="ui-card rd-project-ledger"><div className="rd-project-section-head"><div><p className="rd-projects-kicker">PROJECT DOCUMENTS</p><h2>项目材料</h2></div></div>{documents.length?documents.map(document=><a className="rd-project-document" key={document.id} href={`/api/rd/projects/${encodeURIComponent(project.id)}/documents/${encodeURIComponent(document.id)}`} target="_blank" rel="noreferrer"><span>立项书</span><strong>{document.filename}</strong><small>{new Intl.DateTimeFormat("zh-CN",{dateStyle:"medium"}).format(new Date(document.createdAt))}</small></a>):<p className="rd-project-empty-note">该项目暂未归档立项书。</p>}</section>}
+    {access.manager&&<section className="ui-card rd-project-ledger" aria-labelledby="project-ledger-title"><div className="rd-project-section-head"><div><p className="rd-projects-kicker">CONFIRMED COSTS</p><h2 id="project-ledger-title">费用明细</h2></div><span className="ui-pill ui-pill--success">仅显示已确认金额</span></div>{ledger.length?<div className="ui-table-wrap"><table className="ui-table"><thead><tr><th>月份</th><th>费用类别</th><th>说明</th><th className="ui-numeric">金额</th></tr></thead><tbody>{ledger.map(entry=><tr key={entry.id}><td>{entry.date.slice(0,7)}</td><td>{entry.category}</td><td>{entry.description}</td><td className="ui-numeric">{money(entry.amount)}</td></tr>)}</tbody></table></div>:<div className="ui-empty"><h3>还没有确认费用</h3><p>完成月度测算并人工确认后，费用会归集到这个项目。</p><Link className="ui-button ui-button--accent" href={`/rd-cost${embedded?"?embed=1":""}`}>开始测算</Link></div>}</section>}
+  </section></WorkbenchShell>;
 }
