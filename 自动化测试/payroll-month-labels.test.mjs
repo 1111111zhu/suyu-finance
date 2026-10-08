@@ -79,3 +79,15 @@ test('supplied roster has no missing status/type payroll errors',{skip:!process.
   const counts=run("employees.reduce((a,e)=>{for(const tag of e.payrollTags)a[tag]=(a[tag]||0)+1;return a},{})");
   console.log('Supplied roster month labels:',JSON.stringify(counts),'employees:',run('employees.length'));
 });
+
+test('numeric employee numbers are usable while text leading zeros and bank validation survive',()=>{
+ const {run}=app();
+ for(const value of [127,0,'001','SX17']) {
+  const row=JSON.parse(JSON.stringify(run(`PayrollEngine.normalizeRosterRow({姓名:'测试',工号:${JSON.stringify(value)},职位:'工程师'},undefined,'2026-09')`)));
+  assert.equal(row.values.employeeNumber,String(value));
+  assert.deepEqual(row.issues,[]);
+ }
+ for(const value of [-1,1.5,9007199254740992])
+  assert.ok(run(`PayrollEngine.normalizeRosterRow({姓名:'测试',工号:${value}},undefined,'2026-09').issues.some(i=>i.field==='employeeNumber' && i.reason==='invalid')`));
+ assert.ok(run("PayrollEngine.normalizeRosterRow({姓名:'测试',银行卡号:123456},undefined,'2026-09').issues.some(i=>i.field==='bankCard' && i.reason==='text-required')"));
+});

@@ -154,7 +154,9 @@ globalThis.PayrollEngine = (() => {
         if(value===null) issues.push(rosterIssue(field,'invalid',[header],`“${label}”取值无法判定是否实习，请人工核对`));
         else values[field]=value;
       } else {
-        if(['employeeNumber','bankCard'].includes(field) && typeof raw!=='string')
+        if(field==='employeeNumber' && typeof raw!=='string' && !(typeof raw==='number' && Number.isSafeInteger(raw) && raw>=0))
+          issues.push(rosterIssue(field,'invalid',[header],'工号数值无效，请使用非负整数或文本工号'));
+        if(field==='bankCard' && typeof raw!=='string')
           issues.push(rosterIssue(field,'text-required',[header],`“${label}”必须在 Excel 中保存为文本，数字单元格可能丢失前导零，请核对原表`));
         values[field]=String(raw).trim();
       }

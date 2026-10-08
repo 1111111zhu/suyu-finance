@@ -49,11 +49,11 @@ const groups: NavGroup[] = [
     label: "工资表",
     icon: icons.payroll,
     items: [
-      { id: "salary-auto", label: "自动算薪", description: "本月工资核算、资料导入与自动计算", src: "/salary/index.html?embed=1&v=20261008-month-labels#gross/upload", icon: icons.payroll },
+      { id: "salary-auto", label: "自动算薪", description: "本月工资核算、资料导入与自动计算", src: "/salary/index.html?embed=1&v=20261008-numeric-id#gross/upload", icon: icons.payroll },
       { id: "salary-directory", label: "人员归集", description: "在职工资人员准备与离职核对", src: "/salary-directory?embed=1", icon: icons.directory },
-      { id: "salary-batches", label: "历史批次", description: "查看与管理历史工资批次", src: "/salary/index.html?embed=1&v=20261008-month-labels#batches", icon: icons.batches },
-      { id: "salary-email", label: "邮件发送", description: "生成工资表邮件内容与附件", src: "/salary/index.html?embed=1&v=20261008-month-labels#net/email", icon: icons.email },
-      { id: "salary-settings", label: "核算规则", description: "查看计薪、假勤与转正规则", src: "/salary/index.html?embed=1&v=20261008-month-labels#gross/rules", icon: icons.settings },
+      { id: "salary-batches", label: "历史批次", description: "查看与管理历史工资批次", src: "/salary/index.html?embed=1&v=20261008-numeric-id#batches", icon: icons.batches },
+      { id: "salary-email", label: "邮件发送", description: "生成工资表邮件内容与附件", src: "/salary/index.html?embed=1&v=20261008-numeric-id#net/email", icon: icons.email },
+      { id: "salary-settings", label: "核算规则", description: "查看计薪、假勤与转正规则", src: "/salary/index.html?embed=1&v=20261008-numeric-id#gross/rules", icon: icons.settings },
     ],
   },
 ];
