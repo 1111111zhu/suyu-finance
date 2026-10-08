@@ -100,3 +100,10 @@ test('attendance days use the new header and accept the legacy header',()=>{
   assert.deepEqual(JSON.parse(JSON.stringify(run('employees[0].paidDayIssues'))),[]);
  }
 });
+
+test('agreement section headers are excluded without suppressing incomplete employee records',()=>{
+ const {run}=app();
+ const rows=JSON.parse(JSON.stringify(run("PayrollEngine.rowsFromGrid([['姓名','工号','劳动合同起','劳动合同止'],['甲',127,'2026-01-01','2027-01-01'],[null,null,'实习协议起','实习协议止'],['乙','SX18','2026-08-17','2027-06-30'],[null,128,'2026-01-01','2027-01-01']])")));
+ assert.equal(rows.length,3);assert.equal(rows[1].姓名,'乙');assert.equal(rows[2].工号,128);
+ assert.equal(run("PayrollEngine.rosterRowInMonth({劳动合同起:'实习协议起',劳动合同止:'实习协议止',_rosterSource:{rowNumber:83}},'2026-09')"),false);
+});

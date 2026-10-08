@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261008-attendance-name"></script>
+  <script src="./payroll-engine.js?v=20261008-section-header"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -712,7 +712,7 @@
           const sheetRows=PayrollEngine.rowsFromGrid(sheetGrid);
           const start=sheetGrid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
           const nameColumn=sheetGrid[start-2].findIndex(v=>canonicalKey(v)==='姓名');
-          const rowNumbers=sheetGrid.slice(start-1).flatMap((r,i)=>r.every(PayrollEngine.blank)||/^(?:合计|总计|汇总)$/.test(String(r[nameColumn]??'').trim())?[]:[start+i]);
+          const rowNumbers=sheetGrid.slice(start-1).flatMap((r,i)=>r.every(PayrollEngine.blank)||PayrollEngine.rosterSectionHeader(Object.fromEntries(r.map((v,j)=>[j,v])))||/^(?:合计|总计|汇总)$/.test(String(r[nameColumn]??'').trim())?[]:[start+i]);
           sheetRows.forEach((row,i)=>combined.push({...Object.fromEntries(Object.entries(row).map(([field,value])=>[field,Object.prototype.toString.call(value)==='[object Date]'?PayrollEngine.dateValue(value):value])),_rosterSource:{sheetName:name,rowNumber:rowNumbers[i],departedSheet:/离职/.test(name)}}));
         }
         combined.sheetName=sheetName;combined.sourceStartRow=rows.sourceStartRow;
