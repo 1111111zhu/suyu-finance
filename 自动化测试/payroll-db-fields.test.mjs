@@ -211,7 +211,7 @@ test('workbench labels and employee-number aliases map without conflating comput
   for (const label of ['工号', '员工编号', '员工工号']) {
     assert.deepEqual(fromLegacyPayrollRow({ [label]: '00000042' }), { values: { employeeNumber: '00000042' }, unmapped: {} });
   }
-  const result = fromLegacyPayrollRow({ 绩效系数: '1.25', score: '1.5', 实发薪天数: 22, actualPaidDays: 21,
+  const result = fromLegacyPayrollRow({ 绩效系数: '1.25', score: '1.5', 实际出勤天数: 22, actualPaidDays: 21,
     应发工资: '1.00', grossTarget: '2.00', 实发工资: '3.00', netTarget: '4.00' });
   assert.deepEqual(result, { values: { effectiveScore: '1.25', score: '1.5', payableDays: 22, actualPaidDays: 21,
     gross: '1.00', grossTarget: '2.00', net: '3.00', netTarget: '4.00' }, unmapped: {} });

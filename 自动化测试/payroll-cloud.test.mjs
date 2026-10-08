@@ -73,7 +73,7 @@ function app({disk = storage(), fetch, auto = false} = {}) {
       commitSource('roster',{rows:roster,filename:'虚拟花名册.xlsx'});
       commitSource('salary',{rows:[{姓名:'虚拟甲',基本工资:8000,岗位工资:2000,绩效基数:1200}],filename:'虚拟工资.xlsx'});
       commitSource('performance',{rows:[{姓名:'虚拟甲',绩效系数:1}],filename:'虚拟绩效.xlsx'});
-      commitSource('attendance',{rows:[{姓名:'虚拟甲',实发薪天数:22,餐补合计:300}],filename:'虚拟考勤.xlsx'});
+      commitSource('attendance',{rows:[{姓名:'虚拟甲',实际出勤天数:22,餐补合计:300}],filename:'虚拟考勤.xlsx'});
       state.selectedId=employees[0].id;saveBatchData();`);
     return W.currentBatch();
   }

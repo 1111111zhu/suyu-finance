@@ -101,7 +101,7 @@ test('server legacy field mapping accepts the same salary-facing roster aliases'
 
 test('salary import reads aliases, keeps roster regularization authoritative and flags conflicts for confirmation', () => {
   const run=app();
-  run("sourceRows={roster:[{姓名:'测试甲',工号:'00042',签约公司:'测试公司',一级部门:'研发',三级部门:'软件组',职位:'工程师',员工状态:'在职',员工类型:'试用期',入职时间:'2025-01-02',转正日期:'2026-09-15',银行卡号:'0012345678901234'}],salary:[{姓名:'测试甲',基本工资:10000,转正前工资:10000,转正后工资:20000,转正日期:'2026-09-15'}],attendance:[{姓名:'测试甲',实发薪天数:22}]};sourceRows.roster.sourceStartRow=5;state.liveImport=true;applyPayrollSettings('2026-09',22);");
+  run("sourceRows={roster:[{姓名:'测试甲',工号:'00042',签约公司:'测试公司',一级部门:'研发',三级部门:'软件组',职位:'工程师',员工状态:'在职',员工类型:'试用期',入职时间:'2025-01-02',转正日期:'2026-09-15',银行卡号:'0012345678901234'}],salary:[{姓名:'测试甲',基本工资:10000,转正前工资:10000,转正后工资:20000,转正日期:'2026-09-15'}],attendance:[{姓名:'测试甲',实际出勤天数:22}]};sourceRows.roster.sourceStartRow=5;state.liveImport=true;applyPayrollSettings('2026-09',22);");
   assert.equal(run('employees[0].company'),'测试公司');
   assert.equal(run('employees[0].join'),'2025-01-02');
   assert.equal(run('employees[0].employeeNumber'),'00042');

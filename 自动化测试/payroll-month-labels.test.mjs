@@ -39,7 +39,7 @@ test('month labels select the existing hire, departure, regularization and inter
     {姓名:'实习',职位:'实习生'},{姓名:'先离后转',职位:'工程师',离职日期:'2026-09-11',转正日期:'2026-09-12'}],
     salary:['正职','入职','离职','转正','实习'].map(姓名=>({姓名,基本工资:2175,绩效基数:1000,转正前工资:2200,转正后工资:4400})),
     performance:['正职','入职','离职','转正'].map(姓名=>({姓名,绩效系数:1})),
-    attendance:['正职','入职','离职','转正','实习'].map(姓名=>({姓名,实发薪天数:20,事假天数:1}))};
+    attendance:['正职','入职','离职','转正','实习'].map(姓名=>({姓名,实际出勤天数:20,事假天数:1}))};
     state.liveImport=true;applyPayrollSettings('2026-09',22);`);
   assert.equal(run("employees.find(e=>e.name==='正职').deductDays"),1);
   assert.equal(run("employees.find(e=>e.name==='入职').effectiveScore"),0);
@@ -90,4 +90,13 @@ test('numeric employee numbers are usable while text leading zeros and bank vali
  for(const value of [-1,1.5,9007199254740992])
   assert.ok(run(`PayrollEngine.normalizeRosterRow({姓名:'测试',工号:${value}},undefined,'2026-09').issues.some(i=>i.field==='employeeNumber' && i.reason==='invalid')`));
  assert.ok(run("PayrollEngine.normalizeRosterRow({姓名:'测试',银行卡号:123456},undefined,'2026-09').issues.some(i=>i.field==='bankCard' && i.reason==='text-required')"));
+});
+
+test('attendance days use the new header and accept the legacy header',()=>{
+ const {run}=app();
+ for(const header of ['实际出勤天数','实发薪天数']) {
+  run(`sourceRows={roster:[{姓名:'测试',职位:'工程师'}],attendance:[{姓名:'测试',[${JSON.stringify(header)}]:'20.5'}]};state.liveImport=true;applyPayrollSettings('2026-09',22)`);
+  assert.equal(run('employees[0].payableDays'),20.5);
+  assert.deepEqual(JSON.parse(JSON.stringify(run('employees[0].paidDayIssues'))),[]);
+ }
 });

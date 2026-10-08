@@ -11,7 +11,7 @@ function app(){
  for(const f of ['payroll-engine.js','payroll-email-engine.js'])run(fs.readFileSync(new URL(f,base),'utf8'));
  const html=fs.readFileSync(new URL('index.html',base),'utf8');run(html.match(/<script>\s*([\s\S]*?)<\/script>/)[1]);
  run('render=()=>{};showToast=()=>{};');run(fs.readFileSync(new URL('workbench-core.js',base),'utf8'));
- run(`sourceRows={roster:[{姓名:'甲',公司:'测试公司',一级部门:'研发部',是否入离职:'在职'}],salary:[{姓名:'甲',基本工资:8000,岗位工资:2000,绩效基数:1200}],performance:[{姓名:'甲',绩效系数:1}],attendance:[{姓名:'甲',实发薪天数:22,餐补合计:300}],other:[{姓名:'甲',其他加:0}],netSocial:[{姓名:'甲',个人总计:800,公司总计:1200}],netFund:[{姓名:'甲',个人缴纳:300,公司缴纳:300}],tax:[{姓名:'甲',税:200}],afterTax:[{姓名:'甲',水电代扣:0,餐费代扣:200,其它代扣:0}]};state.liveImport=true;state.sourceStatus.roster={uploaded:true};currentWorkdays=22;currentMonth='2026-08';state.payrollStage='gross';recalculateEmployees();state.selectedId=employees[0].id;globalThis.W=PayrollWorkbench;`);
+ run(`sourceRows={roster:[{姓名:'甲',公司:'测试公司',一级部门:'研发部',是否入离职:'在职'}],salary:[{姓名:'甲',基本工资:8000,岗位工资:2000,绩效基数:1200}],performance:[{姓名:'甲',绩效系数:1}],attendance:[{姓名:'甲',实际出勤天数:22,餐补合计:300}],other:[{姓名:'甲',其他加:0}],netSocial:[{姓名:'甲',个人总计:800,公司总计:1200}],netFund:[{姓名:'甲',个人缴纳:300,公司缴纳:300}],tax:[{姓名:'甲',税:200}],afterTax:[{姓名:'甲',水电代扣:0,餐费代扣:200,其它代扣:0}]};state.liveImport=true;state.sourceStatus.roster={uploaded:true};currentWorkdays=22;currentMonth='2026-08';state.payrollStage='gross';recalculateEmployees();state.selectedId=employees[0].id;globalThis.W=PayrollWorkbench;`);
  return run;
 }
 test('gross item edits survive recalculation, preserve sources, and reach generated net',()=>{

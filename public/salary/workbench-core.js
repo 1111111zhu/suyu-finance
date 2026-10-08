@@ -12,7 +12,7 @@ globalThis.PayrollWorkbench = (() => {
     base:['基本工资','salary'], post:['岗位工资','salary'], perfBase:['绩效基数','salary'], score:['绩效系数','performance'],
     performancePay:['绩效工资','performance'], meal:['餐饮津贴','attendance'], transit:['交通津贴','attendance'],
     otherAllow:['其他津贴','other'], otherAdd:['其他加项','other'], otherReduction:['其他减项','other'],
-    actualPaidDays:['实发薪天数','attendance'], sick:['病假天数','attendance'], personal:['事假天数','attendance'],
+    actualPaidDays:['实际出勤天数','attendance'], sick:['病假天数','attendance'], personal:['事假天数','attendance'],
     absent:['旷工天数','attendance'], annual:['年假天数','attendance'], flexible:['弹性假天数','attendance'],
     compensatory:['调休假天数','attendance'], attendanceDeduct:['假勤扣款','attendance'], sickSubsidy:['病假补贴','attendance'],
     dailyRate:['实习生日薪','manual'], probationTotal:['转正前月薪','salary'], regularTotal:['转正后月薪','salary'],
@@ -49,7 +49,7 @@ globalThis.PayrollWorkbench = (() => {
     const roster=profile.rosterRow?sourceRows.roster?.[profile.rosterRow-(sourceRows.roster?.sourceStartRow||2)]:null;
     const p={...profile,employeeNumber:String(rowValue(roster,['工号','员工编号','员工工号'])||profile.employeeNumber||profile.id)};
     for(const [field,value] of Object.entries(o)) if(!computedFields.has(field)) p[field]=value;
-    if(Object.hasOwn(o,'actualPaidDays')) p.paidDayIssues=(p.paidDayIssues||[]).filter(x=>!(/实发薪天数|未上传考勤|考勤统计表中未找到/.test(x)));
+    if(Object.hasOwn(o,'actualPaidDays')) p.paidDayIssues=(p.paidDayIssues||[]).filter(x=>!(/实际出勤天数|未上传考勤|考勤统计表中未找到/.test(x)));
     const e=original.calc(p,month,days);
     e._workbenchKey=k;
     e._input={...p};
