@@ -14,7 +14,7 @@ export const payrollFields = Object.freeze([
   { key: 'join', label: '入职日期', column: 'join_date', type: 'date' },
   { key: 'leave', label: '离职日期', column: 'leave_date', type: 'date' },
   { key: 'workdays', label: '应发薪', column: 'workdays', type: 'decimal' },
-  { key: 'payableDays', label: '实发薪天数', column: 'payable_days', type: 'decimal' },
+  { key: 'payableDays', label: '实际出勤天数', column: 'payable_days', type: 'decimal' },
   { key: 'base', label: '基本工资', column: 'base', type: 'money' },
   { key: 'post', label: '岗位工资', column: 'post', type: 'money' },
   { key: 'perfBase', label: '绩效基数', column: 'perf_base', type: 'money' },
@@ -60,7 +60,7 @@ export const payrollFields = Object.freeze([
   // Workbench inputs have distinct columns from their computed/exported values.
   { key: 'employeeNumber', label: '工号', column: 'employee_number', type: 'text' },
   { key: 'score', label: '绩效系数（调整输入）', column: 'score', type: 'decimal' },
-  { key: 'actualPaidDays', label: '实发薪天数（调整输入）', column: 'actual_paid_days', type: 'decimal' },
+  { key: 'actualPaidDays', label: '实际出勤天数（调整输入）', column: 'actual_paid_days', type: 'decimal' },
   { key: 'probationTotal', label: '转正前月薪', column: 'probation_total', type: 'money' },
   { key: 'regularTotal', label: '转正后月薪', column: 'regular_total', type: 'money' },
   { key: 'probationBase', label: '转正前基本工资', column: 'probation_base', type: 'money' },
@@ -82,6 +82,8 @@ const fieldsByKey = new Map(payrollFields.map(field => [field.key, field]));
 
 // Explicit aliases only: an unfamiliar header containing “实习” is not inferred.
 const legacyAliases = {
+  payableDays: ['实发薪天数'],
+  actualPaidDays: ['实发薪天数（调整输入）'],
   name: ['员工姓名'],
   company: ['签约公司'],
   dept: ['部门', '一级部门名称'],
