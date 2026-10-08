@@ -537,9 +537,7 @@
       const perfScore = late ? 0 : num(profile.score);
       let base = num(profile.base), post = num(profile.post), perfBase = num(profile.perfBase);
       let probationWorkdays = null, regularWorkdays = null, probationSalary = null, regularSalary = null, probationSubtotal = null, regularSubtotal = null, regularizationBlocked = false;
-      const regularizationActive = isRegularizationMonth(profile, month);
-      const hasRegularizationDate = Boolean(profile.regularizationDate);
-      if (hasRegularizationDate && !regularizationActive) exceptions.push('转正日期不在当前计薪月份，本月不做转正分段');
+      const regularizationActive = isRegularizationMonth(profile, month) && (!profile.payrollTags || profile.payrollTags.includes('转正'));
       if (regularizationActive) {
         const suppliedProbationDays = hasNumber(profile.probationWorkdays) ? Number(profile.probationWorkdays) : null;
         const suppliedRegularDays = hasNumber(profile.regularWorkdays) ? Number(profile.regularWorkdays) : null;
@@ -638,7 +636,7 @@
     function canonicalKey(value) { return String(value ?? '').trim().replace(/\s+/g, '').replace(/[（）]/g, match => match === '（' ? '(' : ')'); }
     function isInternValue(value) { return new Set(['是','实习生','1','TRUE','Y']).has(String(value ?? '').trim().toUpperCase()); }
     function internFlagValue(row) {
-      const normalized=PayrollEngine.normalizeRosterRow(row);
+      const normalized=PayrollEngine.normalizeRosterRow(row,undefined,currentMonth);
       return normalized.values.isIntern === undefined ? null : normalized.values.isIntern;
     }
     function sortEmployeesInternLast(list) { return list.slice().sort((a,b)=>Number(a.isIntern)-Number(b.isIntern)); }
@@ -704,10 +702,26 @@
       if (!sheetName) throw new Error('Excel 文件没有可读取的工作表');
       const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
       const rows=PayrollEngine.rowsFromGrid(grid); rows.sheetName=sheetName; rows.sourceStartRow=grid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
+      // Retain all roster sheets so changing the payroll month can reclassify
+      // departures without losing their original sheet and row provenance.
+      if(/花名册|人员名册|员工名册/.test(file.name) || matchSource(file.name,rows).key==='roster') {
+        const combined=[];
+        for(const name of workbook.SheetNames) {
+          const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});
+          if(!sheetGrid.some(r=>r.some(v=>canonicalKey(v)==='姓名'))) continue;
+          const sheetRows=PayrollEngine.rowsFromGrid(sheetGrid);
+          const start=sheetGrid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
+          const nameColumn=sheetGrid[start-2].findIndex(v=>canonicalKey(v)==='姓名');
+          const rowNumbers=sheetGrid.slice(start-1).flatMap((r,i)=>r.every(PayrollEngine.blank)||/^(?:合计|总计|汇总)$/.test(String(r[nameColumn]??'').trim())?[]:[start+i]);
+          sheetRows.forEach((row,i)=>combined.push({...Object.fromEntries(Object.entries(row).map(([field,value])=>[field,Object.prototype.toString.call(value)==='[object Date]'?PayrollEngine.dateValue(value):value])),_rosterSource:{sheetName:name,rowNumber:rowNumbers[i],departedSheet:/离职/.test(name)}}));
+        }
+        combined.sheetName=sheetName;combined.sourceStartRow=rows.sourceStartRow;
+        return combined;
+      }
       return rows;
     }
     function tableFor(key) {
-      const rows = sourceRows[key] || [];
+      const rows = (sourceRows[key] || []).filter(row=>key!=='roster' || PayrollEngine.rosterRowInMonth(row,currentMonth));
       const map = new Map(), duplicates = new Set();
       rows.forEach(row => { const name = String(rowValue(row, ['姓名']) ?? '').trim(); if (!name) return; const normalized = canonicalKey(name); if (map.has(normalized)) duplicates.add(normalized); else map.set(normalized, row); });
       return {map, duplicates};
@@ -718,12 +732,12 @@
       const link = (key, name, aliases, fallback=0) => { const table=tables[key]; if (!table) return {value:fallback, found:false, source:false, duplicate:false}; const normalized=canonicalKey(name), duplicate=table.duplicates.has(normalized), matched=table.map.get(normalized); const column=aliases.map(alias=>Object.keys(matched || {}).find(key=>canonicalKey(key)===canonicalKey(alias))).find(key=>key!==undefined); return {column, value:table.map.has(normalized) ? rowValue(table.map.get(normalized), aliases) : fallback, found:table.map.has(normalized), source:true, duplicate}; };
       const firstPresent = (...values) => values.find(value => value !== null && value !== undefined && String(value).trim() !== '') ?? null;
       return sortEmployeesInternLast(rosterRows.map((row, index) => {
-        const rosterDiagnosis=PayrollEngine.normalizeRosterRow(row);
+        const rosterDiagnosis=PayrollEngine.normalizeRosterRow(row,undefined,currentMonth);
         const name=String(rowValue(row,['姓名']) ?? '').trim(), isIntern=isInternValue(internFlagValue(row)), salary=link('salary',name,['基本工资','工资基数']), post=link('salary',name,['岗位工资']), perfBase=link('salary',name,['绩效基数']), probationTotal=link('salary',name,['转正前工资','试用期工资','转正前月薪','试用期月薪','转正前'],null), regularTotal=link('salary',name,['转正后工资','正式工资','转正后月薪','正式月薪','转正后'],null), probationBase=link('salary',name,['转正前基本工资','试用期基本工资']), regularBase=link('salary',name,['转正后基本工资','转正基本工资','正式基本工资']), probationPost=link('salary',name,['转正前岗位工资','试用期岗位工资']), regularPost=link('salary',name,['转正后岗位工资','转正岗位工资','正式岗位工资']), probationPerfBase=link('salary',name,['转正前绩效基数','试用期绩效基数']), regularPerfBase=link('salary',name,['转正后绩效基数','转正绩效基数','正式绩效基数']), regularizationSalaryDate=link('salary',name,['转正日期','转正日','转正时间'],null), probationDays=link('attendance',name,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数'],null), regularDays=link('attendance',name,['转正后应出勤天数','转正后出勤天数','转正后计薪天数'],null), performance=link('performance',name,['绩效系数','绩效分数']), attendance=link('attendance',name,['餐补合计']), transit=link('attendance',name,['交通补贴']), otherAllow=link('other',name,['其他津贴']), otherAdd=link('other',name,['其他加']), annual=link('attendance',name,['年假天数','年假(天)','年假（天）']), flexible=link('attendance',name,['弹性假天数','弹性假(天)','弹性假（天）']), compensatory=link('attendance',name,['调休假天数','调休假(天)','调休假（天）']), sick=link('attendance',name,['病假天数','病假（天）','病假(天)']), personal=link('attendance',name,['事假天数','事假（天）','事假(天)']), absent=link('attendance',name,['旷工天数','旷工（天）','旷工(天)']), companySocial=link('social',name,['公司总计']), companyFund=link('fund',name,['公司缴纳']), social=link('social',name,['个人总计','个人社保']), fund=link('fund',name,['个人缴纳','个人公积金']), otherReduction=link('other',name,['其他减']), otherDeduct=link('other',name,['其他代扣']), utility=link('utility',name,['水电费合计']), mealDeduct=link('meal',name,['餐费合计']), tax=link('tax',name,['税','个税','个人所得税','税额']);
         if (tax.found) { const taxRow=tables.tax.map.get(canonicalKey(name)), exact=Object.keys(taxRow).find(key=>canonicalKey(key)==='税'); if (exact!==undefined) tax.value=taxRow[exact]; }
         const paidDays=link('attendance',name,['实发薪天数'],null);
         const duplicateSources=Object.entries(tables).filter(([key,table])=>!netSourceKeys.includes(key) && table.duplicates.has(canonicalKey(name))).map(([key])=>sourceSheets.find(sheet=>sheet.key===key)?.name || key);
-        const payrollSourceBlocked=!name || duplicateSources.length>0;
+        const payrollSourceBlocked=!name || duplicateSources.length>0 || (!isIntern && (!salary.source || !salary.found));
         const paidDayIssues=[];
         if (!name) paidDayIssues.push('花名册姓名为空');
         if (duplicateSources.length) paidDayIssues.push(...Object.entries(tables).filter(([key,table])=>!netSourceKeys.includes(key) && table.duplicates.has(canonicalKey(name))).map(([key])=>{const rows=(sourceRows[key]||[]).flatMap((r,i)=>canonicalKey(rowValue(r,['姓名']))===canonicalKey(name)?[i+2]:[]);return (sourceSheets.find(sheet=>sheet.key===key)?.name||key)+'存在重复姓名（第 '+rows.join('、')+' 行）；保留原有按姓名取首条的计算方式，请核对';}));
@@ -736,6 +750,7 @@
         if (!name) exceptions.push('花名册姓名为空');
         if (tables.roster?.duplicates.has(canonicalKey(name))) exceptions.push('花名册存在重复姓名');
         if (!isIntern && salary.source && !salary.found) exceptions.push('员工基本工资表未找到匹配');
+        if (!isIntern && !salary.source) exceptions.push('未上传员工基本工资表，当前金额不含完整月薪');
         if (!isIntern && performance.source && !performance.found) exceptions.push('绩效考核表未找到匹配');
         const deductionIssues=[];
         for (const [item,label] of [[social,'个人社保'],[fund,'个人公积金']]) {
@@ -751,10 +766,10 @@
         }
         (isIntern?[paidDays]:[salary,post,perfBase,probationTotal,regularTotal,probationBase,regularBase,probationPost,regularPost,probationPerfBase,regularPerfBase,regularizationSalaryDate,probationDays,regularDays,performance,attendance,transit,otherAllow,otherAdd,annual,flexible,compensatory,sick,personal,absent,otherReduction]).forEach(item=>{if(item.duplicate) exceptions.push('源表存在重复姓名');});
         if (isIntern && !Object.prototype.hasOwnProperty.call(internDailyRates(),canonicalKey(name))) exceptions.push('日薪未设置');
-        const statusValue=rosterDiagnosis.sources.status ? row[rosterDiagnosis.sources.status] : null;
+        const statusValue=rosterDiagnosis.values.payrollTags.join('、');
         const status=rosterDiagnosis.values.status || String(statusValue ?? '在职').trim() || '在职';
         const joinValue=rosterDiagnosis.sources.join ? row[rosterDiagnosis.sources.join] : null;
-        const leaveValue=rosterDiagnosis.sources.leave ? row[rosterDiagnosis.sources.leave] : null;
+        const leaveValue=rosterDiagnosis.values.leave || null;
         const rosterRegularization=rosterDiagnosis.values.regularizationDate || null;
         const salaryRegularizationRaw=regularizationSalaryDate.value;
         const salaryRegularization=salaryRegularizationRaw===null || salaryRegularizationRaw===undefined || String(salaryRegularizationRaw).trim()==='' ? null : PayrollEngine.normalizeRosterRow({姓名:name,转正日期:salaryRegularizationRaw}).values.regularizationDate || null;
@@ -764,12 +779,12 @@
         const regularizationValue=firstPresent(rosterRegularization,salaryRegularization,salaryRegularizationRaw), regularizationDate=excelDate(regularizationValue);
         if (regularizationValue !== null && !/^\d{4}-\d{2}-\d{2}$/.test(regularizationDate)) exceptions.push('转正日期无效，请填写 YYYY-MM-DD 格式日期');
         return {id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), regularizationDate, probationWorkdays:firstPresent(rowValue(row,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数']),probationDays.value), regularWorkdays:firstPresent(rowValue(row,['转正后应出勤天数','转正后出勤天数','转正后计薪天数']),regularDays.value), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), probationTotal:parseOptionalNumber(probationTotal.value), regularTotal:parseOptionalNumber(regularTotal.value), probationBase:parseOptionalNumber(probationBase.value), regularBase:parseOptionalNumber(regularBase.value), probationPost:parseOptionalNumber(probationPost.value), regularPost:parseOptionalNumber(regularPost.value), probationPerfBase:parseOptionalNumber(probationPerfBase.value), regularPerfBase:parseOptionalNumber(regularPerfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
-      }).map(profile => {
+      }).filter(profile=>PayrollEngine.rosterRowInMonth(rosterRows[Number(profile.id.slice(3))-1],currentMonth)).map(profile => {
         const sourceIndex=Number(profile.id.slice(3))-1;
-        const roster=PayrollEngine.normalizeRosterRow(rosterRows[sourceIndex]);
+        const roster=PayrollEngine.normalizeRosterRow(rosterRows[sourceIndex],undefined,currentMonth);
         const regularizationConflict=profile.exception.includes('转正日期冲突');
         const requiresReview=roster.issues.length>0 || regularizationConflict;
-        return calcSalary({...profile,rosterRow:(rosterRows.sourceStartRow || 2)+sourceIndex,employeeNumber:roster.values.employeeNumber || '',thirdDept:roster.values.thirdDept || '',position:roster.values.position || '',employmentType:roster.values.employmentType || '',rosterSources:roster.sources,rosterIssues:roster.issues,regularizationConflict,payrollSourceBlocked:profile.payrollSourceBlocked || requiresReview},currentMonth);
+        return calcSalary({...profile,payrollTags:roster.values.payrollTags,rosterSource:rosterRows[sourceIndex]._rosterSource,rosterRow:(rosterRows.sourceStartRow || 2)+sourceIndex,employeeNumber:roster.values.employeeNumber || '',thirdDept:roster.values.thirdDept || '',position:roster.values.position || '',employmentType:roster.values.employmentType || '',rosterSources:roster.sources,rosterIssues:roster.issues,regularizationConflict,payrollSourceBlocked:profile.payrollSourceBlocked || requiresReview},currentMonth);
       }));
     }
     function rebuildImportedEmployees() {
@@ -804,8 +819,8 @@
       const rows=sourceRows.roster || [];if(!rows.length) return '';
       const mapping=PayrollEngine.rosterFieldMap(Object.keys(rows[0]));
       const labels=PayrollEngine.rosterFields.map(([field,label])=>`<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(mapping.map[field] || '未匹配')}</td></tr>`).join('');
-      const problems=[...mapping.issues.map(issue=>issue.message),...rows.flatMap((row,index)=>PayrollEngine.normalizeRosterRow(row,mapping).issues.filter(issue=>issue.reason!=='ambiguous' && !(issue.reason==='missing' && issue.field==='name' && !mapping.map.name)).map(issue=>`第 ${index+(rows.sourceStartRow||2)} 行：${issue.message}`))];
-      return `<details class="card section-body" style="margin-top:16px" ${problems.length?'open':''}><summary>花名册字段匹配：${Object.keys(mapping.map).length} 项已识别${problems.length?` · ${problems.length} 项需核对`:''}</summary><p class="section-desc">按标准表头优先、明确同义词其次；不按列位置匹配。工资条及人员归集使用同一规则。</p><div class="table-wrap"><table class="map-table"><thead><tr><th>工资字段</th><th>花名册来源列</th></tr></thead><tbody>${labels}</tbody></table></div>${problems.length?`<div class="alert orange" role="alert" style="margin-top:12px">${problems.slice(0,30).map(escapeHtml).join('<br>')}${problems.length>30?`<br>另有 ${problems.length-30} 项，请核对原表。`:''}<br>上述问题允许预览，但需修正后才能确认正式工资。</div>`:''}</details>`;
+      const problems=[...mapping.issues.map(issue=>issue.message),...rows.flatMap((row,index)=>PayrollEngine.rosterRowInMonth(row,currentMonth)?PayrollEngine.normalizeRosterRow(row,undefined,currentMonth).issues.filter(issue=>issue.reason!=='ambiguous' && !(issue.reason==='missing' && issue.field==='name' && !mapping.map.name)).map(issue=>`${row._rosterSource?.sheetName||rows.sheetName||'花名册'}第 ${row._rosterSource?.rowNumber||index+(rows.sourceStartRow||2)} 行：${issue.message}`):[])];
+      return `<details class="card section-body" style="margin-top:16px" ${problems.length?'open':''}><summary>花名册字段匹配：${Object.keys(mapping.map).length} 项已识别${problems.length?` · ${problems.length} 项需核对`:''}</summary><p class="section-desc">按标准表头优先、明确同义词其次；不按列位置匹配。算薪按当月日期和职位生成正职、入职、转正、离职、实习生标签，不要求员工状态或员工类型列。</p><div class="table-wrap"><table class="map-table"><thead><tr><th>工资字段</th><th>花名册来源列</th></tr></thead><tbody>${labels}</tbody></table></div>${problems.length?`<div class="alert orange" role="alert" style="margin-top:12px">${problems.slice(0,30).map(escapeHtml).join('<br>')}${problems.length>30?`<br>另有 ${problems.length-30} 项，请核对原表。`:''}<br>上述问题允许预览，但需修正后才能确认正式工资。</div>`:''}</details>`;
     }
     function matchSource(filename, rows) {
       const name=canonicalKey(filename), headers=Object.keys(rows[0] || {}).map(canonicalKey);
@@ -953,16 +968,16 @@
         </div>
         <details class="attendance-rules" open>
           <summary>员工计薪与假勤规则表</summary>
-          <p class="rule-intro">先按“人员识别优先级”确定规则：<strong>实习生优先</strong>；普通员工如转正日期落在计薪月，再叠加“转正当月”分段工资；最后按花名册中的入离职状态计算假勤扣薪。实发薪天数仅取考勤表按姓名匹配的同名字段。</p>
+          <p class="rule-intro">先按“人员识别优先级”确定规则：<strong>实习生优先</strong>；普通员工如转正日期落在计薪月，再叠加“转正当月”分段工资；按计薪月识别标签：转正日期在当月为转正，入职日期在当月为入职，劳动合同止或离职日期在当月为离职，职位含实习为实习生，其余为正职。每人只取一个标签：实习生优先，其余按离职、入职、转正、正职依次判定。只有转正标签执行转正分段，普通员工假勤按对应入离职规则处理。实发薪天数仅取考勤表按姓名匹配的同名字段。</p>
           <div class="table-wrap">
             <table class="data-table rule-table">
               <thead><tr><th>人员类型 / 触发条件</th><th>工资小计 / 计薪方式</th><th>假勤扣薪天数</th><th>假勤扣款</th><th>绩效及特殊处理</th></tr></thead>
               <tbody>
                 <tr><td><span class="rule-tag">实习生（优先）</span><br>花名册“是否实习生/是否实习/实习”标识为：是、实习生、1、TRUE 或 Y。</td><td><strong>有基本工资时取基本工资；未填基本工资时，日薪 × 考勤表实发薪天数</strong>。仅在没有基本工资时，日薪或实发薪天数无效按 0 计算，并记录异常。</td><td>不使用病假、事假、旷工、年假、调休等假勤字段；固定为 <strong>0 天</strong>。</td><td>固定为 <strong>0</strong>。</td><td>绩效、补贴、其他减均不参与；二阶段<strong>不扣个人社保、公积金</strong>，但照常扣<strong>个税和税后代扣</strong>：实发工资＝应发工资－个税－税后代扣合计。</td></tr>
                 <tr><td><span class="rule-tag">转正当月</span><br>普通员工的转正日期落在当前计薪月份。此规则只改变工资小计，假勤仍按其“在职 / 离职 / 入职等”状态处理。</td><td><strong>转正前月薪 ÷ 当月应出勤天数 × 转正前应出勤天数<br>＋ 转正后月薪 ÷ 当月应出勤天数 × 转正后应出勤天数</strong>。也可按基本工资、岗位工资、绩效基数三项分别分段折算。</td><td>沿用下方对应状态的规则。</td><td>沿用下方对应状态的规则，分母仍为 <strong>21.75</strong>。</td><td>转正前、后应出勤天数合计必须等于“当月应出勤天数”。未填写分段天数时，系统以月初至转正日前一天的周一至周五推算转正前天数，并计入填写的周末调休出勤日。<strong>转正分段的分母不用 21.75。</strong></td></tr>
-                <tr><td><span class="rule-tag">在职</span><br>花名册“是否入离职”＝在职；未发生当月转正时按常规月薪计算。</td><td><strong>基本工资 ＋ 岗位工资 ＋ 绩效基数 × 绩效分数</strong>，再叠加对应津贴、补贴和其他加减。</td><td>当月应出勤天数＝实发薪天数：<strong>0 天</strong>。<br>不相等：<strong>病假 ＋ 事假 ＋ 旷工</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>年假、弹性假、调休假不进入假勤扣薪天数；仅病假、事假、旷工会产生该扣薪天数。</td></tr>
-                <tr><td><span class="rule-tag">离职</span><br>花名册“是否入离职”＝离职。</td><td>按普通员工工资项目计算；本行只说明离职状态的假勤处理。</td><td>当月应出勤天数＝实发薪天数：<strong>0 天</strong>。<br>不相等：<strong>21.75 − 实发薪天数</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>即使病假、事假、旷工均为 0，只要两类天数不相等，仍按 21.75 − 实发薪天数计算。</td></tr>
-                <tr><td><span class="rule-tag">入职 / 其他状态</span><br>花名册状态为入职，或既非在职也非离职的普通员工；含未触发“转正当月”分段的试用期员工。</td><td>按普通员工工资项目计算。</td><td>病假、事假、旷工均为 0：<strong>0 天</strong>。<br>任一项不为 0：<strong>21.75 − 实发薪天数</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>入职日期为计薪月 <strong>15 日（含）以后</strong>，绩效分数自动按 0 计算；入职日在 15 日前则按源表绩效分数计算。</td></tr>
+                <tr><td><span class="rule-tag">在职</span><br>未发生当月入职、离职、转正且非实习生时标为正职；按常规月薪计算。</td><td><strong>基本工资 ＋ 岗位工资 ＋ 绩效基数 × 绩效分数</strong>，再叠加对应津贴、补贴和其他加减。</td><td>当月应出勤天数＝实发薪天数：<strong>0 天</strong>。<br>不相等：<strong>病假 ＋ 事假 ＋ 旷工</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>年假、弹性假、调休假不进入假勤扣薪天数；仅病假、事假、旷工会产生该扣薪天数。</td></tr>
+                <tr><td><span class="rule-tag">离职</span><br>劳动合同止或离职日期落在计薪月；离职工作表只纳入当月离职人员。</td><td>按普通员工工资项目计算；本行只说明离职状态的假勤处理。</td><td>当月应出勤天数＝实发薪天数：<strong>0 天</strong>。<br>不相等：<strong>21.75 − 实发薪天数</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>即使病假、事假、旷工均为 0，只要两类天数不相等，仍按 21.75 − 实发薪天数计算。</td></tr>
+                <tr><td><span class="rule-tag">入职 / 其他状态</span><br>入职日期落在计薪月；同月离职时假勤采用离职规则。</td><td>按普通员工工资项目计算。</td><td>病假、事假、旷工均为 0：<strong>0 天</strong>。<br>任一项不为 0：<strong>21.75 − 实发薪天数</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>入职日期为计薪月 <strong>15 日（含）以后</strong>，绩效分数自动按 0 计算；入职日在 15 日前则按源表绩效分数计算。</td></tr>
               </tbody>
             </table>
           </div>

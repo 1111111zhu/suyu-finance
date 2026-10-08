@@ -44,6 +44,7 @@ globalThis.PayrollEngine = (() => {
     ['isIntern','是否实习生',['是否实习','实习标识','本月是否为实习生','实习']],
     ['join','入职日期',['入职时间','入职日']],
     ['leave','离职日期',['离职时间','离职日']],
+    ['contractEnd','劳动合同止',['劳动合同终止日期','劳动合同结束日期','合同到期日']],
     ['regularizationDate','转正日期',['转正日','转正时间']],
     ['bankCard','银行卡号',['银行卡']],
     ['bankName','开户行',['开户银行','银行']]
@@ -99,7 +100,7 @@ globalThis.PayrollEngine = (() => {
       const date=new Date(Date.UTC(1899,11,30)+Math.floor(value)*86400000);
       return date.toISOString().slice(0,10);
     }
-    const match=String(value).trim().match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})(?:日)?$/);
+    const match=String(value).trim().match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})(?:日|T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/);
     if(!match || !validDateParts(Number(match[1]),Number(match[2]),Number(match[3]))) return null;
     return `${match[1]}-${match[2].padStart(2,'0')}-${match[3].padStart(2,'0')}`;
   }
@@ -126,14 +127,15 @@ globalThis.PayrollEngine = (() => {
     if(['否','非实习生','0','FALSE','N'].includes(token)) return false;
     return null;
   }
-  function normalizeRosterRow(rawRow, headerMap=rosterFieldMap(Object.keys(rawRow || {}))) {
+  function normalizeRosterRow(rawRow, headerMap=rosterFieldMap(Object.keys(rawRow || {})), payrollMonth='') {
     const mapping=headerMap?.map || headerMap || {},values={},sources={},issues=[...(headerMap?.issues || [])];
     for(const [field,label] of rosterFields) {
       const header=mapping[field];if(!header) continue;
       sources[field]=header;
       const raw=rawRow?.[header];
       if(blank(raw)) continue;
-      if(['join','leave','regularizationDate'].includes(field)) {
+      if(['join','leave','regularizationDate','contractEnd'].includes(field)) {
+        if(['/','—','——','-','无'].includes(String(raw).trim())) continue;
         const value=rosterDate(raw);
         if(value===null) issues.push(rosterIssue(field,'invalid',[header],`“${label}”日期无效，请使用真实的 YYYY-MM-DD 日期`));
         else values[field]=value;
@@ -168,7 +170,37 @@ globalThis.PayrollEngine = (() => {
     if(values.employmentType && values.isIntern!==undefined && (values.employmentType==='实习')!==values.isIntern)
       issues.push(rosterIssue('isIntern','conflict',[sources.employmentType,sources.isIntern],`“${sources.employmentType}”与“${sources.isIntern}”的实习身份不一致，请人工核对`));
     if(values.isIntern===undefined && values.employmentType) {values.isIntern=values.employmentType==='实习';sources.isIntern=sources.employmentType;}
+    // Payroll-month labels are independent of the live personnel directory.
+    if(/^\d{4}-(0[1-9]|1[0-2])$/.test(payrollMonth)) {
+      const inMonth=date=>Boolean(date) && date.slice(0,7)===payrollMonth;
+      const leaving=inMonth(values.leave) || inMonth(values.contractEnd);
+      const joining=inMonth(values.join), regularizing=inMonth(values.regularizationDate);
+      const positionProvided=Boolean(values.position);
+      values.isIntern=positionProvided ? /实习/.test(values.position) : values.isIntern===true;
+      values.status=leaving?'离职':joining?'入职':'在职';
+      // Exactly one payroll category. A departure overrides an ordinary
+      // employee's hire/regularization; interns retain their own pay rule.
+      values.payrollTags=[values.isIntern?'实习生':leaving?'离职':joining?'入职':regularizing?'转正':'正职'];
+      values.employmentType=values.isIntern?'实习':'正式';
+      if(leaving && !inMonth(values.leave)) {values.leave=values.contractEnd;sources.leave=sources.contractEnd;}
+      sources.status=leaving?sources.leave:joining?sources.join:regularizing?sources.regularizationDate:'计薪月日期规则';
+      sources.isIntern=positionProvided?sources.position:sources.isIntern||'职位及计薪月规则';
+      // Legacy type/status columns are no longer required for payroll labels.
+      for(let i=issues.length-1;i>=0;i--) if(['status','employmentType','isIntern'].includes(issues[i].field) ||
+        (issues[i].reason==='missing' && ['join','leave'].includes(issues[i].field))) issues.splice(i,1);
+    }
     return {values,issues,sources};
+  }
+  function rosterRowInMonth(row,month) {
+    const {values,issues}=normalizeRosterRow(row,undefined,month);
+    if(values.join && values.join.slice(0,7)>month) return false;
+    if(row?._rosterSource?.departedSheet) {
+      const actualLeave=rosterDate(row[rosterFieldMap(Object.keys(row)).map.leave]);
+      return issues.some(issue=>['leave','contractEnd'].includes(issue.field)) ||
+        (!actualLeave && !values.contractEnd) || (actualLeave ? actualLeave.slice(0,7)===month : values.status==='离职');
+    }
+    // An actual departure before this month is not a full-month employee.
+    return !values.leave || values.leave.slice(0,7)>=month;
   }
   function canonicalRow(row) {
     const result={};
@@ -325,5 +357,5 @@ globalThis.PayrollEngine = (() => {
       return e;
     });
   }
-  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
+  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();
