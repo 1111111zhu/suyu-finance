@@ -53,7 +53,7 @@ function validateResult(result,month,workdays,index) {
   const issues=Array.isArray(result.rosterIssues)?result.rosterIssues:[];
   if(issues.length) fail(`${result.name}的花名册字段尚需人工核对：${issues.map(issue=>issue.message||issue.reason).join('；').slice(0,500)}`);
   const payMonth=result.regularizationDate?.slice(0,7);
-  if(payMonth===month) {
+  if(payMonth===month && !result.isIntern && (!result.payrollTags || result.payrollTags.includes('转正'))) {
     const before=Number(result.probationWorkdays),after=Number(result.regularWorkdays);
     if(!Number.isFinite(before)||!Number.isFinite(after)||before<0||after<0||Math.abs(before+after-workdays)>1e-6)
       fail(`${result.name}转正前后应出勤天数之和必须等于当月应出勤天数`);
@@ -63,11 +63,11 @@ function validateResult(result,month,workdays,index) {
   moneyNumber(result.gross,`${result.name}的应发工资`);
   moneyNumber(result.net,`${result.name}的实发工资`);
 }
-function validateRosterSource(raw,result) {
+function validateRosterSource(raw,result,month) {
   // Re-read the frozen original row with exactly the same field dictionary the
   // personnel page and salary calculator use. A saved browser result cannot
   // silently replace the roster's identity or payroll-month facts.
-  const {values,issues}=rosterEngine.normalizeRosterRow(raw);
+  const {values,issues}=rosterEngine.normalizeRosterRow(raw,undefined,month);
   if(issues.length) fail(`${result.name}的原始花名册尚需核对：${issues.map(issue=>issue.message).join('；').slice(0,500)}`);
   const compared=[['name','姓名'],['employeeNumber','工号'],['company','签约公司'],
     ['dept','一级部门'],['subdept','二级部门'],['thirdDept','三级部门'],['position','职位'],
@@ -228,7 +228,7 @@ export function createWorkspaceConfirmationService({pool,corpId}) {
           validateResult(result,snapshot.batch.month,workdays,mapping.resultIndex);
           rowUsed.add(rosterRow);
           const raw=sourceByRow.get(rosterRow);
-          validateRosterSource(raw,result);
+          validateRosterSource(raw,result,snapshot.batch.month);
           const link=(await client.query(`SELECT l.userid,e.name FROM payroll.wecom_employee_links l
             JOIN payroll.employees e ON e.id=l.employee_id WHERE l.corp_id=$1 AND l.employee_id=$2`,[corpId,mapping.employeeId])).rows[0];
           if(!link) fail(`${result.name}尚未由管理员关联工资员工 ID 与企微 UserID`);
@@ -297,7 +297,7 @@ export function createWorkspaceConfirmationService({pool,corpId}) {
               (import_id,batch_id,sheet_name,row_number,raw_values,normalized_values,mapping_status,
                 employee_id,employment_id,company_id,mapping_reason,issues)
               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-              [imported.id,batchId,source.sheetName||'Sheet1',rowNumber,JSON.stringify(row),JSON.stringify(normalized),
+              [imported.id,batchId,row._rosterSource?.sheetName||source.sheetName||'Sheet1',row._rosterSource?.rowNumber||rowNumber,JSON.stringify(row),JSON.stringify(normalized),
                 person?'matched':'unmatched',person?.employeeId||null,person?.employmentId||null,person?.companyId||null,
                 person?.reason||null,JSON.stringify(person?.result.rosterIssues||[])] )).rows[0];
             // Item provenance must point to the confirmed roster row. Other

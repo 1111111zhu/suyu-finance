@@ -224,15 +224,15 @@ test('performance cutoff includes the 15th and is limited to hires in payroll mo
  assert.match(run('payrollSettings()'),/15 日（含）以后/);
 });
 
-test('roster status and dates are preserved in exported rows while date calculations use local calendar dates',()=>{
+test('payroll labels are exported while original source date text is preserved',()=>{
  const run=app();
- run("sourceRows={roster:[{姓名:'甲','是否入离职':'入职',入职日期:new Date(2026,7,17),离职日期:null}],salary:[{姓名:'甲',基本工资:1000}]};state.liveImport=true;recalculateEmployees();");
+ run("sourceRows={roster:[{姓名:'甲','是否入离职':'入职',入职日期:new Date(2026,7,17),离职日期:null}],salary:[{姓名:'甲',基本工资:1000}]};state.liveImport=true;applyPayrollSettings('2026-08',22);");
  assert.equal(run('employees[0].join'),'2026-08-17');
  assert.equal(run("exportRow(employees[0])[6]"),'入职');
  assert.equal(run("exportRow(employees[0])[7]"),'2026-08-17');
  assert.equal(run("exportRow(employees[0])[8]"),'');
  run("sourceRows.roster[0]['是否入离职']=' 入职 ';sourceRows.roster[0]['入职日期']='2026/08/17';recalculateEmployees();");
- assert.equal(run("exportRow(employees[0])[6]"),' 入职 ');
+ assert.equal(run("exportRow(employees[0])[6]"),'入职');
  assert.equal(run("exportRow(employees[0])[7]"),'2026/08/17');
 });
 
@@ -400,7 +400,7 @@ test('departed employees compare expected and actual paid days regardless of lea
    assert.equal(result.gross,2175-days*100);
   }
  }
- run("sourceRows={roster:[{姓名:'甲',是否入离职:' 离职 '}],salary:[{姓名:'甲',基本工资:2175}],attendance:[{姓名:'甲',实发薪天数:20}]};state.liveImport=true;applyPayrollSettings('2026-09',22);");
+ run("sourceRows={roster:[{姓名:'甲',是否入离职:' 离职 ',离职日期:'2026-09-20'}],salary:[{姓名:'甲',基本工资:2175}],attendance:[{姓名:'甲',实发薪天数:20}]};state.liveImport=true;applyPayrollSettings('2026-09',22);");
  assert.equal(run('employees[0].deductDays'),1.75);
  assert.equal(run('exportRow(employees[0])[29]'),175);
  assert.match(run('renderSlip()'),/应发薪天数与实发薪天数不相等/);
@@ -418,7 +418,7 @@ test('departed employees compare expected and actual paid days regardless of lea
 test('missing or invalid paid days only block calculations that need paid days',()=>{
  const run=app();
  for(const status of ['入职','在职','离职']) for(const paid of [null,'','错误']) for(const leave of [0,1]) {
-  run(`sourceRows={roster:[{姓名:'甲',是否入离职:'${status}'}],salary:[{姓名:'甲',基本工资:2175}],attendance:[{姓名:'甲',实发薪天数:${JSON.stringify(paid)},事假天数:${leave}}]};state.liveImport=true;applyPayrollSettings('2026-09',22);`);
+  run(`sourceRows={roster:[{姓名:'甲',是否入离职:'${status}',入职日期:'${status==='入职'?'2026-09-10':'2025-01-01'}',离职日期:'${status==='离职'?'2026-09-20':''}'}],salary:[{姓名:'甲',基本工资:2175}],attendance:[{姓名:'甲',实发薪天数:${JSON.stringify(paid)},事假天数:${leave}}]};state.liveImport=true;applyPayrollSettings('2026-09',22);`);
   const blocked=status==='离职'||leave!==0;
   assert.equal(run('employees[0].payableDays'),null);
   assert.equal(run('employees[0].payrollBlocked'),blocked);
@@ -430,7 +430,7 @@ test('missing or invalid paid days only block calculations that need paid days',
 
 test('gross payroll export keeps other reduction independent and only leaves uncomputable attendance fields blank',()=>{
  const run=app();captureExports(run);
- run("sourceRows={roster:[{姓名:'无假勤入职',是否入离职:'入职'},{姓名:'有事假入职',是否入离职:'入职'},{姓名:'异常假勤入职',是否入离职:'入职'}],salary:[{姓名:'无假勤入职',基本工资:2175},{姓名:'有事假入职',基本工资:2175},{姓名:'异常假勤入职',基本工资:2175}],attendance:[{姓名:'无假勤入职',实发薪天数:''},{姓名:'有事假入职',实发薪天数:20,事假天数:1},{姓名:'异常假勤入职',实发薪天数:'',事假天数:1}],other:[{姓名:'无假勤入职',其他减:88},{姓名:'有事假入职',其他减:44},{姓名:'异常假勤入职',其他减:66}]};state.liveImport=true;applyPayrollSettings('2026-09',22);downloadGross();");
+ run("sourceRows={roster:[{姓名:'无假勤入职',是否入离职:'入职',入职日期:'2026-09-10'},{姓名:'有事假入职',是否入离职:'入职',入职日期:'2026-09-10'},{姓名:'异常假勤入职',是否入离职:'入职',入职日期:'2026-09-10'}],salary:[{姓名:'无假勤入职',基本工资:2175},{姓名:'有事假入职',基本工资:2175},{姓名:'异常假勤入职',基本工资:2175}],attendance:[{姓名:'无假勤入职',实发薪天数:''},{姓名:'有事假入职',实发薪天数:20,事假天数:1},{姓名:'异常假勤入职',实发薪天数:'',事假天数:1}],other:[{姓名:'无假勤入职',其他减:88},{姓名:'有事假入职',其他减:44},{姓名:'异常假勤入职',其他减:66}]};state.liveImport=true;applyPayrollSettings('2026-09',22);downloadGross();");
  const columns=['假勤扣薪天数','假勤扣款','其他减','应发工资'];
  const columnList=JSON.stringify(columns);
  assert.equal(run("savedName"),'应发工资表_2026-09.xlsx');
@@ -698,7 +698,7 @@ test('out-of-month transfer dates and incomplete transition salaries warn withou
  const run=app();
  run("sourceRows={roster:[{姓名:'甲',转正日期:'2026-07-17'},{姓名:'乙',转正日期:'2026-08-17'}],salary:[{姓名:'甲',转正前工资:10000,转正后工资:20200},{姓名:'乙',转正前工资:10000}],attendance:[{姓名:'甲',实发薪天数:21},{姓名:'乙',实发薪天数:21}]};state.liveImport=true;applyPayrollSettings('2026-08',21);");
  assert.equal(run('employees[0].regularizationActive'),false);
- assert.match(run('employees[0].exception'),/不在当前计薪月份/);
+ assert.doesNotMatch(run('employees[0].exception'),/不在当前计薪月份/);
  assert.equal(run('employees[0].gross'),0);
  assert.equal(run('employees[1].regularizationBlocked'),true);
  assert.match(run('employees[1].exception'),/缺少转正前或转正后工资/);

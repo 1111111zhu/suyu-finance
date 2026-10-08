@@ -114,7 +114,7 @@ test('regularization split is checked and formal item retains the roster source 
   candidate.sources.salary={rows:[{姓名:'甲',基本工资:10000,转正前工资:8000,转正后工资:12000}],
     sheetName:'员工基本工资',sourceStartRow:2};
   for(const result of [...candidate.results.gross,...candidate.results.net]) {
-    Object.assign(result,{regularizationDate:'2027-01-15',employmentType:'试用',
+    Object.assign(result,{regularizationDate:'2027-01-15',employmentType:'正式',
       probationWorkdays:10,regularWorkdays:12,probationSalary:4000,regularSalary:6000});
   }
   const saved=await workspaces.save({actorId:admin.id,requestKey:randomUUID(),snapshot:candidate});

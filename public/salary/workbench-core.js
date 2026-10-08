@@ -164,8 +164,9 @@ globalThis.PayrollWorkbench = (() => {
     let sourceKey=fields[field]?.[1];
     if(state.payrollStage==='net'&&sourceKey==='social')sourceKey='netSocial';
     if(state.payrollStage==='net'&&sourceKey==='fund')sourceKey='netFund';
-    const rows=sourceRows[sourceKey]||[], i=rows.findIndex(r=>String(rowValue(r,['姓名'])||'').trim()===e.name.trim());
-    return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:state.sourceStatus[sourceKey]?.filename||'',row:i>=0?i+(rows.sourceStartRow||2):null,sheet:rows.sheetName||'',record:i>=0?rows[i]:null};
+    const rows=sourceRows[sourceKey]||[], i=sourceKey==='roster'&&e.rosterRow ? e.rosterRow-(rows.sourceStartRow||2) : rows.findIndex(r=>String(rowValue(r,['姓名'])||'').trim()===e.name.trim());
+    const record=i>=0?rows[i]:null;
+    return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:state.sourceStatus[sourceKey]?.filename||'',row:record?record._rosterSource?.rowNumber??i+(rows.sourceStartRow||2):null,sheet:record?._rosterSource?.sheetName||rows.sheetName||'',record};
   }
   commitSource=(k,item)=>{
     if(!state.liveImport) {
