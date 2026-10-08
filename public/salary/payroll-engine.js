@@ -193,7 +193,12 @@ globalThis.PayrollEngine = (() => {
     }
     return {values,issues,sources};
   }
+  function rosterSectionHeader(row) {
+    const values=Object.values(row||{}).filter(value=>typeof value!=='object' && !blank(value));
+    return values.length>0 && values.every(value=>typeof value==='string' && /^(?:实习协议|劳动合同)(?:起|止)$/.test(value.trim()));
+  }
   function rosterRowInMonth(row,month) {
+    if(rosterSectionHeader(row)) return false;
     const {values,issues}=normalizeRosterRow(row,undefined,month);
     if(values.join && values.join.slice(0,7)>month) return false;
     if(row?._rosterSource?.departedSheet) {
@@ -223,6 +228,7 @@ globalThis.PayrollEngine = (() => {
     for (const values of grid.slice(headerIndex+1)) {
       if (values.every(blank)) continue;
       const row=Object.fromEntries(headers.flatMap((header,index)=>header?[[header,values[index] ?? null]]:[]));
+      if(rosterSectionHeader(row)) continue;
       const name=nameKey(canonicalRow(row)['姓名']);
       if (/^(?:合计|总计|汇总)$/.test(name)) continue;
       rows.push(row);
@@ -359,5 +365,5 @@ globalThis.PayrollEngine = (() => {
       return e;
     });
   }
-  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
+  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();
