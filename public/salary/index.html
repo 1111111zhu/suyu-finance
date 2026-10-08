@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261008-section-header"></script>
+  <script src="./payroll-engine.js?v=20261008-roster-identity"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -779,7 +779,7 @@
         const regularizationValue=firstPresent(rosterRegularization,salaryRegularization,salaryRegularizationRaw), regularizationDate=excelDate(regularizationValue);
         if (regularizationValue !== null && !/^\d{4}-\d{2}-\d{2}$/.test(regularizationDate)) exceptions.push('转正日期无效，请填写 YYYY-MM-DD 格式日期');
         return {id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), regularizationDate, probationWorkdays:firstPresent(rowValue(row,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数']),probationDays.value), regularWorkdays:firstPresent(rowValue(row,['转正后应出勤天数','转正后出勤天数','转正后计薪天数']),regularDays.value), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), probationTotal:parseOptionalNumber(probationTotal.value), regularTotal:parseOptionalNumber(regularTotal.value), probationBase:parseOptionalNumber(probationBase.value), regularBase:parseOptionalNumber(regularBase.value), probationPost:parseOptionalNumber(probationPost.value), regularPost:parseOptionalNumber(regularPost.value), probationPerfBase:parseOptionalNumber(probationPerfBase.value), regularPerfBase:parseOptionalNumber(regularPerfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
-      }).filter(profile=>PayrollEngine.rosterRowInMonth(rosterRows[Number(profile.id.slice(3))-1],currentMonth)).map(profile => {
+      }).filter(profile=>PayrollEngine.rosterRowInMonth(rosterRows[Number(profile.id.slice(3))-1],currentMonth) && PayrollEngine.rosterIdentityIssues(rosterRows[Number(profile.id.slice(3))-1]).length===0).map(profile => {
         const sourceIndex=Number(profile.id.slice(3))-1;
         const roster=PayrollEngine.normalizeRosterRow(rosterRows[sourceIndex],undefined,currentMonth);
         const regularizationConflict=profile.exception.includes('转正日期冲突');
@@ -1466,7 +1466,7 @@
     // Mount the workbench after the original payroll module is ready.
   </script>
   <script src="./workbench-core.js?v=20261008-optional-reason"></script>
-  <script src="./workbench-pages.js?v=20261008-attendance-name"></script>
+  <script src="./workbench-pages.js?v=20261008-roster-identity"></script>
   <script src="./personnel-directory.js"></script>
   <script src="./workbench-ui.js?v=20261008-optional-reason"></script>
   <script src="./workbench-wecom-directory.js"></script>
