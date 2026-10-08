@@ -104,3 +104,16 @@ test('refreshing payroll description preserves edited recipient, name and subjec
  const r=app();r("state.payrollStage='net';recalculateEmployees();ensureEmailDraft();setEmailField('recipient','payroll@example.com');setEmailField('recipientName','李老师');setEmailField('subject','八月工资复核');ensureEmailDraft(true)");
  assert.equal(r('state.emailDraft.recipient'),'payroll@example.com');assert.equal(r('state.emailDraft.recipientName'),'李老师');assert.equal(r('state.emailDraft.subject'),'八月工资复核');
 });
+
+test('adjustment reason is optional and undo preserves the original value',()=>{
+ const r=app();
+ for(const reason of ["''","'   '","undefined"]) {
+  r(`W.saveChange(employees[0],'otherAdd',150,${reason})`);
+  assert.equal(r('employees[0].gross'),11650);
+  assert.equal(r('W.data().history.at(-1).reason'),'');
+  r('W.undo(W.data().history.at(-1).id)');
+  assert.equal(r('employees[0].gross'),11500);
+ }
+ r("W.saveChange(employees[0],'otherAdd',150,' 补发 ')");
+ assert.equal(r('W.data().history.at(-1).reason'),'补发');
+});

@@ -116,7 +116,6 @@ globalThis.PayrollWorkbench = (() => {
     const days=/Days$|Workdays$/.test(field)||['sick','personal','absent','annual','flexible','compensatory'].includes(field);
     if((days||!['grossTarget','netTarget'].includes(field))&&v<0) throw new Error('该项目不能填写负数');
     if(days&&v>31) throw new Error('天数不能超过 31 天');
-    if(reason!==undefined&&!String(reason).trim()) throw new Error('请填写简短的修改原因');
     return days||field==='score'?v:round(v);
   }
   function previewChange(e,field,input) {
@@ -128,7 +127,7 @@ globalThis.PayrollWorkbench = (() => {
     const v=validate(e,field,input,reason), k=key(e), s=scope(), before=value(e,field), d=data();
     const prior=d[s][k]?.[field];
     preview=null;d[s][k]||={};d[s][k][field]=v;
-    d.history.push({id:Date.now()+'-'+d.history.length,key:k,name:e.name,scope:s,field,before,value:v,previous:prior??null,reason:String(reason).trim(),at:new Date().toISOString()});
+    d.history.push({id:Date.now()+'-'+d.history.length,key:k,name:e.name,scope:s,field,before,value:v,previous:prior??null,reason:String(reason??'').trim(),at:new Date().toISOString()});
     delete d.reviewed[s+':'+k];d.revision++;
     if(s==='gross'&&!['social','fund'].includes(field)){d.taxReview||={};d.taxReview[k]=true;delete d.reviewed['netGenerated:'+k];}
     if(s==='netGenerated'&&field==='tax'&&d.taxReview) delete d.taxReview[k];
