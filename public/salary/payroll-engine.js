@@ -193,6 +193,14 @@ globalThis.PayrollEngine = (() => {
     }
     return {values,issues,sources};
   }
+  function rosterIdentityIssues(row) {
+    const normalized=normalizeRosterRow(row,undefined,'2026-01');
+    const issues=[];
+    if(!normalized.values.name) issues.push('缺少姓名');
+    if(!normalized.values.employeeNumber) issues.push('缺少工号');
+    else if(normalized.issues.some(i=>i.field==='employeeNumber')) issues.push('工号无效');
+    return issues;
+  }
   function rosterSectionHeader(row) {
     const values=Object.values(row||{}).filter(value=>typeof value!=='object' && !blank(value));
     return values.length>0 && values.every(value=>typeof value==='string' && /^(?:实习协议|劳动合同)(?:起|止)$/.test(value.trim()));
@@ -365,5 +373,5 @@ globalThis.PayrollEngine = (() => {
       return e;
     });
   }
-  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
+  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();
