@@ -163,6 +163,11 @@ globalThis.PayrollWorkbench = (() => {
     let sourceKey=fields[field]?.[1];
     if(state.payrollStage==='net'&&sourceKey==='social')sourceKey='netSocial';
     if(state.payrollStage==='net'&&sourceKey==='fund')sourceKey='netFund';
+    if(sourceKey==='afterTax') {
+      const aliases={utility:['水电代扣','水电费代扣','水电费合计'],mealDeduct:['餐费代扣','餐费合计'],otherDeduct:['其它代扣','其他代扣']}[field]||[];
+      const records=(sourceRows.afterTax||[]).filter(row=>canonicalKey(rowValue(row,['姓名']))===canonicalKey(e.name)&&Object.keys(row).some(h=>aliases.some(a=>canonicalKey(h)===canonicalKey(a))));
+      return {label:fields[field]?.[0]||'税后代扣',filename:[...new Set(records.map(r=>r._deductionSource?.filename||state.sourceStatus.afterTax?.filename||''))].join('、'),row:records[0]?._deductionSource?.rowNumber||null,sheet:[...new Set(records.map(r=>r._deductionSource?.sheetName||''))].join('、'),record:records.length?{合计金额:e[field],费用明细:records}:null};
+    }
     const rows=sourceRows[sourceKey]||[], i=sourceKey==='roster'&&e.rosterRow ? e.rosterRow-(rows.sourceStartRow||2) : rows.findIndex(r=>String(rowValue(r,['姓名'])||'').trim()===e.name.trim());
     const record=i>=0?rows[i]:null;
     return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:state.sourceStatus[sourceKey]?.filename||'',row:record?record._rosterSource?.rowNumber??i+(rows.sourceStartRow||2):null,sheet:record?._rosterSource?.sheetName||rows.sheetName||'',record};
@@ -362,12 +367,32 @@ if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=s
     state.selectedId=employees[0]?.id||'';b.employees=employees.length;data();
     saveBatchData();return b;
   }
+  async function deleteBatch(batch){
+    if(!state.batches.includes(batch))throw new Error('批次已不存在');
+    saveBatchData();await queue;
+    const db=await openDB();
+    await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(structuredClone(batch),'deletedBatch');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();
+    if(batch===currentBatch()) {
+      const next=state.batches.find(b=>b!==batch)||{name:monthLabel(currentMonth)+'工资批次',month:currentMonth,workdays:currentWorkdays,status:'待上传',employees:0,sources:0,date:new Date().toISOString().slice(0,10),draftOrigin:'empty',data:{internDailyRates:{}}};
+      if(!state.batches.includes(next))state.batches.push(next);
+      setCurrentBatch(next);
+    }
+    state.batches.splice(state.batches.indexOf(batch),1);saveBatchData();await queue;
+    if(storageError)throw new Error(storageError);
+  }
+  async function restoreDeletedBatch(){
+    const db=await openDB();const batch=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('deletedBatch');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+    if(!batch){db.close();showToast('没有可恢复的删除记录');return false;}
+    batch.active=false;state.batches.push(batch);saveBatchData();await queue;
+    if(storageError){db.close();throw new Error(storageError);}
+    await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').delete('deletedBatch');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();return true;
+  }
   function persistCloudMetadata(batch) {
     if(!state.batches.includes(batch))throw new Error('本机批次已不存在');
     if(batch===currentBatch())saveBatchData();else {queue=queue.then(persist);notify();}
   }
   return {fields,key,scope,data,selected,overrides,history,value,source,ambiguous,previewChange,clearPreview,saveChange,undo,resetField,markReviewed,isReviewed,restore,orphaned,rebind,
-    packCurrent,validateSnapshot,restoreCloud,persistCloudMetadata,currentBatch,
+    deleteBatch,restoreDeletedBatch,packCurrent,validateSnapshot,restoreCloud,persistCloudMetadata,currentBatch,
     subscribe:listener=>{listeners.add(listener);return ()=>listeners.delete(listener);},notifyState:notify,
     flush:async()=>{await queue;return storageError;}, get storageError(){return storageError;}, rawProfiles};
 })();
