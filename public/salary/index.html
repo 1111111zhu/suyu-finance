@@ -1346,19 +1346,21 @@
       return grossOnly?grossFields.filter(([,field])=>!['social','fund'].includes(field)):[...grossFields,...PayrollEngine.netFields];
     }
     function exportHeaders(grossOnly=false) { return exportDescriptors(grossOnly).map(field=>field[0]); }
-    function rosterExportJoinDate(employee) {
+    function rosterExportDate(employee,field) {
       let matches=(sourceRows.roster || []).filter(row=>PayrollEngine.rosterRowInMonth(row,currentMonth))
-        .map(row=>PayrollEngine.normalizeRosterRow(row,undefined,currentMonth))
+        .map(row=>({row,...PayrollEngine.normalizeRosterRow(row,undefined,currentMonth)}))
         .filter(({values})=>canonicalKey(values.name)===canonicalKey(employee.name));
       if(employee.employeeNumber && employee.employeeNumber!==employee.id) matches=matches.filter(({values})=>canonicalKey(values.employeeNumber)===canonicalKey(employee.employeeNumber));
       if(employee.company) matches=matches.filter(({values})=>!values.company || canonicalKey(values.company)===canonicalKey(employee.company));
-      if(matches.length!==1 || matches[0].issues.some(issue=>issue.field==='join')) return '';
-      return matches[0].values.join || '';
+      if(matches.length!==1) return '';
+      const match=matches[0],header=PayrollEngine.rosterFieldMap(Object.keys(match.row)).map[field],value=header?match.row[header]:null;
+      return PayrollEngine.blank(value)?'':value;
     }
     function exportRecord(e,grossOnly=false) {
       const gross=PayrollEngine.grossRecord(e);
-      // Both stages export the current roster date; never reuse an uploaded or edited date.
-      gross['入职日期']=rosterExportJoinDate(e);
+      // Export the original roster cells, without payroll date adjustments or fallbacks.
+      gross['入职日期']=rosterExportDate(e,'join');
+      gross['离职日期']=rosterExportDate(e,'leave');
       return Object.fromEntries(exportDescriptors(grossOnly).map(([label,field,type])=>{
         const isGrossField=PayrollEngine.fields.some(([,grossField])=>grossField===field);
         return [label,field==='isIntern'?(e.isIntern?'是':''):isGrossField?gross[label]:type==='money'?PayrollEngine.round(num(e[field])):e[field] ?? ''];
