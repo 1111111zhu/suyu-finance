@@ -107,3 +107,15 @@ test('agreement section headers are excluded without suppressing incomplete empl
  assert.equal(rows.length,3);assert.equal(rows[1].姓名,'乙');assert.equal(rows[2].工号,128);
  assert.equal(run("PayrollEngine.rosterRowInMonth({劳动合同起:'实习协议起',劳动合同止:'实习协议止',_rosterSource:{rowNumber:83}},'2026-09')"),false);
 });
+
+test('hire deduction matches departure rule irrespective of leave',()=>{
+ const {run}=app();
+ for(const leave of [0,1]) for(const [expected,actual,days] of [[22,22,0],[20,20,0],[22,20,1.75],[22,0,21.75],[23,22,-.25]]) {
+  const result=run(`calcSalary({status:'入职',actualPaidDays:${actual},base:2175,personal:${leave}},'2026-09',${expected})`);
+  assert.equal(result.deductDays,days);
+  assert.equal(result.attendanceDeduct,days*100);
+ }
+ const invalid=run("calcSalary({status:'入职',actualPaidDays:null,base:2175},'2026-09',22)");
+ assert.equal(invalid.deductDays,null);
+ assert.equal(invalid.attendanceDeduct,null);
+});
