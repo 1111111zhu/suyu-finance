@@ -226,6 +226,49 @@ globalThis.PayrollEngine = (() => {
     }
     return result;
   }
+  // Read expense layouts before the generic single-header employee parser.
+  function deductionRowsFromGrid(grid, filename='', sheetName='') {
+    const text=[filename,sheetName,...grid.flat().map(v=>String(v??''))].join('');
+    const utility=/水电/.test(text)||grid.flat().some(v=>/水/.test(String(v))&&/电/.test(String(v))&&/合计/.test(String(v)));
+    const meal=!utility && (/餐/.test(text)||grid.flat().some(v=>key(v).includes('代扣金额')));
+    if(!utility&&!meal)return null;
+    let header=-1, nameCol=-1, amountCol=-1;
+    for(let i=0;i<grid.length;i++) {
+      const row=grid[i], n=row.findIndex(v=>utility?key(v)==='备注':key(v).includes('姓名'));
+      const a=utility?row.findIndex(v=>/水/.test(String(v))&&/电/.test(String(v))&&/合计/.test(String(v))):
+        [row.findIndex(v=>key(v).includes('总计金额')),row.findIndex(v=>key(v).includes('代扣金额')),row.findIndex(v=>key(v).includes('餐费合计'))].find(j=>j>=0);
+      // Water bill headers can span two rows with vertically merged cells.
+      if(n>=0&&a!==undefined&&a>=0){header=i;nameCol=n;amountCol=a;break;}
+      if(utility&&n>=0&&i>0){const prev=grid[i-1].findIndex(v=>/水/.test(String(v))&&/电/.test(String(v))&&/合计/.test(String(v)));if(prev>=0){header=i;nameCol=n;amountCol=prev;break;}}
+    }
+    if(header<0){if(!/餐费|水电/.test(filename+sheetName))return null;throw new Error(utility?'水电表需包含“备注”和同一单元格含“水、电、合计”的金额表头':'餐费表需包含“姓名”和“总计金额”或“代扣金额”表头');}
+    const result=[];
+    for(let i=header+1;i<grid.length;i++) {
+      const row=grid[i], name=String(row[nameCol]??'').trim();
+      if(!name || /^(合计|总计|汇总|客卡|日期|物业公司|使用单位)/.test(name))continue;
+      if(utility && (row[0]===null||row[0]===undefined||String(row[0]).trim()===''))continue;
+      if(/姓名/.test(name))continue;
+      const amount=numeric(row[amountCol]);
+      if(amount===null||!Number.isFinite(amount)||amount<0)throw new Error(`${sheetName}第 ${i+1} 行${utility?'水电':'餐费'}金额无效`);
+      result.push({姓名:name,[utility?'水电代扣':'餐费代扣']:round(amount),_deductionSource:{filename,sheetName,rowNumber:i+1,kind:utility?'utility':'meal'}});
+    }
+    if(!result.length)throw new Error('费用表没有可读取的姓名和金额');
+    return result;
+  }
+  function mergeDeductionRows(existing,incoming,filename) {
+    // Uploading the same file again replaces its rows rather than charging twice.
+    return [...(existing||[]).filter(r=>r._deductionSource?.filename!==filename),...incoming.map(r=>({...r,_deductionSource:{...r._deductionSource,filename}}))];
+  }
+  function deductionAmount(rows,name,aliases,label,issues) {
+    if(!rows)return 0;
+    const hasColumn=row=>Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a)));
+    if(!rows.some(hasColumn))return 0;
+    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name && hasColumn(row));
+    if(!matches.length)return 0;
+    let total=0;
+    for(const row of matches){const col=Object.keys(row).find(h=>aliases.some(a=>key(h)===key(a)));const v=numeric(row[col]);if(v===null||!Number.isFinite(v)){issues.push(`${label}金额缺失或无效，按 0 计算`);continue;}total+=v;}
+    return round(total);
+  }
   function rowsFromGrid(grid) {
     const headerIndex=grid.findIndex(row=>row.some(value=>key(value)==='姓名'));
     if (headerIndex<0) throw new Error('首个工作表必须包含“姓名”字段');
@@ -359,9 +402,9 @@ globalThis.PayrollEngine = (() => {
       e.fund=e.isIntern?0:get('netFund',['个人缴纳','个人公积金'],'个人公积金');
       // 实习生不承担个人社保、公积金；个税和税后代扣仍按上传资料扣除。
       e.tax=get('tax',['税','个税','个人所得税','税额'],'个税');
-      e.utility=get('afterTax',['水电代扣','水电费代扣','水电费合计'],'水电代扣');
-      e.mealDeduct=get('afterTax',['餐费代扣','餐费合计'],'餐费代扣');
-      e.otherDeduct=get('afterTax',['其它代扣','其他代扣'],'其它代扣');
+      e.utility=deductionAmount(sources.afterTax,name,['水电代扣','水电费代扣','水电费合计'],'水电代扣',issues);
+      e.mealDeduct=deductionAmount(sources.afterTax,name,['餐费代扣','餐费合计'],'餐费代扣',issues);
+      e.otherDeduct=deductionAmount(sources.afterTax,name,['其它代扣','其他代扣'],'其它代扣',issues);
       e.otherReduction=e.isIntern?0:round(Number(e.otherReduction)||0);
       e.remark=String(sources.afterTax?.map(canonicalRow).find(row=>nameKey(row['姓名'])===name)?.['备注'] ?? '');
       e.gross=round(Number(e.gross)||0);
@@ -373,5 +416,5 @@ globalThis.PayrollEngine = (() => {
       return e;
     });
   }
-  return {fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
+  return {deductionRowsFromGrid,mergeDeductionRows,deductionAmount,fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();

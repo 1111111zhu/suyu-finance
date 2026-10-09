@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261008-roster-identity"></script>
+  <script src="./payroll-engine.js?v=20261009-expenses"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -443,7 +443,7 @@
       {key:'tax',name:'个税表',icon:'税',desc:'姓名、税 / 个税 / 个人所得税 / 税额',stage:'net'},
       {key:'netSocial',name:'社保表',icon:'保',desc:'第二阶段：个人总计、公司总计',stage:'net'},
       {key:'netFund',name:'公积金表',icon:'积',desc:'第二阶段：个人缴纳、公司缴纳',stage:'net'},
-      {key:'afterTax',name:'税后代扣表',icon:'扣',desc:'姓名、水电代扣、餐费代扣、其它代扣、备注',stage:'net'}
+      {key:'afterTax',name:'税后代扣表',icon:'扣',desc:'可上传多张餐费、水电费或其他代扣表；水电费可选',stage:'net'}
     ];
 
     const profiles = [
@@ -701,6 +701,9 @@
       const sheetName=workbook.SheetNames[0];
       if (!sheetName) throw new Error('Excel 文件没有可读取的工作表');
       const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
+      const expenseRows=[];let expenseFound=false;
+      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const parsed=PayrollEngine.deductionRowsFromGrid(sheetGrid,file.name,name);if(parsed){expenseFound=true;expenseRows.push(...parsed);}}
+      if(expenseFound){expenseRows.sheetName=sheetName;return expenseRows;}
       const rows=PayrollEngine.rowsFromGrid(grid); rows.sheetName=sheetName; rows.sourceStartRow=grid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
       // Retain all roster sheets so changing the payroll month can reclassify
       // departures without losing their original sheet and row provenance.
@@ -824,6 +827,7 @@
     }
     function matchSource(filename, rows) {
       const name=canonicalKey(filename), headers=Object.keys(rows[0] || {}).map(canonicalKey);
+      if(rows.some(row=>row._deductionSource))return {key:'afterTax',reason:'餐费 / 水电费表'};
       if(name.includes('应发工资') || headers.includes('应发工资')) return {key:'grossUpload',reason:'应发工资表'};
       if(name.includes('税后代扣') || canonicalKey(rows.sheetName).includes('税后代扣') || headers.some(h=>['水电代扣','其它代扣','餐费代扣'].includes(h))) return {key:'afterTax',reason:'税后代扣表'};
       if (name.includes('税')) return {key:'tax',reason:'文件名含“税”'};
@@ -840,10 +844,10 @@
         state.sourceStatus=Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}]));
       }
       state.liveImport=true;
-      sourceRows[key]=item.rows;
+      sourceRows[key]=key==='afterTax'?PayrollEngine.mergeDeductionRows(sourceRows[key],item.rows,item.filename):item.rows;
       if(key==='grossUpload') state.grossSource='uploaded';
       if (key==='roster') pruneInternDailyRates(item.rows);
-      state.sourceStatus[key]={uploaded:true,filename:item.filename,rows:item.rows.length,parsed:true};
+      state.sourceStatus[key]={uploaded:true,filename:key==='afterTax'?[...new Set(sourceRows[key].map(r=>r._deductionSource?.filename).filter(Boolean))].join('、'):item.filename,rows:sourceRows[key].length,parsed:true};
       recalculateEmployees();saveBatchData();
       Object.assign(currentBatch(),{employees:employees.length,sources:Object.keys(sourceRows).length,status:'待计算'});
       state.calculated=false;
@@ -868,7 +872,7 @@
         let imported=0;
         for (const item of parsed) {
           const existing=item.key && state.sourceStatus[item.key];
-          if (!item.error && item.key && counts[item.key]===1 && !session.items.some(p=>!p.error && p.key===item.key)) {
+          if (!item.error && item.key && (item.key==='afterTax' || counts[item.key]===1 && !session.items.some(p=>!p.error && p.key===item.key))) {
             commitSource(item.key,item);imported++;
           } else {
             if (!item.error && item.key) item.reason=counts[item.key]>1?'多个文件匹配同一模块，请选择一个导入':existing?.uploaded && !existing.demo?'模块已有文件，请确认替换':'该模块还有待确认文件';
@@ -1113,7 +1117,7 @@
       bindView();
     }
     const netSourceKeys=['grossUpload','tax','netSocial','netFund','afterTax'];
-    const deductionKeys=['tax','netSocial','netFund','afterTax'];
+    const deductionKeys=['tax','netSocial','netFund'];
     let generatedEmployees=employees.slice();
     function stageSheets() { return sourceSheets.filter(sheet=>(sheet.stage || 'gross')===state.payrollStage); }
     function stageSourceKey(key) { return state.payrollStage==='net' ? ({social:'netSocial',fund:'netFund'}[key] || key) : key; }
@@ -1167,7 +1171,7 @@
         ${net?renderGrossSource()+renderComparison():''}
         ${net?`<div class="card stat-card" style="margin-bottom:20px"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(payrollTotal('gross'))}<em>元</em></div><button class="btn btn-sm" data-export-gross>导出应发工资表</button></div>`:''}
         <div class="card section-body"><p>${note}</p><input type="file" id="bulk-source-input" accept=".xlsx" multiple hidden>
-        <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 .xlsx 文件，单个文件 ≤ 20MB · 读取首个工作表，仅在本机浏览器解析</div></div>
+        <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 .xlsx 文件，单个文件 ≤ 20MB · 费用表读取全部工作表，仅在本机浏览器解析</div></div>
         ${renderImportReview()}${renderRosterFieldDiagnostics()}
         ${!net&&received.length?`<p class="section-desc" role="status">已接收扣款表：${received.map(sheet=>sheet.name).join('、')}；已保存到第二步。</p>`:''}
         <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept=".xlsx" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`;}).join('')}</div>
@@ -1465,10 +1469,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261008-optional-reason"></script>
-  <script src="./workbench-pages.js?v=20261008-roster-identity"></script>
+  <script src="./workbench-core.js?v=20261009-expenses"></script>
+  <script src="./workbench-pages.js?v=20261009-expenses"></script>
   <script src="./personnel-directory.js"></script>
-  <script src="./workbench-ui.js?v=20261008-optional-reason"></script>
+  <script src="./workbench-ui.js?v=20261009-expenses"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
