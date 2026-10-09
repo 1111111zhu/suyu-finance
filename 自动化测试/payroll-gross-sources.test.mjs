@@ -71,3 +71,17 @@ test('gross export round-trip compares equal and net warns only at its own stage
   run('state.payrollStage="gross";recalculateEmployees()');
   assert.doesNotMatch(run('visibleIssues(employees[0]).join("；")'),/社保|公积金/);
 });
+
+
+test('legacy cached contribution warnings stay net-only without hiding wage problems',()=>{
+  const run=app();
+  run(`employees[0].exception='未上传员工基本工资表；社保明细未找到匹配；考勤表实际出勤天数无效';employees[0].deductionIssues=['个人社保未上传，按 0 计算','个人公积金未上传，按 0 计算'];`);
+  const issues=Array.from(run('visibleIssues(employees[0],"gross")'));
+  assert.equal(issues.length,2);
+  assert.match(issues.join('；'),/基本工资/);
+  assert.match(issues.join('；'),/出勤/);
+  assert.doesNotMatch(run('PayrollWorkbenchUI.detail()'),/个人社保未上传|个人公积金未上传|社保明细|个税测算参考/);
+  assert.doesNotMatch(run('detailSheet(true).A3.c[0].t'),/社保|公积金/);
+  assert.match(run('visibleIssues(employees[0],"net").join("；")'),/个人社保未上传/);
+  assert.match(run('visibleIssues(employees[0],"net").join("；")'),/个人公积金未上传/);
+});
