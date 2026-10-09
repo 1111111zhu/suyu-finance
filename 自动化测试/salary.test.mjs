@@ -137,14 +137,15 @@ test('multi-file import replaces demo state, updates calculations, queues unknow
 });
 test('duplicate files and existing modules wait for explicit replacement; failures retain data',async()=>{
  const run=importApp();
+ run("switchPayrollStage('net')");
  await run("importFiles([{name:'花名册.xlsx',rows:[{姓名:'甲'}]},{name:'社保1.xlsx',rows:[{姓名:'甲',个人总计:100}]},{name:'社保2.xlsx',rows:[{姓名:'甲',个人总计:200}]}])");
- assert.equal(run('sourceRows.social'),undefined);assert.equal(run('importSession().items.length'),2);
- run("resolveImport(1,'social')");assert.equal(run('sourceRows.social[0].个人总计'),200);
+ assert.equal(run('sourceRows.netSocial'),undefined);assert.equal(run('importSession().items.length'),2);
+ run("resolveImport(1,'netSocial')");assert.equal(run('sourceRows.netSocial[0].个人总计'),200);
  await run("importFiles([{name:'社保3.xlsx',rows:[{姓名:'甲',个人总计:300}]}])");
- assert.equal(run('sourceRows.social[0].个人总计'),200);
- await run("importFiles([{name:'社保坏.xlsx',error:'损坏'}],'social')");
- assert.equal(run('sourceRows.social[0].个人总计'),200);assert.equal(run('state.sourceStatus.social.uploaded'),true);
- run("resolveImport(1,'social')");assert.equal(run('sourceRows.social[0].个人总计'),300);
+ assert.equal(run('sourceRows.netSocial[0].个人总计'),200);
+ await run("importFiles([{name:'社保坏.xlsx',error:'损坏'}],'netSocial')");
+ assert.equal(run('sourceRows.netSocial[0].个人总计'),200);assert.equal(run('state.sourceStatus.netSocial.uploaded'),true);
+ run("resolveImport(1,'netSocial')");assert.equal(run('sourceRows.netSocial[0].个人总计'),300);
 });
 test('pending manual selection survives rerender and is isolated per batch',async()=>{
  const run=importApp();
@@ -503,9 +504,9 @@ test('active employees compare days first and sum sick, personal and absent leav
   assert.equal(value.deductDays,days);assert.equal(value.attendanceDeduct,days*100);
  }
 });
-test('both stages expose their own social and fund inputs with exactly five second-stage slots',()=>{
+test('gross excludes contributions and net exposes exactly five second-stage slots',()=>{
  const run=app();
- assert.deepEqual(Array.from(run('stageSheets().map(s=>s.key)')),['roster','salary','performance','attendance','other','social','fund']);
+ assert.deepEqual(Array.from(run('stageSheets().map(s=>s.key)')),['roster','salary','performance','attendance','other']);
  run("switchPayrollStage('net')");
  assert.deepEqual(Array.from(run('stageSheets().map(s=>s.key)')),['grossUpload','tax','netSocial','netFund','afterTax']);
  for(const [file,row,key] of [['社保.xlsx',{姓名:'甲',个人总计:1},'netSocial'],['公积金.xlsx',{姓名:'甲',个人缴纳:1},'netFund'],['税后代扣.xlsx',{姓名:'甲',其它代扣:1},'afterTax'],['应发工资.xlsx',{姓名:'甲',应发工资:1},'grossUpload'],['税.xlsx',{姓名:'甲',税:1},'tax']]) assert.equal(run(`matchSource(${JSON.stringify(file)},[${JSON.stringify(row)}]).key`),key);
