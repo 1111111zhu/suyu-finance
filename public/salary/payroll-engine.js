@@ -205,7 +205,24 @@ globalThis.PayrollEngine = (() => {
     const values=Object.values(row||{}).filter(value=>typeof value!=='object' && !blank(value));
     return values.length>0 && values.every(value=>typeof value==='string' && /^(?:实习协议|劳动合同)(?:起|止)$/.test(value.trim()));
   }
+  const spreadsheetAccept='.xls,.xlsx,.xlsm,.xlsb,.xlt,.xltx,.xltm,.xla,.xlam,.xml,.csv';
+  function isSpreadsheetFile(filename){return /\.(?:xls|xlsx|xlsm|xlsb|xlt|xltx|xltm|xla|xlam|xml|csv)$/i.test(String(filename??''));}
+  function readSpreadsheet(library,bytes,filename,options={}) {
+    if(!isSpreadsheetFile(filename))throw new Error('请选择 Excel 工作簿、模板或 CSV 文件');
+    let data=bytes,type='array';
+    if(/\.csv$/i.test(filename)) {
+      try{data=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{data=new TextDecoder('gb18030').decode(bytes);}
+      type='string';
+    }
+    const book=library.read(data,{...options,type});
+    if(/\.csv$/i.test(filename)&&isRosterSheet(filename)&&book.SheetNames.length===1) {
+      const name=String(filename).replace(/\.csv$/i,'');book.Sheets[name]=book.Sheets[book.SheetNames[0]];delete book.Sheets[book.SheetNames[0]];book.SheetNames=[name];
+    }
+    return book;
+  }
+  function isRosterSheet(name){return /在职|离职/.test(String(name??''));}
   function rosterRowInMonth(row,month) {
+    if(row?._rosterSource?.sheetName&&!isRosterSheet(row._rosterSource.sheetName))return false;
     if(rosterSectionHeader(row)) return false;
     const {values,issues}=normalizeRosterRow(row,undefined,month);
     if(values.join && values.join.slice(0,7)>month) return false;
@@ -433,5 +450,5 @@ globalThis.PayrollEngine = (() => {
       return e;
     });
   }
-  return {otherAdditionRowsFromGrid,deductionRowsFromGrid,mergeDeductionRows,deductionAmount,fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
+  return {spreadsheetAccept,isSpreadsheetFile,readSpreadsheet,isRosterSheet,otherAdditionRowsFromGrid,deductionRowsFromGrid,mergeDeductionRows,deductionAmount,fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();

@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-other-add"></script>
+  <script src="./payroll-engine.js?v=20261009-excel-formats"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -697,20 +697,13 @@
     }
     async function parseXlsxFile(file) {
       if (!window.XLSX) throw new Error('Excel 解析组件未加载，请检查网络后重试');
-      const workbook=window.XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+      const workbook=PayrollEngine.readSpreadsheet(window.XLSX,await file.arrayBuffer(),file.name,{cellDates:true});
       const sheetName=workbook.SheetNames[0];
       if (!sheetName) throw new Error('Excel 文件没有可读取的工作表');
-      const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
-      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const additions=PayrollEngine.otherAdditionRowsFromGrid(sheetGrid,file.name,name);if(additions){additions.sheetName=name;return additions;}}
-      const expenseRows=[];let expenseFound=false;
-      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const parsed=PayrollEngine.deductionRowsFromGrid(sheetGrid,file.name,name);if(parsed){expenseFound=true;expenseRows.push(...parsed);}}
-      if(expenseFound){expenseRows.sheetName=sheetName;return expenseRows;}
-      const rows=PayrollEngine.rowsFromGrid(grid); rows.sheetName=sheetName; rows.sourceStartRow=grid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
-      // Retain all roster sheets so changing the payroll month can reclassify
-      // departures without losing their original sheet and row provenance.
-      if(/花名册|人员名册|员工名册/.test(file.name) || matchSource(file.name,rows).key==='roster') {
+      // Read only active/departed roster sheets, before inspecting any other layouts.
+      if(/花名册|人员名册|员工名册/.test(file.name) || workbook.SheetNames.some(PayrollEngine.isRosterSheet)) {
         const combined=[];
-        for(const name of workbook.SheetNames) {
+        for(const name of workbook.SheetNames.filter(PayrollEngine.isRosterSheet)) {
           const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});
           if(!sheetGrid.some(r=>r.some(v=>canonicalKey(v)==='姓名'))) continue;
           const sheetRows=PayrollEngine.rowsFromGrid(sheetGrid);
@@ -719,9 +712,16 @@
           const rowNumbers=sheetGrid.slice(start-1).flatMap((r,i)=>r.every(PayrollEngine.blank)||PayrollEngine.rosterSectionHeader(Object.fromEntries(r.map((v,j)=>[j,v])))||/^(?:合计|总计|汇总)$/.test(String(r[nameColumn]??'').trim())?[]:[start+i]);
           sheetRows.forEach((row,i)=>combined.push({...Object.fromEntries(Object.entries(row).map(([field,value])=>[field,Object.prototype.toString.call(value)==='[object Date]'?PayrollEngine.dateValue(value):value])),_rosterSource:{sheetName:name,rowNumber:rowNumbers[i],departedSheet:/离职/.test(name)}}));
         }
-        combined.sheetName=sheetName;combined.sourceStartRow=rows.sourceStartRow;
+        if(!combined.length)throw new Error('花名册未找到可读取的在职或离职子表，请核对子表名称及姓名表头');
+        combined.sheetName=workbook.SheetNames.find(PayrollEngine.isRosterSheet);combined.sourceStartRow=2;
         return combined;
       }
+      const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
+      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const additions=PayrollEngine.otherAdditionRowsFromGrid(sheetGrid,file.name,name);if(additions){additions.sheetName=name;return additions;}}
+      const expenseRows=[];let expenseFound=false;
+      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const parsed=PayrollEngine.deductionRowsFromGrid(sheetGrid,file.name,name);if(parsed){expenseFound=true;expenseRows.push(...parsed);}}
+      if(expenseFound){expenseRows.sheetName=sheetName;return expenseRows;}
+      const rows=PayrollEngine.rowsFromGrid(grid); rows.sheetName=sheetName; rows.sourceStartRow=grid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
       return rows;
     }
     function tableFor(key) {
@@ -862,7 +862,7 @@
       try {
         for (const file of Array.from(files)) {
           try {
-            if (!/\.xlsx$/i.test(file.name)) throw new Error('仅支持 .xlsx 文件');
+            if (!PayrollEngine.isSpreadsheetFile(file.name)) throw new Error('请选择 Excel 工作簿、模板或 CSV 文件');
             if (file.size>20*1024*1024) throw new Error('单个文件不能超过 20MB');
             const rows=await parseXlsxFile(file);
             parsed.push({filename:file.name,rows,...(explicitKey?{key:explicitKey,reason:'手动指定模块'}:matchSource(file.name,rows))});
@@ -1172,11 +1172,11 @@
       return `<div class="page-head"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${escapeHtml(currentBatch().name)}${state.liveImport?'':' · 当前为示例数据，上传后自动替换'}</p></div></div>${stepper()}
         ${net?renderGrossSource()+renderComparison():''}
         ${net?`<div class="card stat-card" style="margin-bottom:20px"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(payrollTotal('gross'))}<em>元</em></div><button class="btn btn-sm" data-export-gross>导出应发工资表</button></div>`:''}
-        <div class="card section-body"><p>${note}</p><input type="file" id="bulk-source-input" accept=".xlsx" multiple hidden>
-        <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 .xlsx 文件，单个文件 ≤ 20MB · 费用表读取全部工作表，仅在本机浏览器解析</div></div>
+        <div class="card section-body"><p>${note}</p><input type="file" id="bulk-source-input" accept="${PayrollEngine.spreadsheetAccept}" multiple hidden>
+        <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 Excel / CSV 文件，单个文件 ≤ 20MB · 费用表读取全部工作表，仅在本机浏览器解析</div></div>
         ${renderImportReview()}${renderRosterFieldDiagnostics()}
         ${!net&&received.length?`<p class="section-desc" role="status">已接收扣款表：${received.map(sheet=>sheet.name).join('、')}；已保存到第二步。</p>`:''}
-        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept=".xlsx" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`;}).join('')}</div>
+        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`;}).join('')}</div>
         ${net?(deductionNotice()?`<div class="alert orange" style="margin-top:16px">${deductionNotice()}</div>`:''):`<p class="section-desc" style="margin-top:16px">${!ready?'请先上传花名册以确定员工范围。':missing.length?missing.map(sheet=>sheet.name).join('、')+'未上传；实际出勤天数需考勤表提供，其余缺失数值按 0 计算。':'应发源表已上传。'}</p>`}
         <div class="upload-bottom"><span class="muted">${net?'税后扣款统一取税后代扣表；异常与比对差异不限制计算或导出。':'个人社保、公积金仅供个税测算参考，不影响应发工资金额。'}</span><button class="btn btn-primary" data-calculate ${!ready||busy?'disabled':''}>${net?'计算／更新实发工资':'计算应发工资'}</button></div></div>`;
     }
@@ -1471,10 +1471,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-other-add"></script>
-  <script src="./workbench-pages.js?v=20261009-other-add"></script>
-  <script src="./personnel-directory.js"></script>
-  <script src="./workbench-ui.js?v=20261009-other-add"></script>
+  <script src="./workbench-core.js?v=20261009-excel-formats"></script>
+  <script src="./workbench-pages.js?v=20261009-excel-formats"></script>
+  <script src="./personnel-directory.js?v=20261009-excel-formats"></script>
+  <script src="./workbench-ui.js?v=20261009-excel-formats"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
