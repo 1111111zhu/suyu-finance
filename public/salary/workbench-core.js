@@ -48,7 +48,7 @@ globalThis.PayrollWorkbench = (() => {
     rawProfiles.set(k,structuredClone(profile));
     const roster=profile.rosterRow?sourceRows.roster?.[profile.rosterRow-(sourceRows.roster?.sourceStartRow||2)]:null;
     const p={...profile,employeeNumber:String(rowValue(roster,['工号','员工编号','员工工号'])||profile.employeeNumber||profile.id)};
-    for(const [field,value] of Object.entries(o)) if(!computedFields.has(field)) p[field]=value;
+    for(const [field,value] of Object.entries(o)) if(!computedFields.has(field)&&!netFields.has(field)) p[field]=value;
     if(Object.hasOwn(o,'actualPaidDays')) p.paidDayIssues=(p.paidDayIssues||[]).filter(x=>!(/实际出勤天数|未上传考勤|考勤统计表中未找到/.test(x)));
     const e=original.calc(p,month,days);
     e._workbenchKey=k;
@@ -109,7 +109,7 @@ globalThis.PayrollWorkbench = (() => {
     if(!e||!fields[field]) throw new Error('请选择可修改的工资项目');
     if(ambiguous(e)) throw new Error('源表存在重复姓名，请先核对并区分同名员工后再修改');
     if(state.payrollStage==='net'&&!netFields.has(field)) throw new Error('请到第一阶段修改应发项目');
-    if(state.payrollStage==='gross'&&netFields.has(field)&&!['social','fund'].includes(field)) throw new Error('该项目在第二阶段调整');
+    if(state.payrollStage==='gross'&&netFields.has(field)) throw new Error('该项目在第二阶段调整');
     if(e.isIntern&&state.payrollStage==='net'&&!['netTarget','companySocial','companyFund'].includes(field)) throw new Error('实习生不参与常规扣款');
     const v=PayrollEngine.numeric(input);
     if(v===null||!Number.isFinite(v)) throw new Error('请输入有效数字，空白不会按 0 保存');

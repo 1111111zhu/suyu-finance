@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-excel-formats"></script>
+  <script src="./payroll-engine.js?v=20261009-gross-sources"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -437,8 +437,6 @@
       {key:'performance',name:'绩效考核表',icon:'绩',desc:'绩效系数'},
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
       {key:'other',name:'其他表',icon:'其',desc:'其他津贴、其他加、其他减；文件名、工作表名或表头含其他加时按姓名匹配金额'},
-      {key:'social',name:'社保表',icon:'保',desc:'第一阶段：个人总计 / 个人社保'},
-      {key:'fund',name:'公积金表',icon:'积',desc:'第一阶段：个人缴纳 / 个人公积金'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
       {key:'tax',name:'个税表',icon:'税',desc:'姓名、税 / 个税 / 个人所得税 / 税额',stage:'net'},
       {key:'netSocial',name:'社保表',icon:'保',desc:'第二阶段：个人总计、公司总计',stage:'net'},
@@ -732,7 +730,7 @@
     }
     function importedEmployees() {
       const rosterRows = sourceRows.roster || [];
-      const tables = Object.fromEntries(Object.keys(sourceRows).map(key => [key, tableFor(key)]));
+      const tables = Object.fromEntries(sourceSheets.filter(sheet=>(sheet.stage || 'gross')==='gross' && Object.hasOwn(sourceRows,sheet.key)).map(({key}) => [key, tableFor(key)]));
       const link = (key, name, aliases, fallback=0) => { const table=tables[key]; if (!table) return {value:fallback, found:false, source:false, duplicate:false}; const normalized=canonicalKey(name), duplicate=table.duplicates.has(normalized), matched=table.map.get(normalized); const column=aliases.map(alias=>Object.keys(matched || {}).find(key=>canonicalKey(key)===canonicalKey(alias))).find(key=>key!==undefined); return {column, value:table.map.has(normalized) ? rowValue(table.map.get(normalized), aliases) : fallback, found:table.map.has(normalized), source:true, duplicate}; };
       const firstPresent = (...values) => values.find(value => value !== null && value !== undefined && String(value).trim() !== '') ?? null;
       return sortEmployeesInternLast(rosterRows.map((row, index) => {
@@ -757,17 +755,6 @@
         if (!isIntern && !salary.source) exceptions.push('未上传员工基本工资表，当前金额不含完整月薪');
         if (!isIntern && performance.source && !performance.found) exceptions.push('绩效考核表未找到匹配');
         const deductionIssues=[];
-        for (const [item,label] of [[social,'个人社保'],[fund,'个人公积金']]) {
-          if (!item.source) {deductionIssues.push(`${label}未上传，按 0 计算`);continue;}
-          if (item.duplicate) deductionIssues.push(`${label}存在重复姓名，沿用首条金额，请核对`);
-          const raw=typeof item.value==='string'?item.value.trim().replace(/[￥¥,，\s]/g,''):item.value;
-          let reason='';
-          if (!item.found) reason='未找到匹配姓名';
-          else if (item.column===undefined) reason='缺少金额列';
-          else if (raw===null || raw===undefined || raw==='') { deductionIssues.push(`${label}金额为空，按 0 计算`);item.value=0;continue; }
-          else if (!['string','number'].includes(typeof raw) || !Number.isFinite(Number(raw))) reason='金额不是有效数字';
-          if (reason) { deductionIssues.push(`${label}${reason}，按 0 计算`);item.value=0; }
-        }
         (isIntern?[paidDays]:[salary,post,perfBase,probationTotal,regularTotal,probationBase,regularBase,probationPost,regularPost,probationPerfBase,regularPerfBase,regularizationSalaryDate,probationDays,regularDays,performance,attendance,transit,otherAllow,otherAdd,annual,flexible,compensatory,sick,personal,absent,otherReduction]).forEach(item=>{if(item.duplicate) exceptions.push('源表存在重复姓名');});
         if (isIntern && !Object.prototype.hasOwnProperty.call(internDailyRates(),canonicalKey(name))) exceptions.push('日薪未设置');
         const statusValue=rosterDiagnosis.values.payrollTags.join('、');
@@ -831,6 +818,7 @@
       if(name.includes('其他加')||canonicalKey(rows.sheetName).includes('其他加')||headers.some(h=>h.includes('其他加')))return {key:'other',reason:'文件名、工作表名或表头含“其他加”'};
       if(rows.some(row=>row._deductionSource))return {key:'afterTax',reason:'餐费 / 水电费表'};
       if(name.includes('应发工资') || headers.includes('应发工资')) return {key:'grossUpload',reason:'应发工资表'};
+      if(state.payrollStage==='gross' && (['社保','社会保险','公积金'].some(label=>name.includes(label)) || headers.some(header=>['个人总计','个人社保','个人缴纳','个人公积金'].includes(header)))) return {key:'',reason:'社保、公积金请在实发阶段上传，应发阶段无需上传'};
       if(name.includes('税后代扣') || canonicalKey(rows.sheetName).includes('税后代扣') || headers.some(h=>['水电代扣','其它代扣','餐费代扣'].includes(h))) return {key:'afterTax',reason:'税后代扣表'};
       if (name.includes('税')) return {key:'tax',reason:'文件名含“税”'};
       if (canonicalKey(rows.sheetName).includes('税')) return {key:'tax',reason:'工作表名含“税”'};
@@ -841,6 +829,7 @@
       return {key:'',reason:byName.length || byHeader.length ? '识别存在歧义，请指定模块' : '未识别到模块，请手动指定'};
     }
     function commitSource(key, item) {
+      if (['social','fund'].includes(key) || (state.payrollStage==='gross' && ['netSocial','netFund'].includes(key))) throw new Error('社保、公积金请在实发阶段上传');
       if (!state.liveImport) {
         sourceRows={};
         state.sourceStatus=Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}]));
@@ -891,6 +880,7 @@
     function resolveImport(index, key) {
       const session=importSession(), item=session.items[index];
       if (session.busy || !item || item.error || !sourceRules[key]) return;
+      if (!stageSheets().some(sheet=>sheet.key===key)) {showToast('该资料请在对应核算阶段上传');return;}
       commitSource(key,item);session.items.splice(index,1);saveBatchData();render('upload');showToast('文件已导入');
     }
     function renderImportReview() {
@@ -1168,7 +1158,7 @@
       const received=sourceSheets.filter(sheet=>deductionKeys.includes(sheet.key)&&state.sourceStatus[sheet.key]?.uploaded);
       const missing=missingSourceSheets().filter(sheet=>!netSourceKeys.includes(sheet.key));
       const title=net?'第二步 · 补充扣款，计算实发':'第一步 · 计算应发工资';
-      const note=net?'应发工资表可选。社保、公积金在本阶段重新上传；缺失或无效金额提示并按 0 计算。':'上传应发工资源表及个人社保、公积金资料，用于应发工资及个税测算参考。';
+      const note=net?'应发工资表可选。社保、公积金在本阶段重新上传；缺失或无效金额提示并按 0 计算。':'上传花名册、基本工资、绩效、考勤及其他工资资料，计算应发工资。';
       return `<div class="page-head"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${escapeHtml(currentBatch().name)}${state.liveImport?'':' · 当前为示例数据，上传后自动替换'}</p></div></div>${stepper()}
         ${net?renderGrossSource()+renderComparison():''}
         ${net?`<div class="card stat-card" style="margin-bottom:20px"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(payrollTotal('gross'))}<em>元</em></div><button class="btn btn-sm" data-export-gross>导出应发工资表</button></div>`:''}
@@ -1191,7 +1181,7 @@
     }
     function renderMapping() {
       const names=stageSheets().map(sheet=>sheet.name);
-      const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保表','个人总计 / 个人社保'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','公积金表','个人缴纳 / 个人公积金'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : [...mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣'),['个人社保','社保表','个人总计 / 个人社保'],['个人公积金','公积金表','个人缴纳 / 个人公积金']];
+      const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保表','个人总计 / 个人社保'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','公积金表','个人缴纳 / 个人公积金'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣');
       return `${renderUpload()}${state.payrollStage==='gross'?renderInternRates():''}<details class="card section-body" style="margin-top:20px"><summary>查看字段映射</summary><div class="table-wrap"><table class="map-table"><thead><tr><th>目标字段</th><th>来源表</th><th>源字段</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('')}${state.payrollStage==='gross'?'<tr><td>是否实习</td><td>花名册</td><td>是否实习生 / 是否实习 / 实习标识 / 员工类型</td></tr>':''}${state.payrollStage==='net'?'<tr><td>个税</td><td>个税</td><td>税 / 个税 / 个人所得税 / 税额</td></tr>':''}</tbody></table></div></details>`;
     }
     function renderResults() { return state.payrollStage==='net'?renderNetResults():renderGrossResults(); }
@@ -1200,7 +1190,7 @@
       const descriptors=[
         ['姓名','name','text'],['部门','dept','text'],
         ...(hasActiveRegularization(employees)?[['转正日期','regularizationDate','date'],['转正前工作日','probationWorkdays','number'],['转正后工作日','regularWorkdays','number'],['转正前工资','probationSalary','money'],['转正后工资','regularSalary','money']]:[]),
-        ['基本工资','base','money'],['岗位工资','post','money'],['绩效工资','performancePay','money'],['工资小计','subtotal','money'],['餐饮津贴','meal','money'],['交通津贴','transit','money'],['其他津贴','otherAllow','money'],['病假补贴','sickSubsidy','money'],['其他加','otherAdd','money'],['假勤扣薪天数','deductDays','number'],['假勤扣款','attendanceDeduct','money'],['其他减','otherReduction','money'],['应发工资','gross','money'],['个人社保','social','money'],['个人公积金','fund','money']
+        ['基本工资','base','money'],['岗位工资','post','money'],['绩效工资','performancePay','money'],['工资小计','subtotal','money'],['餐饮津贴','meal','money'],['交通津贴','transit','money'],['其他津贴','otherAllow','money'],['病假补贴','sickSubsidy','money'],['其他加','otherAdd','money'],['假勤扣薪天数','deductDays','number'],['假勤扣款','attendanceDeduct','money'],['其他减','otherReduction','money'],['应发工资','gross','money']
       ];
       const fields=descriptors.map(([,field])=>field), labels=descriptors.map(([label])=>label);
       const formatResult = (field, value) => {
@@ -1208,7 +1198,7 @@
         if (['probationWorkdays','regularWorkdays','deductDays'].includes(field)) return integer(value);
         return money(value);
       };
-      return `<div class="page-head"><div><h1 class="page-title">应发工资结果</h1><p class="page-subtitle">${escapeHtml(currentBatch().name)} · ${employees.length} 人</p></div><div class="page-actions"><button class="btn" data-go="upload">修改应发源表</button><button class="btn" data-export-gross>导出应发工资表</button><button class="btn btn-primary" data-payroll-stage="net">下一步：补充扣款，计算实发</button></div></div>${stepper()}<div class="grid grid-2"><div class="card stat-card"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(payrollTotal('gross'))}<em>元</em></div><div>个人社保合计：${money(payrollTotal('social'))} · 个人公积金合计：${money(payrollTotal('fund'))}</div></div><button class="card stat-card" data-go="exceptions" style="text-align:left"><div class="stat-label">异常记录</div><div class="stat-value">${employees.filter(hasVisibleException).length}<em>人</em></div><div>查看需核对的应发数据 →</div></button></div>${renderPayrollIssues()}<div class="card section-body" style="margin-top:20px"><div class="table-wrap"><table class="data-table"><thead><tr>${labels.map(label=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${employees.map(e=>`<tr class="${hasVisibleException(e)?'exception-row':''}">${fields.map(field=>`<td>${formatResult(field,e[field])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+      return `<div class="page-head"><div><h1 class="page-title">应发工资结果</h1><p class="page-subtitle">${escapeHtml(currentBatch().name)} · ${employees.length} 人</p></div><div class="page-actions"><button class="btn" data-go="upload">修改应发源表</button><button class="btn" data-export-gross>导出应发工资表</button><button class="btn btn-primary" data-payroll-stage="net">下一步：补充扣款，计算实发</button></div></div>${stepper()}<div class="grid grid-2"><div class="card stat-card"><div class="stat-label">应发工资合计</div><div class="stat-value">${money(payrollTotal('gross'))}<em>元</em></div></div><button class="card stat-card" data-go="exceptions" style="text-align:left"><div class="stat-label">异常记录</div><div class="stat-value">${employees.filter(hasVisibleException).length}<em>人</em></div><div>查看需核对的应发数据 →</div></button></div>${renderPayrollIssues()}<div class="card section-body" style="margin-top:20px"><div class="table-wrap"><table class="data-table"><thead><tr>${labels.map(label=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${employees.map(e=>`<tr class="${hasVisibleException(e)?'exception-row':''}">${fields.map(field=>`<td>${formatResult(field,e[field])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
     }
     function filterEmployees() {
       const q=state.search.trim().toLowerCase();
@@ -1351,7 +1341,7 @@
     function hasActiveRegularization(list=employees) { return list.some(employee=>employee.regularizationActive===true || isRegularizationMonth(employee,currentMonth)); }
     function exportDescriptors(grossOnly=false) {
       const grossFields=PayrollEngine.fields.filter(([,field])=>!outputExcludedFields.has(field));
-      return grossOnly?grossFields:[...grossFields,...PayrollEngine.netFields];
+      return grossOnly?grossFields.filter(([,field])=>!['social','fund'].includes(field)):[...grossFields,...PayrollEngine.netFields];
     }
     function exportHeaders(grossOnly=false) { return exportDescriptors(grossOnly).map(field=>field[0]); }
     function exportRecord(e,grossOnly=false) {
@@ -1363,7 +1353,7 @@
     }
     function comparisonRows(rows) {
       if (!rows) return rows;
-      const excludedLabels=new Set(PayrollEngine.fields.filter(([,field])=>outputExcludedFields.has(field)).map(([label])=>label));
+      const excludedLabels=new Set(PayrollEngine.fields.filter(([,field])=>(outputExcludedFields.has(field) || ['social','fund'].includes(field))).map(([label])=>label));
       return rows.map(row=>Object.fromEntries(Object.entries(row).flatMap(([label,value])=>{
         if (excludedLabels.has(label)) return [];
         return [[label,label==='是否实习生' && String(value ?? '').trim()==='否'?'':value]];
@@ -1434,7 +1424,7 @@
       if(!generatedEmployees.length){showToast('没有第一阶段生成结果，请先上传应发工资源表');return;}
       if(!window.XLSX){showToast('Excel 组件尚未加载，请稍候重试');return;}
       const workbook=window.XLSX.utils.book_new();window.XLSX.utils.book_append_sheet(workbook,detailSheet(true),'应发工资表');
-      downloadXlsx(workbook,`应发工资表_${currentBatch().month}.xlsx`);showToast('应发工资表已导出，包含个人社保、公积金及实习生标识');
+      downloadXlsx(workbook,`应发工资表_${currentBatch().month}.xlsx`);showToast('应发工资表已导出，包含工资构成及实习生标识');
     }
     function downloadCsv() {
       if(state.payrollStage==='gross') return downloadGross();
@@ -1471,10 +1461,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-excel-formats"></script>
-  <script src="./workbench-pages.js?v=20261009-excel-formats"></script>
-  <script src="./personnel-directory.js?v=20261009-excel-formats"></script>
-  <script src="./workbench-ui.js?v=20261009-excel-formats"></script>
+  <script src="./workbench-core.js?v=20261009-gross-sources"></script>
+  <script src="./workbench-pages.js?v=20261009-gross-sources"></script>
+  <script src="./personnel-directory.js?v=20261009-gross-sources"></script>
+  <script src="./workbench-ui.js?v=20261009-gross-sources"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
