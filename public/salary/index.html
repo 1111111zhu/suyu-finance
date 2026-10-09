@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-gross-sources"></script>
+  <script src="./payroll-engine.js?v=20261009-gross-only-v2"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -1136,7 +1136,9 @@
       return `<details class="card section-body" style="margin-bottom:16px" ${rows.length?'open':''}><summary role="status">${labels[result.status]}</summary>${rows.length?`<div class="table-wrap" style="max-height:400px;overflow:auto"><table class="data-table"><thead><tr><th>姓名</th><th>字段</th><th>第一阶段值</th><th>上传表值</th><th>差额</th><th>差异原因</th></tr></thead><tbody>${rows.map(d=>`<tr><td>${escapeHtml(d.name)}</td><td>${escapeHtml(d.field)}</td><td>${escapeHtml(differenceValue(d.before))}</td><td>${escapeHtml(differenceValue(d.after))}</td><td>${d.delta===null?'—':money(d.delta)}</td><td>${escapeHtml(d.reason)}</td></tr>`).join('')}</tbody></table></div>`:''}</details>`;
     }
     function visibleIssues(e,stage=state.payrollStage) {
-      return [...new Set([e.exception,...(e.deductionIssues || []),...(stage==='net'?comparisonNotes(e.name):[])].filter(Boolean))];
+      const exceptionParts=String(e.exception || '').split(/[；;]/).filter(Boolean);
+      const exceptions=stage==='gross' ? exceptionParts.filter(issue=>!/(?:社保|公积金)/.test(issue)) : exceptionParts;
+      return [...new Set([...exceptions,...(stage==='net'?(e.deductionIssues || []):[]),...(stage==='net'?comparisonNotes(e.name):[])].filter(Boolean))];
     }
     function hasVisibleException(e) { return visibleIssues(e).length>0; }
     function switchPayrollStage(stage) {
@@ -1461,10 +1463,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-gross-sources"></script>
-  <script src="./workbench-pages.js?v=20261009-gross-sources"></script>
-  <script src="./personnel-directory.js?v=20261009-gross-sources"></script>
-  <script src="./workbench-ui.js?v=20261009-gross-sources"></script>
+  <script src="./workbench-core.js?v=20261009-gross-only-v2"></script>
+  <script src="./workbench-pages.js?v=20261009-gross-only-v2"></script>
+  <script src="./personnel-directory.js?v=20261009-gross-only-v2"></script>
+  <script src="./workbench-ui.js?v=20261009-gross-only-v2"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
