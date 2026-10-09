@@ -215,6 +215,7 @@ globalThis.PayrollWorkbench = (() => {
     const rows=[['员工工资明细',monthLabel(currentMonth)],['阶段',gross?'应发工资':'实发工资'],...items.map(([label,field])=>[label,field==='isIntern'?(e.isIntern?'是':'否'):e[field]??''])];
     const ws=formatNumbers(window.XLSX.utils.aoa_to_sheet(rows));
     const ref=f=>'B'+(items.findIndex(d=>d[1]===f)+3);
+    numericCell(ws,ref('subtotal'),e.subtotal,subtotalFormula(e,ref));
     if(!gross){numericCell(ws,ref('afterTaxTotal'),e.afterTaxTotal,`ROUND(${ref('utility')}+${ref('mealDeduct')}+${ref('otherDeduct')},2)`);
       numericCell(ws,ref('net'),e.net,e.isIntern?`ROUND(${ref('gross')}+(${e.netAdjustment||0}),2)`:`ROUND(${ref('gross')}-${ref('social')}-${ref('fund')}-${ref('tax')}-${ref('afterTaxTotal')}+(${e.netAdjustment||0}),2)`);
       numericCell(ws,ref('companyCost'),e.companyCost,`ROUND(${ref('gross')}+${ref('companySocial')}+${ref('companyFund')},2)`);}

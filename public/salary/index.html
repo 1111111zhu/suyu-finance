@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-calendar-dates-v2"></script>
+  <script src="./payroll-engine.js?v=20261009-subtotal-formula-v1"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -1494,6 +1494,15 @@
     function numericCell(sheet,address,value,formula) {
       sheet[address]={t:'n',v:PayrollEngine.round(num(value)),z:'0.00',...(formula?{f:formula}:{})};
     }
+    function subtotalFormula(employee, ref) {
+      // Keep source totals and special payroll adjustments while exposing editable components.
+      if (employee.isIntern && employee.internPayMode === 'daily') {
+        const rate=num(employee.dailyRate), adjustment=PayrollEngine.round(num(employee.subtotal)-rate*num(employee.actualPaidDays));
+        return `ROUND(${ref('actualPaidDays')}*${rate}+(${adjustment}),2)`;
+      }
+      const adjustment=PayrollEngine.round(num(employee.subtotal)-PayrollEngine.round(num(employee.base))-PayrollEngine.round(num(employee.post))-PayrollEngine.round(num(employee.performancePay)));
+      return `ROUND(SUM(${ref('base')},${ref('post')},${ref('performancePay')})${adjustment?`+(${adjustment})`:''},2)`;
+    }
     function formatNumbers(sheet) {
       Object.entries(sheet).forEach(([key,cell])=>{if(!key.startsWith('!') && cell?.t==='n') cell.z='0.00';});
       return sheet;
@@ -1514,6 +1523,7 @@
           if(type==='money' && data[index][column]!==null)numericCell(ws,excelColumn(column)+row,data[index][column]);
           if(type==='number' && data[index][column]!==null)ws[excelColumn(column)+row]={t:'n',v:num(data[index][column]),z:'0.########'};
         });
+        numericCell(ws,ref('subtotal',row),e.subtotal,subtotalFormula(e,field=>ref(field,row)));
         if(!grossOnly) {
           numericCell(ws,ref('afterTaxTotal',row),e.afterTaxTotal,`ROUND(${ref('otherDeduct',row)}+${ref('utility',row)}+${ref('mealDeduct',row)},2)`);
           numericCell(ws,ref('net',row),e.net,`IF(${ref('isIntern',row)}="是",ROUND(${ref('gross',row)}-${ref('tax',row)}-${ref('afterTaxTotal',row)},2),ROUND(${ref('gross',row)}-${ref('social',row)}-${ref('fund',row)}-${ref('tax',row)}-${ref('afterTaxTotal',row)},2))`);
@@ -1587,10 +1597,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-calendar-dates-v2"></script>
-  <script src="./workbench-pages.js?v=20261009-calendar-dates-v2"></script>
-  <script src="./personnel-directory.js?v=20261009-calendar-dates-v2"></script>
-  <script src="./workbench-ui.js?v=20261009-calendar-dates-v2"></script>
+  <script src="./workbench-core.js?v=20261009-subtotal-formula-v1"></script>
+  <script src="./workbench-pages.js?v=20261009-subtotal-formula-v1"></script>
+  <script src="./personnel-directory.js?v=20261009-subtotal-formula-v1"></script>
+  <script src="./workbench-ui.js?v=20261009-subtotal-formula-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
