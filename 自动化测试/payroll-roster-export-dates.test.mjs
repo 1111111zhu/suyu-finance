@@ -81,3 +81,14 @@ test('both exports preserve original join and leave cells without arithmetic or 
  assert.equal(run("result['入职日期']===sourceRows.roster[0]['入职日期']"),true);
  assert.equal(run("result['离职日期']===sourceRows.roster[0]['离职日期']"),true);
 });
+
+
+test('export retains an original departure from another month and blank dates never block download',()=>{
+ const run=app();
+ run("sourceRows.roster[0]['离职日期']='2026/8/31'");
+ assert.equal(run("exportRecord({name:'测试员工'})['离职日期']"),'2026/8/31');
+ run("sourceRows.roster[0]['离职日期']='';sourceRows.roster[0]['入职日期']='';sourceRows.roster[0]['员工状态']='入职';recalculateEmployees();globalThis.exported=[];downloadXlsx=(book,name)=>exported.push(name);downloadGross();state.payrollStage='net';recalculateEmployees();downloadCsv();");
+ assert.deepEqual(Array.from(run('exported')),['应发工资表_2026-09.xlsx','实发工资表_2026-09.xlsx']);
+ assert.equal(run('detailSheet(true).H3.v'),'');
+ assert.equal(run('detailSheet(false).I3.v'),'');
+});

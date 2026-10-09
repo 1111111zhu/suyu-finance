@@ -1347,7 +1347,7 @@
     }
     function exportHeaders(grossOnly=false) { return exportDescriptors(grossOnly).map(field=>field[0]); }
     function rosterExportDate(employee,field) {
-      let matches=(sourceRows.roster || []).filter(row=>PayrollEngine.rosterRowInMonth(row,currentMonth))
+      let matches=(sourceRows.roster || [])
         .map(row=>({row,...PayrollEngine.normalizeRosterRow(row,undefined,currentMonth)}))
         .filter(({values})=>canonicalKey(values.name)===canonicalKey(employee.name));
       if(employee.employeeNumber && employee.employeeNumber!==employee.id) matches=matches.filter(({values})=>canonicalKey(values.employeeNumber)===canonicalKey(employee.employeeNumber));
