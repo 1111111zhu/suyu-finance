@@ -63,6 +63,7 @@ jobs:
         run: |
           npm run test:company-profile
           node --test 自动化测试/salary.test.mjs
+          node --test 自动化测试/payroll-email*.test.mjs
 
       - name: Run RD database integration tests
         run: node --test 自动化测试/rd-master-import.integration.test.mjs 自动化测试/rd-platform-batch.integration.test.mjs 自动化测试/rd-db.integration.test.mjs
