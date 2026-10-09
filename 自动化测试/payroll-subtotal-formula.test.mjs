@@ -29,9 +29,3 @@ test('both exports retain subtotal formulas and cached amounts through XLSX roun
     assert.match(restored[address.slice(0,-1)+'4'].f,/SUM/);
   }
 });
-test('special subtotals retain adjustments and daily interns reference attendance',()=>{
-  const run=app();
-  assert.equal(run(`subtotalFormula({base:1000,post:200,performancePay:300,subtotal:1700},f=>f)`),'ROUND(SUM(base,post,performancePay)+(200),2)');
-  assert.equal(run(`subtotalFormula({isIntern:true,internPayMode:'daily',dailyRate:150,actualPaidDays:20,subtotal:3000},f=>f)`),'ROUND(actualPaidDays*150+(0),2)');
-  assert.equal(run(`subtotalFormula({isIntern:true,internPayMode:'base',base:3000,subtotal:3000},f=>f)`),'ROUND(SUM(base,post,performancePay),2)');
-});

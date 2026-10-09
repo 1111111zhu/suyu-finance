@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-subtotal-formula-v1"></script>
+  <script src="./payroll-engine.js?v=20261009-all-formulas-v1"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -1494,14 +1494,89 @@
     function numericCell(sheet,address,value,formula) {
       sheet[address]={t:'n',v:PayrollEngine.round(num(value)),z:'0.00',...(formula?{f:formula}:{})};
     }
-    function subtotalFormula(employee, ref) {
-      // Keep source totals and special payroll adjustments while exposing editable components.
-      if (employee.isIntern && employee.internPayMode === 'daily') {
-        const rate=num(employee.dailyRate), adjustment=PayrollEngine.round(num(employee.subtotal)-rate*num(employee.actualPaidDays));
-        return `ROUND(${ref('actualPaidDays')}*${rate}+(${adjustment}),2)`;
+    function applyPayrollExportFormulas(sheet, employee, ref, grossOnly=false) {
+      const e=employee, p=e._input || e, generated=grossOnly || !sourceRows.grossUpload;
+      const descriptors=exportDescriptors(grossOnly), types=new Map(descriptors.map(([,field,type])=>[field,type]));
+      const value=field=>num(sheet[ref(field)]?.v);
+      const literal=value=>String(num(value));
+      const set=(field,expression,computed)=>{
+        if(!types.has(field) || e[field]===null) return;
+        const money=types.get(field)==='money', target=money?PayrollEngine.round(num(e[field])):num(e[field]);
+        // Exported money cells have cent precision. Carry rounding/manual adjustments explicitly
+        // so Excel recalculation agrees with payroll while changes to referenced inputs still propagate.
+        const result=money?PayrollEngine.round(computed):computed;
+        const adjustment=Math.abs(result-target)>1e-8?Number((target-computed).toFixed(10)):0;
+        const formula=expression+(adjustment?`+(${adjustment})`:'');
+        const address=ref(field);
+        sheet[address]={...sheet[address],t:'n',v:target,z:money?'0.00':'0.########',f:money?`ROUND(${formula},2)`:formula};
+        if(adjustment){sheet[address].c||=[];sheet[address].c.push({a:'核算公式',t:'公式末尾的调整项保留当前人工调整或分段核算的精度差额。'});}
+      };
+      const sum=(fields)=>({expression:`SUM(${fields.map(ref).join(',')})`,amount:fields.reduce((total,field)=>total+value(field),0)});
+      const aggregate=(source,field,aliases)=>{
+        const values=(sourceRows[source]||[]).filter(row=>canonicalKey(rowValue(row,['姓名']))===canonicalKey(e.name)).flatMap(row=>{
+          const header=Object.keys(row).find(key=>aliases.some(alias=>canonicalKey(key)===canonicalKey(alias)));
+          return header && hasNumber(row[header])?[num(row[header])]:[];
+        });
+        if(values.length>1) set(field,`SUM(${values.map(literal).join(',')})`,values.reduce((total,v)=>total+v,0));
+      };
+      if(generated) {
+        if(e.isIntern) {
+          // Intern payroll uses either the fixed salary or attendance times the configured daily rate.
+          for(const field of ['post','perfBase','effectiveScore','performancePay','meal','transit','otherAllow','sickSubsidy','otherAdd','annual','flexible','compensatory','sick','personal','absent','deductDays','attendanceDeduct','otherReduction']) set(field,'0',0);
+          if(e.internPayMode==='daily') {set('base','0',0);set('subtotal',`${ref('payableDays')}*${literal(e.dailyRate)}`,value('payableDays')*num(e.dailyRate));}
+          else set('subtotal',ref('base'),value('base'));
+          set('gross',ref('subtotal'),value('subtotal'));
+        } else {
+          if(e.late) set('effectiveScore','0',0);
+          let totalSegments=null;
+          if(e.regularizationActive && !e.regularizationBlocked) {
+            let before, beforeValue=num(e.probationWorkdays);
+            if(hasNumber(p.probationWorkdays)) before=literal(p.probationWorkdays);
+            else if(hasNumber(p.regularWorkdays)) before=`(${ref('workdays')}-${literal(p.regularWorkdays)})`;
+            else {
+              const date=excelDate(p.regularizationDate), [year,month,day]=date.split('-').map(Number);
+              const start=`DATE(${year},${month},1)`,end=`DATE(${year},${month},${day})-1`;
+              const extra=[...normalizedMakeupDates(makeupWorkdays)].filter(d=>d>=date.slice(0,7)+'-01'&&d<date&&[0,6].includes(parseDate(d).getDay())).length;
+              before=`(IF(${end}>=${start},NETWORKDAYS(${start},${end}),0)+${extra})`;
+            }
+            const after=hasNumber(p.regularWorkdays)?literal(p.regularWorkdays):`(${ref('workdays')}-${before})`;
+            const afterValue=num(e.regularWorkdays),denominator=ref('workdays');
+            if(hasNumber(p.probationTotal)&&hasNumber(p.regularTotal)) {
+              totalSegments={expression:`(${literal(p.probationTotal)}*${before}+${literal(p.regularTotal)}*${after})/${denominator}`,amount:(num(p.probationTotal)*beforeValue+num(p.regularTotal)*afterValue)/value('workdays')};
+              for(const field of ['base','post','perfBase'])set(field,'0',0);
+            } else {
+              for(const [field,beforeField,afterField] of [['base','probationBase','regularBase'],['post','probationPost','regularPost'],['perfBase','probationPerfBase','regularPerfBase']]) {
+                const v1=salarySegmentValue(p,beforeField,field),v2=salarySegmentValue(p,afterField,field);
+                set(field,`(${literal(v1)}*${before}+${literal(v2)}*${after})/${denominator}`,(v1*beforeValue+v2*afterValue)/value('workdays'));
+              }
+            }
+          } else if(e.regularizationActive && e.regularizationBlocked) {
+            for(const field of ['base','post','perfBase'])set(field,'0',0);
+          }
+          set('performancePay',`${ref('perfBase')}*${ref('effectiveScore')}`,value('perfBase')*value('effectiveScore'));
+          const subtotal=totalSegments || sum(['base','post','performancePay']);
+          set('subtotal',subtotal.expression,subtotal.amount);
+          set('sickSubsidy',`2660/21.75*${ref('sick')}*0.8`,2660/21.75*value('sick')*0.8);
+          if(e.deductDays!==null) {
+            const leave=sum(['sick','personal','absent']);
+            if(e.status==='离职') set('deductDays',`IF(${ref('workdays')}=${ref('payableDays')},0,21.75-${ref('payableDays')})`,value('workdays')===value('payableDays')?0:21.75-value('payableDays'));
+            else if(e.status==='在职') set('deductDays',`IF(${ref('workdays')}=${ref('payableDays')},0,${leave.expression})`,value('workdays')===value('payableDays')?0:leave.amount);
+            else set('deductDays',leave.expression,leave.amount);
+          }
+          set('attendanceDeduct',`${ref('subtotal')}/21.75*${ref('deductDays')}`,value('subtotal')/21.75*value('deductDays'));
+          for(const [field,aliases] of [['otherAllow',['其他津贴']],['otherAdd',['其他加','其他加项']],['otherReduction',['其他减','其他减项']]])aggregate('other',field,aliases);
+          const additions=sum(['subtotal','meal','transit','otherAllow','sickSubsidy','otherAdd']);
+          set('gross',`${additions.expression}-${ref('attendanceDeduct')}-${ref('otherReduction')}`,additions.amount-value('attendanceDeduct')-value('otherReduction'));
+        }
       }
-      const adjustment=PayrollEngine.round(num(employee.subtotal)-PayrollEngine.round(num(employee.base))-PayrollEngine.round(num(employee.post))-PayrollEngine.round(num(employee.performancePay)));
-      return `ROUND(SUM(${ref('base')},${ref('post')},${ref('performancePay')})${adjustment?`+(${adjustment})`:''},2)`;
+      if(!grossOnly) {
+        if(e.isIntern) for(const field of ['social','fund','tax','utility','mealDeduct','otherDeduct'])set(field,'0',0);
+        else for(const [field,aliases] of [['utility',['水电代扣','水电费代扣','水电费合计']],['mealDeduct',['餐费代扣','餐费合计']],['otherDeduct',['其它代扣','其他代扣']]])aggregate('afterTax',field,aliases);
+        const deductions=sum(['otherDeduct','utility','mealDeduct']);
+        set('afterTaxTotal',deductions.expression,deductions.amount);
+        set('net',e.isIntern?ref('gross'):`${ref('gross')}-${ref('social')}-${ref('fund')}-${ref('tax')}-${ref('afterTaxTotal')}`,e.isIntern?value('gross'):value('gross')-value('social')-value('fund')-value('tax')-value('afterTaxTotal'));
+        const cost=sum(['gross','companySocial','companyFund']);set('companyCost',cost.expression,cost.amount);
+      }
     }
     function formatNumbers(sheet) {
       Object.entries(sheet).forEach(([key,cell])=>{if(!key.startsWith('!') && cell?.t==='n') cell.z='0.00';});
@@ -1523,12 +1598,7 @@
           if(type==='money' && data[index][column]!==null)numericCell(ws,excelColumn(column)+row,data[index][column]);
           if(type==='number' && data[index][column]!==null)ws[excelColumn(column)+row]={t:'n',v:num(data[index][column]),z:'0.########'};
         });
-        numericCell(ws,ref('subtotal',row),e.subtotal,subtotalFormula(e,field=>ref(field,row)));
-        if(!grossOnly) {
-          numericCell(ws,ref('afterTaxTotal',row),e.afterTaxTotal,`ROUND(${ref('otherDeduct',row)}+${ref('utility',row)}+${ref('mealDeduct',row)},2)`);
-          numericCell(ws,ref('net',row),e.net,`IF(${ref('isIntern',row)}="是",ROUND(${ref('gross',row)}-${ref('tax',row)}-${ref('afterTaxTotal',row)},2),ROUND(${ref('gross',row)}-${ref('social',row)}-${ref('fund',row)}-${ref('tax',row)}-${ref('afterTaxTotal',row)},2))`);
-          numericCell(ws,ref('companyCost',row),e.companyCost,`ROUND(${ref('gross',row)}+${ref('companySocial',row)}+${ref('companyFund',row)},2)`);
-        }
+        applyPayrollExportFormulas(ws,e,field=>ref(field,row),grossOnly);
         const issues=visibleIssues(e,grossOnly?'gross':'net');
         if(issues.length) {ws['A'+row] ||= {t:'s',v:e.name||''};ws['A'+row].c=[{a:'算薪异常',t:issues.join('；')}];}
       });
@@ -1547,7 +1617,9 @@
       employees.forEach(e=>{const item=byDept.get(e.dept)||{count:0,amounts:fields.map(()=>0)};item.count++;fields.forEach((field,i)=>item.amounts[i]+=PayrollEngine.round(num(e[field])));byDept.set(e.dept,item);});
       const rows=Array.from(byDept,([dept,v])=>[dept,v.count,...v.amounts.map(PayrollEngine.round)]);
       const total=['合计',employees.length,...fields.map(field=>PayrollEngine.round(employees.reduce((sum,e)=>sum+PayrollEngine.round(num(e[field])),0)))];
-      const ws=window.XLSX.utils.aoa_to_sheet([headers,...rows,total]),descriptors=[...PayrollEngine.fields,...PayrollEngine.netFields];
+      const ws=window.XLSX.utils.aoa_to_sheet([headers,...rows,total]),descriptors=exportDescriptors(false);
+      rows.forEach((row,index)=>{const r=index+2;ws['B'+r]={t:'n',v:row[1],f:`COUNTIF('工资明细表'!C$3:C$${employees.length+2},A${r})`,z:'0'};});
+      ws['B'+(rows.length+2)]={t:'n',v:employees.length,f:rows.length?`SUM(B2:B${rows.length+1})`:'0',z:'0'};
       rows.forEach((row,index)=>fields.forEach((field,j)=>{
         const column=excelColumn(descriptors.findIndex(d=>d[1]===field)),r=index+2;
         numericCell(ws,excelColumn(j+2)+r,row[j+2],`ROUND(SUMIF('工资明细表'!C$3:C$${employees.length+2},A${r},'工资明细表'!${column}$3:${column}$${employees.length+2}),2)`);
@@ -1597,10 +1669,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-subtotal-formula-v1"></script>
-  <script src="./workbench-pages.js?v=20261009-subtotal-formula-v1"></script>
-  <script src="./personnel-directory.js?v=20261009-subtotal-formula-v1"></script>
-  <script src="./workbench-ui.js?v=20261009-subtotal-formula-v1"></script>
+  <script src="./workbench-core.js?v=20261009-all-formulas-v1"></script>
+  <script src="./workbench-pages.js?v=20261009-all-formulas-v1"></script>
+  <script src="./personnel-directory.js?v=20261009-all-formulas-v1"></script>
+  <script src="./workbench-ui.js?v=20261009-all-formulas-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>

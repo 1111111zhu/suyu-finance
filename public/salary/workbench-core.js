@@ -190,24 +190,12 @@ globalThis.PayrollWorkbench = (() => {
   };
   // Existing exports retain their sheet layout and receive an explicit adjustment term in formulas.
   detailSheet=(grossOnly=false)=>{
-    const ws=original.detail(grossOnly), list=grossOnly?generatedEmployees:employees, desc=exportDescriptors(grossOnly);
+    const ws=original.detail(grossOnly), list=grossOnly?generatedEmployees:employees;
     list.forEach((e,i)=>{
-      const r=i+3, netCol=desc.findIndex(d=>d[1]==='net');
-      if(!grossOnly&&e.netAdjustment&&netCol>=0){const c=ws[excelColumn(netCol)+r];if(c?.f)c.f=`ROUND((${c.f})+(${e.netAdjustment}),2)`;}
+      const r=i+3;
       const notes=[...(grossOnly||!sourceRows.grossUpload?adjustmentNotes(e,'gross'):[]),...(!grossOnly?adjustmentNotes(e,'net'):[])];
       if(notes.length){ws['A'+r]||={t:'s',v:e.name};ws['A'+r].c||=[];ws['A'+r].c.push({a:'工资调整',t:notes.join('\n')});}
     });return ws;
-  };
-  summarySheet=()=>{
-    const ws=original.summary(), desc=exportDescriptors(false);
-    // Original exporter indexed the unfiltered schema. Resolve columns from the actual output instead.
-    for(const cell of Object.values(ws)) if(cell?.f?.includes('SUMIF')) {
-      const m=cell.f.match(/,'工资明细表'!([A-Z]+)\$/);
-      if(m){const all=[...PayrollEngine.fields,...PayrollEngine.netFields];let idx=0;for(const c of m[1])idx=idx*26+c.charCodeAt(0)-64;
-        const field=all[idx-1]?.[1], newIdx=desc.findIndex(d=>d[1]===field);
-        if(newIdx>=0)cell.f=cell.f.replace(new RegExp(`${m[1]}\\$`,'g'),`${excelColumn(newIdx)}$`);
-      }
-    }return ws;
   };
   downloadSlip=()=>{
     if(!workbookReady())return;const e=selected(),gross=state.payrollStage==='gross';if(!e)return;
@@ -215,10 +203,7 @@ globalThis.PayrollWorkbench = (() => {
     const rows=[['员工工资明细',monthLabel(currentMonth)],['阶段',gross?'应发工资':'实发工资'],...items.map(([label,field])=>[label,field==='isIntern'?(e.isIntern?'是':'否'):e[field]??''])];
     const ws=formatNumbers(window.XLSX.utils.aoa_to_sheet(rows));
     const ref=f=>'B'+(items.findIndex(d=>d[1]===f)+3);
-    numericCell(ws,ref('subtotal'),e.subtotal,subtotalFormula(e,ref));
-    if(!gross){numericCell(ws,ref('afterTaxTotal'),e.afterTaxTotal,`ROUND(${ref('utility')}+${ref('mealDeduct')}+${ref('otherDeduct')},2)`);
-      numericCell(ws,ref('net'),e.net,e.isIntern?`ROUND(${ref('gross')}+(${e.netAdjustment||0}),2)`:`ROUND(${ref('gross')}-${ref('social')}-${ref('fund')}-${ref('tax')}-${ref('afterTaxTotal')}+(${e.netAdjustment||0}),2)`);
-      numericCell(ws,ref('companyCost'),e.companyCost,`ROUND(${ref('gross')}+${ref('companySocial')}+${ref('companyFund')},2)`);}
+    applyPayrollExportFormulas(ws,e,ref,gross);
     const notes=adjustmentNotes(e);if(notes.length)ws.B1.c=[{a:'工资调整',t:notes.join('\n')}];
     ws['!cols']=[{wch:28},{wch:28}];const book=window.XLSX.utils.book_new();window.XLSX.utils.book_append_sheet(book,ws,gross?'应发明细':'实发明细');
     downloadXlsx(book,`${gross?'应发':'实发'}明细_${e.name}_${currentMonth}.xlsx`);
