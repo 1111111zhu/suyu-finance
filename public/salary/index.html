@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-expenses"></script>
+  <script src="./payroll-engine.js?v=20261009-other-add"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -436,7 +436,7 @@
       {key:'salary',name:'员工基本工资表',icon:'薪',desc:'基本工资、岗位工资、绩效基数及转正前后薪资'},
       {key:'performance',name:'绩效考核表',icon:'绩',desc:'绩效系数'},
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
-      {key:'other',name:'其他表',icon:'其',desc:'其他津贴、其他加、其他减'},
+      {key:'other',name:'其他表',icon:'其',desc:'其他津贴、其他加、其他减；文件名、工作表名或表头含其他加时按姓名匹配金额'},
       {key:'social',name:'社保表',icon:'保',desc:'第一阶段：个人总计 / 个人社保'},
       {key:'fund',name:'公积金表',icon:'积',desc:'第一阶段：个人缴纳 / 个人公积金'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
@@ -701,6 +701,7 @@
       const sheetName=workbook.SheetNames[0];
       if (!sheetName) throw new Error('Excel 文件没有可读取的工作表');
       const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
+      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const additions=PayrollEngine.otherAdditionRowsFromGrid(sheetGrid,file.name,name);if(additions){additions.sheetName=name;return additions;}}
       const expenseRows=[];let expenseFound=false;
       for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const parsed=PayrollEngine.deductionRowsFromGrid(sheetGrid,file.name,name);if(parsed){expenseFound=true;expenseRows.push(...parsed);}}
       if(expenseFound){expenseRows.sheetName=sheetName;return expenseRows;}
@@ -827,6 +828,7 @@
     }
     function matchSource(filename, rows) {
       const name=canonicalKey(filename), headers=Object.keys(rows[0] || {}).map(canonicalKey);
+      if(name.includes('其他加')||canonicalKey(rows.sheetName).includes('其他加')||headers.some(h=>h.includes('其他加')))return {key:'other',reason:'文件名、工作表名或表头含“其他加”'};
       if(rows.some(row=>row._deductionSource))return {key:'afterTax',reason:'餐费 / 水电费表'};
       if(name.includes('应发工资') || headers.includes('应发工资')) return {key:'grossUpload',reason:'应发工资表'};
       if(name.includes('税后代扣') || canonicalKey(rows.sheetName).includes('税后代扣') || headers.some(h=>['水电代扣','其它代扣','餐费代扣'].includes(h))) return {key:'afterTax',reason:'税后代扣表'};
@@ -1469,10 +1471,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-expenses"></script>
-  <script src="./workbench-pages.js?v=20261009-expenses"></script>
+  <script src="./workbench-core.js?v=20261009-other-add"></script>
+  <script src="./workbench-pages.js?v=20261009-other-add"></script>
   <script src="./personnel-directory.js"></script>
-  <script src="./workbench-ui.js?v=20261009-expenses"></script>
+  <script src="./workbench-ui.js?v=20261009-other-add"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
