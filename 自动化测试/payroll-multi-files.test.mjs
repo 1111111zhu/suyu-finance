@@ -156,3 +156,30 @@ test('replacement works for second-stage deductions and same-file retries reset 
  const input=a.run('input');input.files=[bytes];await a.run('handleSourceInput')(input);
  assert.equal(input.value,'');assert.equal(input.dataset.importMode,'append');assert.equal(a.run('sourceRows.netSocial.length'),1);assert.equal(a.run('sourceRows.netSocial[0].个人总计'),300);
 });
+
+test('delete clears a complete module and previews, recalculates and persists without affecting other sources',async()=>{
+ const a=app();await a.importFiles([file('花名册.xlsx',[['人员',roster('甲','001')]])],'roster');
+ await a.importFiles([file('基本工资.xlsx',[['工资',[['姓名','基本工资'],['甲',1000]]]])],'salary');
+ await a.importFiles([file('其他加A.xlsx',[['其他加',[['姓名','其他加'],['甲',100]]]]),file('其他加B.xlsx',[['其他加',[['姓名','其他加'],['甲',200]]]])],'other');
+ assert.equal(a.run('employees[0].gross'),1300);a.run('state.calculated=true');
+ assert.equal(a.run('removeSource("other")'),true);
+ assert.equal(a.run('employees[0].gross'),1000);assert.equal(a.run('sourceRows.other'),undefined);assert.equal(a.run('state.sourceStatus.other'),undefined);
+ assert.equal(a.run('sourceRows.salary.length'),1);assert.equal(a.run('state.calculated'),false);
+ assert.equal(a.run('currentBatch().data.sourceRows.other'),undefined);assert.equal(a.run('currentBatch().sources'),2);
+ assert.doesNotMatch(a.run('PayrollWorkbenchPages.upload()'),/data-source-delete="other"/);
+ assert.match(a.run('PayrollWorkbenchPages.upload()'),/data-source-delete="salary"/);
+});
+test('delete uploaded gross restores generated result; roster deletion clears employee scope and intern rates',async()=>{
+ const a=app();await a.importFiles([file('花名册.xlsx',[['人员',roster('甲','001')]])],'roster');
+ await a.importFiles([file('基本工资.xlsx',[['工资',[['姓名','基本工资'],['甲',1000]]]])],'salary');
+ a.run('state.payrollStage="net"');await a.importFiles([file('应发工资.xlsx',[['应发',[['姓名','应发工资'],['甲',2000]]]])],'grossUpload');
+ assert.equal(a.run('employees[0].gross'),2000);assert.equal(a.run('removeSource("grossUpload")'),true);
+ assert.equal(a.run('employees[0].gross'),1000);assert.equal(a.run('state.grossSource'),'generated');
+ assert.equal(a.run('removeSource("salary")'),false);
+ a.run('state.payrollStage="gross";internDailyRates().甲=120');assert.equal(a.run('removeSource("roster")'),true);
+ assert.equal(a.run('employees.length'),0);assert.equal(a.run('Object.keys(internDailyRates()).length'),0);
+});
+test('delete is blocked while an import is running',async()=>{
+ const a=app();await a.importFiles([file('基本工资.xlsx',[['工资',[['姓名','基本工资'],['甲',1000]]]])],'salary');
+ a.run('importSession().busy=true');assert.equal(a.run('removeSource("salary")'),false);assert.equal(a.run('sourceRows.salary.length'),1);
+});

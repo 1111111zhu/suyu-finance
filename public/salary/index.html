@@ -365,11 +365,11 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-upload-replace-preview-v1"></script>
+  <script src="./payroll-engine.js?v=20261009-upload-delete-v1"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
-  <link rel="stylesheet" href="./workbench-pages.css?v=20261009-upload-replace-preview-v1">
+  <link rel="stylesheet" href="./workbench-pages.css?v=20261009-upload-delete-v1">
   <link rel="stylesheet" href="./suyu-theme.css">
   <link rel="stylesheet" href="./personnel-directory.css">
 </head>
@@ -959,6 +959,18 @@
       Object.assign(currentBatch(),{employees:employees.length,sources:Object.keys(sourceRows).length,status:'待计算'});
       state.calculated=false;
     }
+    function removeSource(key) {
+      if(importSession().busy || !stageSheets().some(sheet=>sheet.key===key) || !state.sourceStatus[key]?.uploaded || state.sourceStatus[key]?.demo)return false;
+      const name=sourceSheets.find(sheet=>sheet.key===key)?.name || '表格';
+      delete sourceRows[key];delete state.sourceStatus[key];
+      if(key==='roster')pruneInternDailyRates([]);
+      state.calculated=false;
+      recalculateEmployees();
+      Object.assign(currentBatch(),{sources:Object.keys(sourceRows).length,status:'待计算'});
+      saveBatchData();render('upload');
+      showToast(key==='grossUpload'?'已删除上传应发表，恢复使用第一阶段结果':`已删除${name}的全部上传文件`);
+      return true;
+    }
     async function importFiles(files, explicitKey='', mode='append') {
       const session=importSession(), batch=currentBatch(), stage=state.payrollStage;
       const replacing=mode==='replace';
@@ -1303,7 +1315,7 @@
         <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 Excel / CSV 文件，单个文件 ≤ 20MB · 费用表读取全部工作表，仅在本机浏览器解析</div></div>
         ${renderImportReview()}${renderRosterFieldDiagnostics()}
         ${!net&&received.length?`<p class="section-desc" role="status">已接收扣款表：${received.map(sheet=>sheet.name).join('、')}；已保存到第二步。</p>`:''}
-        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" multiple hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'追加上传':'选择文件'} ${icon.upload}</button>${st.uploaded?`<button class="btn btn-sm" data-upload="${sheet.key}" data-upload-mode="replace" ${busy?'disabled':''}>替换</button><button class="btn btn-sm" data-source-preview="${sheet.key}">预览</button>`:''}</div>`;}).join('')}</div>
+        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" multiple hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'追加上传':'选择文件'} ${icon.upload}</button>${st.uploaded?`<button class="btn btn-sm" data-upload="${sheet.key}" data-upload-mode="replace" ${busy?'disabled':''}>替换</button><button class="btn btn-sm" data-source-preview="${sheet.key}">预览</button><button type="button" class="btn btn-sm wb-source-delete" data-source-delete="${sheet.key}" title="删除本模块的全部已上传文件" ${busy||st.demo?'disabled':''}>删除</button>`:''}</div>`;}).join('')}</div>
         ${net?(deductionNotice()?`<div class="alert orange" style="margin-top:16px">${deductionNotice()}</div>`:''):`<p class="section-desc" style="margin-top:16px">${!ready?'请先上传花名册以确定员工范围。':missing.length?missing.map(sheet=>sheet.name).join('、')+'未上传；实际出勤天数需考勤表提供，其余缺失数值按 0 计算。':'应发源表已上传。'}</p>`}
         <div class="upload-bottom"><span class="muted">${net?'税后扣款统一取税后代扣表；异常与比对差异不限制计算或导出。':'个人社保、公积金仅供个税测算参考，不影响应发工资金额。'}</span><button class="btn btn-primary" data-calculate ${!ready||busy?'disabled':''}>${net?'计算／更新实发工资':'计算应发工资'}</button></div></div>`;
     }
@@ -1421,6 +1433,7 @@
       content.querySelectorAll('[data-step-view]').forEach(el=>el.addEventListener('click',()=>render(el.dataset.stepView)));
       content.querySelectorAll('[data-upload]').forEach(btn=>btn.addEventListener('click',()=>{const input=document.getElementById('file-'+btn.dataset.upload);input.dataset.importMode=btn.dataset.uploadMode || 'append';input.value='';input.click();}));
       content.querySelectorAll('[data-source-preview]').forEach(btn=>btn.addEventListener('click',()=>openSourcePreview(btn.dataset.sourcePreview)));
+      content.querySelectorAll('[data-source-delete]').forEach(btn=>btn.addEventListener('click',()=>removeSource(btn.dataset.sourceDelete)));
       content.querySelectorAll('[data-source-input]').forEach(input=>input.addEventListener('change',()=>handleSourceInput(input)));
       content.querySelectorAll('[data-intern-rate]').forEach(input=>input.addEventListener('change',()=>{if(setInternDailyRate(decodeURIComponent(input.dataset.internRate),input.value)===false)return;render('mapping');showToast('日薪已保存并重算');}));
       const selectAllInterns=content.querySelector('#selectAllInterns'); if(selectAllInterns) selectAllInterns.addEventListener('change',()=>content.querySelectorAll('[data-intern-select]').forEach(input=>input.checked=selectAllInterns.checked));
@@ -1716,11 +1729,11 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./source-preview.js?v=20261009-upload-replace-preview-v1"></script>
-  <script src="./workbench-core.js?v=20261009-upload-replace-preview-v1"></script>
-  <script src="./workbench-pages.js?v=20261009-upload-replace-preview-v1"></script>
-  <script src="./personnel-directory.js?v=20261009-upload-replace-preview-v1"></script>
-  <script src="./workbench-ui.js?v=20261009-upload-replace-preview-v1"></script>
+  <script src="./source-preview.js?v=20261009-upload-delete-v1"></script>
+  <script src="./workbench-core.js?v=20261009-upload-delete-v1"></script>
+  <script src="./workbench-pages.js?v=20261009-upload-delete-v1"></script>
+  <script src="./personnel-directory.js?v=20261009-upload-delete-v1"></script>
+  <script src="./workbench-ui.js?v=20261009-upload-delete-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
