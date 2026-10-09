@@ -252,6 +252,37 @@ globalThis.PayrollEngine = (() => {
     // An actual departure before this month is not a full-month employee.
     return !values.leave || values.leave.slice(0,7)>=month;
   }
+  function paidLeaveFromRow(row = {}) {
+    const categories = ['年假','调休','弹性假','产检假','产假','陪产假','婚假','丧假','哺乳假'];
+    const entries = Object.entries(row);
+    const normalize = label => key(label).replace(/^调休假/, '调休').replace(/^婚嫁/, '婚假');
+    const remark = entries.filter(([label]) => /备注/.test(key(label))).map(([,value]) => String(value ?? '')).join('；');
+    const valid = value => !blank(value) && Number.isFinite(Number(String(value).trim())) && Number(value) >= 0;
+    const breakdown = {};
+    for (const category of categories) {
+      const columns = entries.filter(([label]) => {
+        const normalized = normalize(label);
+        return normalized === category || normalized.startsWith(category+'(') || normalized === category+'天数';
+      });
+      const days = columns.find(([label,value]) => !/\((?:H|小时)\)/i.test(normalize(label)) && valid(value));
+      const hours = columns.find(([label,value]) => /\((?:H|小时)\)/i.test(normalize(label)) && valid(value));
+      let count = days ? Number(days[1]) : hours ? Number(hours[1]) : null;
+      if (count === null) {
+        const alias = category === '调休' ? '调休(?:假)?' : category === '婚假' ? '(?:婚假|婚嫁)' : category;
+        const pattern = new RegExp('(?<![\u4e00-\u9fff])'+alias+'\\s*([0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)\\s*(天|小时|[hH])', 'g');
+        count = 0;
+        for (const match of remark.matchAll(pattern)) {
+          count += Number(match[1]);
+          // A remark may continue the same leave category: 年假0.5天，0.25天。
+          const tail = remark.slice(match.index+match[0].length);
+          const continuation = tail.match(/^(?:\s*[，,、]\s*(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(?:天|小时|[hH]))+/);
+          if (continuation) for (const extra of continuation[0].matchAll(/([0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(天|小时|[hH])/g)) count += Number(extra[1]);
+        }
+      }
+      breakdown[category] = count;
+    }
+    return {days:Object.values(breakdown).reduce((sum,value)=>sum+value,0), breakdown, remark};
+  }
   function canonicalRow(row) {
     const result={};
     // Exact standard headers take precedence over aliases.
@@ -469,5 +500,5 @@ globalThis.PayrollEngine = (() => {
       return e;
     });
   }
-  return {spreadsheetAccept,isSpreadsheetFile,readSpreadsheet,isRosterSheet,otherAdditionRowsFromGrid,deductionRowsFromGrid,mergeDeductionRows,deductionAmount,fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
+  return {paidLeaveFromRow,spreadsheetAccept,isSpreadsheetFile,readSpreadsheet,isRosterSheet,otherAdditionRowsFromGrid,deductionRowsFromGrid,mergeDeductionRows,deductionAmount,fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();
