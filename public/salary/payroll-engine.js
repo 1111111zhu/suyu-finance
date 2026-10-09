@@ -222,7 +222,7 @@ globalThis.PayrollEngine = (() => {
   }
   function isRosterSheet(name){return /在职|离职/.test(String(name??''));}
   function rosterRowInMonth(row,month) {
-    if(row?._rosterSource?.sheetName&&!isRosterSheet(row._rosterSource.sheetName))return false;
+    if(row?._rosterSource?.sheetName&&!row._rosterSource.recognized&&!isRosterSheet(row._rosterSource.sheetName))return false;
     if(rosterSectionHeader(row)) return false;
     const {values,issues}=normalizeRosterRow(row,undefined,month);
     if(values.join && values.join.slice(0,7)>month) return false;
@@ -238,6 +238,7 @@ globalThis.PayrollEngine = (() => {
     const result={};
     // Exact standard headers take precedence over aliases.
     for (const [header,value] of Object.entries(row)) {
+      if(header.startsWith('_'))continue;
       const label=canonicalHeader(header);
       if (!(label in result) || key(header)===key(label)) result[label]=value;
     }
@@ -304,8 +305,8 @@ globalThis.PayrollEngine = (() => {
     return round(total);
   }
   function rowsFromGrid(grid) {
-    const headerIndex=grid.findIndex(row=>row.some(value=>key(value)==='姓名'));
-    if (headerIndex<0) throw new Error('首个工作表必须包含“姓名”字段');
+    const headerIndex=grid.findIndex(row=>row.some(value=>canonicalHeader(value)==='姓名'));
+    if (headerIndex<0) throw new Error('工作表必须包含“姓名”字段');
     const headers=grid[headerIndex].map(value=>String(value ?? '').trim());
     const nonEmpty=headers.filter(Boolean);
     if (new Set(nonEmpty.map(key)).size!==nonEmpty.length) throw new Error('表头存在重复列，请核对后重新上传');
@@ -407,8 +408,8 @@ globalThis.PayrollEngine = (() => {
   }
   function amount(rows,name,aliases,label,issues) {
     if (!rows) {issues.push(`${label}未上传，按 0 计算`);return 0;}
-    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name);
-    if (!matches.length) {issues.push(`${label}未找到匹配姓名，按 0 计算`);return 0;}
+    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name && Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a))));
+    if (!matches.length) {issues.push(`${label}${rows.some(row=>nameKey(canonicalRow(row)['姓名'])===name)?'缺少金额列':'未找到匹配姓名'}，按 0 计算`);return 0;}
     if(matches.length>1) issues.push(`${label}姓名重复，沿用首条金额`);
     const row=matches[0],column=aliases.map(alias=>Object.keys(row).find(header=>key(header)===key(alias))).find(header=>header!==undefined);
     const value=column===undefined?null:numeric(row[column]);
@@ -417,7 +418,7 @@ globalThis.PayrollEngine = (() => {
   }
   function optionalAmount(rows,name,aliases,label,issues) {
     if (!rows) return 0;
-    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name);
+    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name && Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a))));
     if (!matches.length) return 0;
     if(matches.length>1) issues.push(`${label}姓名重复，沿用首条金额`);
     const row=matches[0],column=aliases.map(alias=>Object.keys(row).find(header=>key(header)===key(alias))).find(header=>header!==undefined);

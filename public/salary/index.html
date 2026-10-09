@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-gross-only-v2"></script>
+  <script src="./payroll-engine.js?v=20261009-multi-files-v1"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -436,7 +436,7 @@
       {key:'salary',name:'员工基本工资表',icon:'薪',desc:'基本工资、岗位工资、绩效基数及转正前后薪资'},
       {key:'performance',name:'绩效考核表',icon:'绩',desc:'绩效系数'},
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
-      {key:'other',name:'其他表',icon:'其',desc:'其他津贴、其他加、其他减；文件名、工作表名或表头含其他加时按姓名匹配金额'},
+      {key:'other',name:'其他表',icon:'其',desc:'其他津贴、其他加、其他减'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
       {key:'tax',name:'个税表',icon:'税',desc:'姓名、税 / 个税 / 个人所得税 / 税额',stage:'net'},
       {key:'netSocial',name:'社保表',icon:'保',desc:'第二阶段：个人总计、公司总计',stage:'net'},
@@ -693,39 +693,68 @@
       if (typeof value === 'string') return value;
       return excelDate(value) || fallback;
     }
-    async function parseXlsxFile(file) {
+    async function parseXlsxFile(file, explicitKey='') {
       if (!window.XLSX) throw new Error('Excel 解析组件未加载，请检查网络后重试');
       const workbook=PayrollEngine.readSpreadsheet(window.XLSX,await file.arrayBuffer(),file.name,{cellDates:true});
-      const sheetName=workbook.SheetNames[0];
-      if (!sheetName) throw new Error('Excel 文件没有可读取的工作表');
-      // Read only active/departed roster sheets, before inspecting any other layouts.
-      if(/花名册|人员名册|员工名册/.test(file.name) || workbook.SheetNames.some(PayrollEngine.isRosterSheet)) {
-        const combined=[];
-        for(const name of workbook.SheetNames.filter(PayrollEngine.isRosterSheet)) {
-          const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});
-          if(!sheetGrid.some(r=>r.some(v=>canonicalKey(v)==='姓名'))) continue;
-          const sheetRows=PayrollEngine.rowsFromGrid(sheetGrid);
-          const start=sheetGrid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
-          const nameColumn=sheetGrid[start-2].findIndex(v=>canonicalKey(v)==='姓名');
-          const rowNumbers=sheetGrid.slice(start-1).flatMap((r,i)=>r.every(PayrollEngine.blank)||PayrollEngine.rosterSectionHeader(Object.fromEntries(r.map((v,j)=>[j,v])))||/^(?:合计|总计|汇总)$/.test(String(r[nameColumn]??'').trim())?[]:[start+i]);
-          sheetRows.forEach((row,i)=>combined.push({...Object.fromEntries(Object.entries(row).map(([field,value])=>[field,Object.prototype.toString.call(value)==='[object Date]'?PayrollEngine.dateValue(value):value])),_rosterSource:{sheetName:name,rowNumber:rowNumbers[i],departedSheet:/离职/.test(name)}}));
-        }
-        if(!combined.length)throw new Error('花名册未找到可读取的在职或离职子表，请核对子表名称及姓名表头');
-        combined.sheetName=workbook.SheetNames.find(PayrollEngine.isRosterSheet);combined.sourceStartRow=2;
-        return combined;
+      if (!workbook.SheetNames.length) throw new Error('Excel 文件没有可读取的工作表');
+      const items=[],skipped=[];
+      const rosterBook=/花名册|人员名册|员工名册/.test(file.name) || explicitKey==='roster';
+      for(const sheetName of workbook.SheetNames) {
+        if(rosterBook && /年假台账|使用说明|说明|年度台账/.test(sheetName)) {skipped.push(sheetName);continue;}
+        const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
+        const headerIndex=grid.findIndex(row=>row.some(v=>PayrollEngine.canonicalHeader(v)==='姓名'));
+        // Explanation/cover sheets have no employee rows. Expense layouts have their own name column.
+        const directDeduction=/水电代扣|餐费代扣|其它代扣|其他代扣|税后代扣/.test(file.name+sheetName) || headerIndex>=0 && grid[headerIndex].some(h=>/水电代扣|餐费代扣|其它代扣|其他代扣/.test(String(h)));
+        const expense=directDeduction?null:PayrollEngine.deductionRowsFromGrid(grid,file.name,sheetName);
+        if(headerIndex<0 && !expense) {skipped.push(sheetName);continue;}
+        let rows=expense || PayrollEngine.rowsFromGrid(grid);
+        rows.sheetName=sheetName;rows.sourceStartRow=headerIndex+2;
+        const match=explicitKey?{key:explicitKey,reason:'指定模块'}:matchSource(file.name,rows);
+        if(!expense) rows=normalizeSourceFields(rows,match.key,file.name,sheetName);
+        let cursor=headerIndex+1;
+        rows=rows.map(row=>{
+          let rowNumber=row._deductionSource?.rowNumber;
+          if(!rowNumber) {
+            while(cursor<grid.length) {
+              const values=grid[cursor++];
+              const name=values[grid[headerIndex].findIndex(v=>PayrollEngine.canonicalHeader(v)==='姓名')];
+              if(values.every(PayrollEngine.blank) || /^(?:合计|总计|汇总)$/.test(String(name??'').trim()))continue;
+              const candidate=Object.fromEntries(grid[headerIndex].flatMap((h,i)=>h?[[String(h),values[i]]]:[]));
+              if(PayrollEngine.rosterSectionHeader(candidate))continue;
+              rowNumber=cursor;break;
+            }
+          }
+          const source={filename:file.name,sheetName,rowNumber};
+          const normalized={...row,_importSource:source};
+          if(match.key==='roster') {
+            for(const [field,value] of Object.entries(normalized))if(Object.prototype.toString.call(value)==='[object Date]') normalized[field]=PayrollEngine.dateValue(value);
+            normalized._rosterSource={...source,recognized:true,departedSheet:/离职/.test(sheetName)};
+          }
+          return normalized;
+        });
+        rows.sheetName=sheetName;rows.sourceStartRow=headerIndex+2;
+        items.push({filename:file.name,rows,...match});
       }
-      const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
-      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const additions=PayrollEngine.otherAdditionRowsFromGrid(sheetGrid,file.name,name);if(additions){additions.sheetName=name;return additions;}}
-      const expenseRows=[];let expenseFound=false;
-      for(const name of workbook.SheetNames){const sheetGrid=window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});const parsed=PayrollEngine.deductionRowsFromGrid(sheetGrid,file.name,name);if(parsed){expenseFound=true;expenseRows.push(...parsed);}}
-      if(expenseFound){expenseRows.sheetName=sheetName;return expenseRows;}
-      const rows=PayrollEngine.rowsFromGrid(grid); rows.sheetName=sheetName; rows.sourceStartRow=grid.findIndex(r=>r.some(v=>canonicalKey(v)==='姓名'))+2;
-      return rows;
+      if(!items.length)throw new Error(rosterBook?'花名册未找到可读取的在职或离职子表或人员数据表，请核对姓名表头':'Excel 文件未找到含姓名及员工数据的工作表');
+      const combined=items.flatMap(item=>item.rows);
+      combined.sheetName=items[0].rows.sheetName;combined.sourceStartRow=2;
+      combined.importItems=items;combined.skippedSheets=skipped;
+      return combined;
     }
     function tableFor(key) {
       const rows = (sourceRows[key] || []).filter(row=>key!=='roster' || PayrollEngine.rosterRowInMonth(row,currentMonth));
       const map = new Map(), duplicates = new Set();
-      rows.forEach(row => { const name = String(rowValue(row, ['姓名']) ?? '').trim(); if (!name) return; const normalized = canonicalKey(name); if (map.has(normalized)) duplicates.add(normalized); else map.set(normalized, row); });
+      rows.forEach(row => { const name = String(rowValue(row, ['姓名']) ?? '').trim(); if (!name) return; const normalized = canonicalKey(name); if (!map.has(normalized)) {map.set(normalized,{...row});return;}
+        const merged=map.get(normalized);
+        if(key==='roster')duplicates.add(normalized);
+        for(const [field,value] of Object.entries(row)) {
+          if(field.startsWith('_') || canonicalKey(field)==='姓名')continue;
+          if(PayrollEngine.blank(merged[field]))merged[field]=value;
+          else if(!PayrollEngine.blank(value)) {
+            if(key==='other' && ['其他津贴','其他加','其他减'].includes(field))merged[field]=PayrollEngine.round(parseNumber(merged[field])+parseNumber(value));
+            else if(key!=='other' && !['公司','工号','一级部门','二级部门','备注'].includes(field))duplicates.add(normalized);
+          }
+        } });
       return {map, duplicates};
     }
     function importedEmployees() {
@@ -813,20 +842,75 @@
       const problems=[...mapping.issues.map(issue=>issue.message),...rows.flatMap((row,index)=>PayrollEngine.rosterRowInMonth(row,currentMonth)?PayrollEngine.normalizeRosterRow(row,undefined,currentMonth).issues.filter(issue=>issue.reason!=='ambiguous' && !(issue.reason==='missing' && issue.field==='name' && !mapping.map.name)).map(issue=>`${row._rosterSource?.sheetName||rows.sheetName||'花名册'}第 ${row._rosterSource?.rowNumber||index+(rows.sourceStartRow||2)} 行：${issue.message}`):[])];
       return `<details class="card section-body" style="margin-top:16px" ${problems.length?'open':''}><summary>花名册字段匹配：${Object.keys(mapping.map).length} 项已识别${problems.length?` · ${problems.length} 项需核对`:''}</summary><p class="section-desc">按标准表头优先、明确同义词其次；不按列位置匹配。算薪按当月日期和职位生成正职、入职、转正、离职、实习生标签，不要求员工状态或员工类型列。</p><div class="table-wrap"><table class="map-table"><thead><tr><th>工资字段</th><th>花名册来源列</th></tr></thead><tbody>${labels}</tbody></table></div>${problems.length?`<div class="alert orange" role="alert" style="margin-top:12px">${problems.slice(0,30).map(escapeHtml).join('<br>')}${problems.length>30?`<br>另有 ${problems.length-30} 项，请核对原表。`:''}<br>上述问题允许预览，但需修正后才能确认正式工资。</div>`:''}</details>`;
     }
+    const sourceFieldGroups = {
+      salary:[['基本工资','工资基数'],['岗位工资'],['绩效基数'],['转正前工资','试用期工资','转正前月薪','试用期月薪','转正前'],['转正后工资','正式工资','转正后月薪','正式月薪','转正后'],['转正前基本工资','试用期基本工资'],['转正后基本工资','转正基本工资','正式基本工资'],['转正前岗位工资','试用期岗位工资'],['转正后岗位工资','转正岗位工资','正式岗位工资'],['转正前绩效基数','试用期绩效基数'],['转正后绩效基数','转正绩效基数','正式绩效基数']],
+      performance:[['绩效系数','绩效分数']],
+      attendance:[['实际出勤天数','实发薪天数'],['餐补合计','餐饮津贴'],['交通补贴','交通津贴'],['年假天数','年假(天)'],['弹性假天数','弹性假(天)'],['调休假天数','调休假(天)'],['病假天数','病假(天)'],['事假天数','事假(天)'],['旷工天数','旷工(天)'],['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数'],['转正后应出勤天数','转正后出勤天数','转正后计薪天数']],
+      other:[['其他津贴'],['其他加','其他加项'],['其他减','其他减项']],
+      netSocial:[['个人总计','个人社保'],['公司总计','公司缴纳社保']],
+      netFund:[['个人缴纳','个人公积金'],['公司缴纳','公司缴纳公积金']],
+      grossUpload:[['应发工资']],tax:[['税','个税','个人所得税','税额']],
+      afterTax:[['水电代扣','水电费合计'],['餐费代扣','餐费合计'],['其它代扣','其他代扣']]
+    };
+    function fieldLabelMatches(text,alias) {
+      const value=canonicalKey(text),label=canonicalKey(alias);
+      return label==='税'?value==='税'||/^(?:本月|当月)?税(?:额|表|金额|\(元\))?$/.test(value):value.includes(label);
+    }
+    function normalizeSourceFields(rows,key,filename,sheetName) {
+      const groups=sourceFieldGroups[key]||[],headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
+      const mappings=[];
+      const groupMatches=(text,group)=>{const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
+      for(const group of groups) {
+        const exact=headers.filter(h=>group.some(alias=>canonicalKey(h)===canonicalKey(alias)));
+        const labeled=headers.filter(h=>groupMatches(h,group));
+        const candidates=exact.length?exact:labeled;
+        if(candidates.length>1)throw new Error(`${sheetName}：${group[0]}需要唯一的对应列，请核对表头`);
+        if(candidates.length)mappings.push([group[0],candidates[0]]);
+      }
+      // A field in the worksheet/file name may label a generic value column.
+      const named=groups.filter(group=>groupMatches(sheetName,group));
+      const targets=named.length?named:groups.filter(group=>groupMatches(filename,group));
+      const missing=targets.filter(group=>!mappings.some(([label])=>label===group[0]));
+      if(missing.length) {
+        const generic=headers.filter(h=>/^(?:金额|总计金额|合计金额|总金额|金额合计|数值|值|天数|系数|分数)(?:\(元\)|\(天\)|元|天)?$/.test(canonicalKey(h)));
+        if(missing.length!==1 || generic.length!==1)throw new Error(`${sheetName}：名称已识别${missing.map(g=>g[0]).join('、')}，但对应数值列不唯一，请核对表头`);
+        mappings.push([missing[0][0],generic[0]]);
+      }
+      return rows.map(row=>{
+        const normalized={...row};
+        const nameHeader=Object.keys(row).find(h=>PayrollEngine.canonicalHeader(h)==='姓名');
+        if(nameHeader)normalized.姓名=row[nameHeader];
+        for(const [label,column] of mappings) {
+          const value=row[column];
+          if(key==='other' && label==='其他加' && (!Number.isFinite(PayrollEngine.numeric(value)) || PayrollEngine.blank(value)))throw new Error(`${sheetName}其他加金额缺失或无效`);
+          normalized[label]=value;
+        }
+        return normalized;
+      });
+    }
     function matchSource(filename, rows) {
-      const name=canonicalKey(filename), headers=Object.keys(rows[0] || {}).map(canonicalKey);
-      if(name.includes('其他加')||canonicalKey(rows.sheetName).includes('其他加')||headers.some(h=>h.includes('其他加')))return {key:'other',reason:'文件名、工作表名或表头含“其他加”'};
+      const name=canonicalKey(filename),sheetName=canonicalKey(rows.sheetName),headers=[...new Set(rows.flatMap(row=>Object.keys(row)))].filter(h=>!h.startsWith('_')).map(canonicalKey);
+      if([name,sheetName,...headers].some(label=>label.includes('其他加')))return {key:'other',reason:'文件名、工作表名或表头含“其他加”'};
       if(rows.some(row=>row._deductionSource))return {key:'afterTax',reason:'餐费 / 水电费表'};
-      if(name.includes('应发工资') || headers.includes('应发工资')) return {key:'grossUpload',reason:'应发工资表'};
-      if(state.payrollStage==='gross' && (['社保','社会保险','公积金'].some(label=>name.includes(label)) || headers.some(header=>['个人总计','个人社保','个人缴纳','个人公积金'].includes(header)))) return {key:'',reason:'社保、公积金请在实发阶段上传，应发阶段无需上传'};
-      if(name.includes('税后代扣') || canonicalKey(rows.sheetName).includes('税后代扣') || headers.some(h=>['水电代扣','其它代扣','餐费代扣'].includes(h))) return {key:'afterTax',reason:'税后代扣表'};
-      if (name.includes('税')) return {key:'tax',reason:'文件名含“税”'};
-      if (canonicalKey(rows.sheetName).includes('税')) return {key:'tax',reason:'工作表名含“税”'};
-      const byName=Object.keys(sourceRules).filter(key=>sourceRules[key].names.some(alias=>name.includes(alias)));
-      const byHeader=Object.keys(sourceRules).filter(key=>sourceRules[key].fields.some(field=>headers.includes(canonicalKey(field))));
-      if (byName.length===1 && (!byHeader.length || (byHeader.length===1 && byHeader[0]===byName[0]))) return {key:stageSourceKey(byName[0]),reason:'文件名匹配'};
-      if (!byName.length && byHeader.length===1) return {key:stageSourceKey(byHeader[0]),reason:'表头匹配'};
-      return {key:'',reason:byName.length || byHeader.length ? '识别存在歧义，请指定模块' : '未识别到模块，请手动指定'};
+      if([name,sheetName].some(n=>n.includes('税后代扣')) || headers.some(h=>['水电代扣','其它代扣','其他代扣','餐费代扣'].includes(h)))return {key:'afterTax',reason:'文件名、工作表名或表头匹配税后代扣'};
+      if([name,sheetName].some(n=>n.includes('应发工资')) || headers.includes('应发工资'))return {key:'grossUpload',reason:'应发工资表'};
+      if(state.payrollStage==='gross' && (['社保','社会保险','公积金'].some(label=>name.includes(label)||sheetName.includes(label)) || headers.some(header=>['个人总计','个人社保','个人缴纳','个人公积金'].includes(header))))return {key:'',reason:'社保、公积金请在实发阶段上传，应发阶段无需上传'};
+      if(name.includes('税')||sheetName.includes('税'))return {key:'tax',reason:'文件名或工作表名含“税”'};
+      const rules=Object.entries(sourceRules).filter(([key])=>!['social','fund','netSocial','netFund'].includes(key));
+      rules.push(['social',sourceRules.social],['fund',sourceRules.fund]);
+      const aliasesFor=(key,rule)=>[...rule.names,...rule.fields,...(sourceFieldGroups[stageSourceKey(key)]||[]).flat()];
+      const named=text=>rules.filter(([key,rule])=>aliasesFor(key,rule).some(alias=>fieldLabelMatches(text,alias))).map(([key])=>stageSourceKey(key));
+      for(const [text,reason] of [[sheetName,'工作表名匹配'],[name,'文件名匹配']]) {
+        const namedMatches=[...new Set(named(text))],financialMatches=namedMatches.filter(key=>key!=='roster');
+        const matches=financialMatches.length?financialMatches:namedMatches;
+        if(matches.length===1)return {key:matches[0],reason};
+      }
+      const candidates=rules.map(([key,rule])=>({key:stageSourceKey(key),score:headers.filter(h=>aliasesFor(key,rule).some(alias=>fieldLabelMatches(h,alias))).length})).filter(c=>c.score);
+      // Common personnel columns may accompany any financial table.
+      const financial=candidates.filter(c=>c.key!=='roster'),pool=financial.length?financial:candidates;
+      const max=Math.max(0,...pool.map(c=>c.score)),best=pool.filter(c=>c.score===max);
+      if(best.length===1)return {key:best[0].key,reason:'表头匹配'};
+      return {key:'',reason:candidates.length?'识别存在歧义，请指定模块':'未识别到模块，请手动指定'};
     }
     function commitSource(key, item) {
       if (['social','fund'].includes(key) || (state.payrollStage==='gross' && ['netSocial','netFund'].includes(key))) throw new Error('社保、公积金请在实发阶段上传');
@@ -835,10 +919,17 @@
         state.sourceStatus=Object.fromEntries(sourceSheets.map(s=>[s.key,{uploaded:false,filename:''}]));
       }
       state.liveImport=true;
-      sourceRows[key]=key==='afterTax'?PayrollEngine.mergeDeductionRows(sourceRows[key],item.rows,item.filename):item.rows;
+      const previous=sourceRows[key] || [],previousFilename=state.sourceStatus[key]?.filename;
+      // Distinct files append. Reuploading a filename replaces only that file's rows.
+      const retained=previous.filter(row=>(row._importSource?.filename || row._deductionSource?.filename || row._rosterSource?.filename || previousFilename)!==item.filename);
+      const incoming=item.rows.map(row=>({...row,_importSource:{...row._importSource,filename:item.filename}}));
+      sourceRows[key]=[...retained,...incoming];
+      sourceRows[key].sheetName=[...new Set(sourceRows[key].map(row=>row._importSource?.sheetName||row._rosterSource?.sheetName||row._deductionSource?.sheetName).filter(Boolean))].join('、') || item.rows.sheetName || previous.sheetName || '';
+      sourceRows[key].sourceStartRow=retained.length?2:item.rows.sourceStartRow || 2;
       if(key==='grossUpload') state.grossSource='uploaded';
-      if (key==='roster') pruneInternDailyRates(item.rows);
-      state.sourceStatus[key]={uploaded:true,filename:key==='afterTax'?[...new Set(sourceRows[key].map(r=>r._deductionSource?.filename).filter(Boolean))].join('、'):item.filename,rows:sourceRows[key].length,parsed:true};
+      if (key==='roster') pruneInternDailyRates(sourceRows.roster);
+      const filenames=[...new Set(sourceRows[key].map(row=>row._importSource?.filename || row._deductionSource?.filename || row._rosterSource?.filename || previousFilename).filter(Boolean))];
+      state.sourceStatus[key]={uploaded:true,filename:filenames.join('、'),filenames,files:filenames.length,rows:sourceRows[key].length,parsed:true};
       recalculateEmployees();saveBatchData();
       Object.assign(currentBatch(),{employees:employees.length,sources:Object.keys(sourceRows).length,status:'待计算'});
       state.calculated=false;
@@ -853,24 +944,26 @@
           try {
             if (!PayrollEngine.isSpreadsheetFile(file.name)) throw new Error('请选择 Excel 工作簿、模板或 CSV 文件');
             if (file.size>20*1024*1024) throw new Error('单个文件不能超过 20MB');
-            const rows=await parseXlsxFile(file);
-            parsed.push({filename:file.name,rows,...(explicitKey?{key:explicitKey,reason:'手动指定模块'}:matchSource(file.name,rows))});
+            const rows=await parseXlsxFile(file,explicitKey);
+            const items=rows.importItems || [{filename:file.name,rows,...(explicitKey?{key:explicitKey,reason:'手动指定模块'}:matchSource(file.name,rows))}];
+            const grouped=new Map();
+            for(const item of items) {
+              if(!item.key) {parsed.push({...item,filename:file.name,reason:`${item.rows.sheetName || ''}：${item.reason}`});continue;}
+              if(!grouped.has(item.key))grouped.set(item.key,{...item,rows:[]});
+              grouped.get(item.key).rows.push(...item.rows);
+            }
+            parsed.push(...grouped.values());
           } catch(error) { parsed.push({filename:file.name,key:'',error:error.message}); }
         }
         // Never apply an asynchronous import to a different payroll batch.
         if (currentBatch()!==batch || state.payrollStage!==stage) {session.summary='已取消：解析期间切换了工资批次，请重新选择文件';return;}
-        const counts={};parsed.forEach(item=>{if(item.key) counts[item.key]=(counts[item.key]||0)+1;});
         let imported=0;
         for (const item of parsed) {
-          const existing=item.key && state.sourceStatus[item.key];
-          if (!item.error && item.key && (item.key==='afterTax' || counts[item.key]===1 && !session.items.some(p=>!p.error && p.key===item.key))) {
+          if(!item.error && item.key && stageSheets().some(sheet=>sheet.key===item.key)) {
             commitSource(item.key,item);imported++;
-          } else {
-            if (!item.error && item.key) item.reason=counts[item.key]>1?'多个文件匹配同一模块，请选择一个导入':existing?.uploaded && !existing.demo?'模块已有文件，请确认替换':'该模块还有待确认文件';
-            session.items.push(item);
-          }
+          } else session.items.push(item);
         }
-        session.summary=`本次选择 ${parsed.length} 个文件，自动导入 ${imported} 个，待处理 ${parsed.length-imported} 个`;
+        session.summary=`本次选择 ${files.length} 个文件，合并导入 ${imported} 组资料，待处理 ${parsed.length-imported} 组`;
       } finally {
         session.busy=false;
         if (currentBatch()===batch) {render('upload');showToast(session.summary);}
@@ -881,11 +974,16 @@
       const session=importSession(), item=session.items[index];
       if (session.busy || !item || item.error || !sourceRules[key]) return;
       if (!stageSheets().some(sheet=>sheet.key===key)) {showToast('该资料请在对应核算阶段上传');return;}
-      commitSource(key,item);session.items.splice(index,1);saveBatchData();render('upload');showToast('文件已导入');
+      try {
+        const grouped=new Map();
+        for(const row of item.rows){const sheetName=row._importSource?.sheetName || item.rows.sheetName || '';if(!grouped.has(sheetName))grouped.set(sheetName,[]);grouped.get(sheetName).push(row);}
+        const rows=[...grouped].flatMap(([sheetName,rows])=>normalizeSourceFields(rows,key,item.filename,sheetName));
+        commitSource(key,{...item,rows});session.items.splice(index,1);saveBatchData();render('upload');showToast('文件已合并导入');
+      } catch(error) {item.error=error.message;render('upload');showToast(error.message);}
     }
     function renderImportReview() {
       const session=importSession();
-      return `<div role="status" aria-live="polite" class="section-desc" style="margin-top:12px">${escapeHtml(session.summary)}</div>${session.items.length?`<div class="import-review"><div class="section-title">待确认 / 导入失败（${session.items.length}）</div>${session.items.map((item,index)=>`<div class="import-review-row"><div><strong>${escapeHtml(item.filename)}</strong><div class="section-desc">${escapeHtml(item.error || item.reason)}${item.rows?` · ${item.rows.length} 行`:''}</div></div>${item.error?'':`<select class="select" aria-label="${escapeHtml(item.filename)}的目标模块" data-import-target="${index}" ${session.busy?'disabled':''}><option value="">请选择模块</option>${sourceSheets.map(s=>`<option value="${s.key}" ${item.key===s.key?'selected':''}>${s.name}${state.sourceStatus[s.key]?.uploaded && !state.sourceStatus[s.key]?.demo?'（替换已有文件）':''}</option>`).join('')}</select><button class="btn btn-sm" data-import-confirm="${index}" ${session.busy?'disabled':''}>确认导入 / 替换</button>`}<button class="btn btn-sm" data-import-dismiss="${index}" ${session.busy?'disabled':''}>移除</button></div>`).join('')}</div>`:''}`;
+      return `<div role="status" aria-live="polite" class="section-desc" style="margin-top:12px">${escapeHtml(session.summary)}</div>${session.items.length?`<div class="import-review"><div class="section-title">待确认 / 导入失败（${session.items.length}）</div>${session.items.map((item,index)=>`<div class="import-review-row"><div><strong>${escapeHtml(item.filename)}</strong><div class="section-desc">${escapeHtml(item.error || item.reason)}${item.rows?` · ${item.rows.length} 行`:''}</div></div>${item.error?'':`<select class="select" aria-label="${escapeHtml(item.filename)}的目标模块" data-import-target="${index}" ${session.busy?'disabled':''}><option value="">请选择模块</option>${sourceSheets.map(s=>`<option value="${s.key}" ${item.key===s.key?'selected':''}>${s.name}${state.sourceStatus[s.key]?.uploaded && !state.sourceStatus[s.key]?.demo?'（合并已有文件）':''}</option>`).join('')}</select><button class="btn btn-sm" data-import-confirm="${index}" ${session.busy?'disabled':''}>确认导入 / 合并</button>`}<button class="btn btn-sm" data-import-dismiss="${index}" ${session.busy?'disabled':''}>移除</button></div>`).join('')}</div>`:''}`;
     }
 
     const content = document.getElementById('content');
@@ -1168,7 +1266,7 @@
         <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 Excel / CSV 文件，单个文件 ≤ 20MB · 费用表读取全部工作表，仅在本机浏览器解析</div></div>
         ${renderImportReview()}${renderRosterFieldDiagnostics()}
         ${!net&&received.length?`<p class="section-desc" role="status">已接收扣款表：${received.map(sheet=>sheet.name).join('、')}；已保存到第二步。</p>`:''}
-        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`;}).join('')}</div>
+        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" multiple hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`;}).join('')}</div>
         ${net?(deductionNotice()?`<div class="alert orange" style="margin-top:16px">${deductionNotice()}</div>`:''):`<p class="section-desc" style="margin-top:16px">${!ready?'请先上传花名册以确定员工范围。':missing.length?missing.map(sheet=>sheet.name).join('、')+'未上传；实际出勤天数需考勤表提供，其余缺失数值按 0 计算。':'应发源表已上传。'}</p>`}
         <div class="upload-bottom"><span class="muted">${net?'税后扣款统一取税后代扣表；异常与比对差异不限制计算或导出。':'个人社保、公积金仅供个税测算参考，不影响应发工资金额。'}</span><button class="btn btn-primary" data-calculate ${!ready||busy?'disabled':''}>${net?'计算／更新实发工资':'计算应发工资'}</button></div></div>`;
     }
@@ -1476,10 +1574,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-gross-only-v2"></script>
-  <script src="./workbench-pages.js?v=20261009-gross-only-v2"></script>
-  <script src="./personnel-directory.js?v=20261009-gross-only-v2"></script>
-  <script src="./workbench-ui.js?v=20261009-gross-only-v2"></script>
+  <script src="./workbench-core.js?v=20261009-multi-files-v1"></script>
+  <script src="./workbench-pages.js?v=20261009-multi-files-v1"></script>
+  <script src="./personnel-directory.js?v=20261009-multi-files-v1"></script>
+  <script src="./workbench-ui.js?v=20261009-multi-files-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>

@@ -166,11 +166,15 @@ globalThis.PayrollWorkbench = (() => {
     if(sourceKey==='afterTax') {
       const aliases={utility:['水电代扣','水电费代扣','水电费合计'],mealDeduct:['餐费代扣','餐费合计'],otherDeduct:['其它代扣','其他代扣']}[field]||[];
       const records=(sourceRows.afterTax||[]).filter(row=>canonicalKey(rowValue(row,['姓名']))===canonicalKey(e.name)&&Object.keys(row).some(h=>aliases.some(a=>canonicalKey(h)===canonicalKey(a))));
-      return {label:fields[field]?.[0]||'税后代扣',filename:[...new Set(records.map(r=>r._deductionSource?.filename||state.sourceStatus.afterTax?.filename||''))].join('、'),row:records[0]?._deductionSource?.rowNumber||null,sheet:[...new Set(records.map(r=>r._deductionSource?.sheetName||''))].join('、'),record:records.length?{合计金额:e[field],费用明细:records}:null};
+      return {label:fields[field]?.[0]||'税后代扣',filename:[...new Set(records.map(r=>r._importSource?.filename||r._deductionSource?.filename||state.sourceStatus.afterTax?.filename||''))].join('、'),row:records[0]?._importSource?.rowNumber||records[0]?._deductionSource?.rowNumber||null,sheet:[...new Set(records.map(r=>r._importSource?.sheetName||r._deductionSource?.sheetName||''))].join('、'),record:records.length?{合计金额:e[field],费用明细:records}:null};
     }
-    const rows=sourceRows[sourceKey]||[], i=sourceKey==='roster'&&e.rosterRow ? e.rosterRow-(rows.sourceStartRow||2) : rows.findIndex(r=>String(rowValue(r,['姓名'])||'').trim()===e.name.trim());
-    const record=i>=0?rows[i]:null;
-    return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:state.sourceStatus[sourceKey]?.filename||'',row:record?record._rosterSource?.rowNumber??i+(rows.sourceStartRow||2):null,sheet:record?._rosterSource?.sheetName||rows.sheetName||'',record};
+    const rows=sourceRows[sourceKey]||[];
+    const descriptor=[...PayrollEngine.fields,...PayrollEngine.netFields].find(([,f])=>f===field||field==='score'&&f==='effectiveScore');
+    const labels=descriptor?[descriptor[0],...(descriptor[3]||[])]:[fields[field]?.[0]||''];
+    const aliases=[...labels,...(sourceFieldGroups[sourceKey]||[]).filter(group=>group.some(alias=>labels.some(label=>PayrollEngine.canonicalHeader(alias)===PayrollEngine.canonicalHeader(label)))).flat()];
+    const records=sourceKey==='roster'&&e.rosterRow?[rows[e.rosterRow-(rows.sourceStartRow||2)]].filter(Boolean):rows.filter(row=>canonicalKey(rowValue(row,['姓名']))===canonicalKey(e.name)&&Object.keys(row).some(h=>aliases.some(a=>canonicalKey(h)===canonicalKey(a))));
+    const record=records[0]||null,source=record?._importSource||record?._rosterSource;
+    return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:[...new Set(records.map(r=>r._importSource?.filename||r._rosterSource?.filename||state.sourceStatus[sourceKey]?.filename||''))].join('、'),row:source?.rowNumber??(record?rows.indexOf(record)+(rows.sourceStartRow||2):null),sheet:[...new Set(records.map(r=>r._importSource?.sheetName||r._rosterSource?.sheetName||rows.sheetName||''))].join('、'),record:records.length>1&&sourceKey==='other'?{合计金额:e[field],来源明细:records}:record};
   }
   commitSource=(k,item)=>{
     if(!state.liveImport) {
