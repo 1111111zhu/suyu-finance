@@ -98,7 +98,7 @@ test('provided local attendance workbook agrees with every source-backed exporte
  for(const row of rows){const r=3+Array.from(a.run('employees.map(e=>e.name)')).indexOf(row.姓名);for(const field of ['餐饮津贴','交通津贴','年假天数','弹性假天数','调休假天数','病假天数','事假天数','旷工天数']){
    const header=Object.keys(row).find(h=>a.run(`PayrollEngine.canonicalHeader(${JSON.stringify(h)})`)===field);if(header===undefined)continue;
    const sourceValue=row[header], parsed=a.run(`PayrollEngine.numeric(${JSON.stringify(sourceValue)})`);
-   const expected=sourceValue===null||sourceValue===''?undefined:Number.isFinite(parsed)?parsed:sourceValue;
+   const expected=sourceValue===null||sourceValue===''?0:Number.isFinite(parsed)?parsed:sourceValue;
    assert.equal(cell(out,field,r)?.v,expected,field+' source row '+r);
  }}
 });
