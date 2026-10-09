@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { parseSheet, pickSheet, preparePeople, salaryRows, previousPayrollMonth, type Engine, type Issue, type Role, type SourceSheet } from "./roster-model";
+import { isRosterSheet, parseSheet, pickSheet, preparePeople, salaryRows, previousPayrollMonth, type Engine, type Issue, type Role, type SourceSheet } from "./roster-model";
 import "./personnel.css";
 import { personnelTags, parseCosts, matchCost, type Cost } from "./analysis-model";
 import { expenseHistory, personHistory, readPayrollBatches, rangeExpenses, rangeTrend, monthsInRange, type ExpensePerson, type ExpenseBatch } from "./payroll-history";
@@ -22,14 +22,14 @@ function Icon({ kind }: { kind: "file" | "upload" | "search" | "check" | "arrow"
 
 async function loadEngine(): Promise<Engine> {
   const target = window as unknown as Window & { PayrollEngine?: Engine };
-  if (target.PayrollEngine) return target.PayrollEngine;
+  if (target.PayrollEngine?.readSpreadsheet) return target.PayrollEngine;
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "/salary/payroll-engine.js";
+    script.src = "/salary/payroll-engine.js?v=20261009-excel-formats";
     script.onload = () => resolve(); script.onerror = () => reject(new Error("人员识别组件加载失败，请刷新重试。"));
     (document.head as unknown as HTMLElement).appendChild(script);
   });
-  if (!target.PayrollEngine) throw new Error("人员识别组件尚未就绪。");
+  if (!target.PayrollEngine?.readSpreadsheet) throw new Error("人员识别组件尚未就绪。");
   return target.PayrollEngine;
 }
 
@@ -160,16 +160,17 @@ export default function SalaryDirectory() {
     const id = ++uploadId.current;
     setBusy(true); setError("");
     try {
-      if (!/\.xlsx$/i.test(file.name)) throw new Error("请选择 .xlsx 员工信息表。");
+      if (!/\.(?:xls|xlsx|xlsm|xlsb|xlt|xltx|xltm|xla|xlam|xml|csv)$/i.test(file.name)) throw new Error("请选择 Excel 或 CSV 员工信息表。");
       if (file.size > 20 * 1024 * 1024) throw new Error("文件超过 20 MB，请拆分后再选择。");
       const [recognizer, XLSX, bytes] = await Promise.all([loadEngine(), import("xlsx"), file.arrayBuffer()]);
-      const book = XLSX.read(bytes, { type: "array", cellDates: false });
+      const book = recognizer.readSpreadsheet(XLSX, bytes, file.name, { cellDates: false });
       const sheets: SourceSheet[] = [], ignored: string[] = [];
       for (const name of book.SheetNames) {
+        if (!isRosterSheet(name)) { ignored.push(name); continue; }
         const sheet = parseSheet(name, XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1, defval: null, raw: true }) as unknown[][], recognizer);
         if (sheet) sheets.push(sheet); else ignored.push(name);
       }
-      if (!sheets.length) throw new Error("没有找到带姓名表头的人员工作表，请检查文件。");
+      if (!sheets.length) throw new Error("没有找到带姓名表头的在职或离职子表，请核对子表名称。");
       const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), item => item.toString(16).padStart(2, "0")).join("");
       if (id !== uploadId.current) return;
       setEngine(recognizer); setWorkbook({ name: file.name, sheets, ignored, hash });
@@ -217,7 +218,7 @@ export default function SalaryDirectory() {
   function change(person: import("./roster-model").Person) { const now=rowCost(person)?.gross, before=priorMonth<month?matchCost(person,priorCosts)?.gross:null; if(now==null || before==null)return "待对比";const delta=now-before;return `${delta>0?"+":""}${money(delta)}${before===0?"":` (${(delta/before*100).toFixed(1)}%)`}`; }
   async function readCosts(file: File | undefined, prior: boolean) {
     if(!file)return;setError("");
-    try {const XLSX=await import("xlsx");const book=XLSX.read(await file.arrayBuffer(),{type:"array"});let parsed:Cost[]|null=null;
+    try {const XLSX=await import("xlsx");const recognizer=await loadEngine();const book=recognizer.readSpreadsheet(XLSX,await file.arrayBuffer(),file.name);let parsed:Cost[]|null=null;
       for(const name of book.SheetNames){try{parsed=parseCosts(XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:null}) as unknown[][]);break;}catch{}}
       if(!parsed?.length)throw new Error("未找到有效工资结果。请提供姓名及应发工资、实发工资或公司成本列。");
       if(prior){setPriorCosts(parsed);setPriorFile(file.name);}else{setCosts(parsed);setCostFile(file.name);}
@@ -241,7 +242,7 @@ export default function SalaryDirectory() {
   const cumulative=(p:import("./payroll-history").RangeExpense,key:"gross"|"net"|"cost")=><>{money(p[key])}{p[key]!==null&&p.missing[key]>0&&<small className="sp-warning-text">缺 {p.missing[key]} 月</small>}</>;
   return <main className="sp-page" data-theme="light">
     <header className="sp-heading" hidden={batchDetail}><h1>人员归集</h1><div className="sp-range" hidden={batchDetail}><label className="sp-month">开始月份<input type="month" aria-label="开始月份" value={month} onChange={e=>{setMonth(e.target.value);setDepartment("");setFocusPerson(null);}}/></label><span>至</span><label className="sp-month">结束月份<input type="month" aria-label="结束月份" value={endMonth} onChange={e=>{setEndMonth(e.target.value);setDepartment("");setFocusPerson(null);}}/></label></div></header>
-    <input ref={fileInput} type="file" accept=".xlsx" hidden onChange={e=>void readFile(e.target.files?.[0])}/>
+    <input ref={fileInput} type="file" accept=".xls,.xlsx,.xlsm,.xlsb,.xlt,.xltx,.xltm,.xla,.xlam,.xml,.csv" hidden onChange={e=>void readFile(e.target.files?.[0])}/>
     {(error||historyError) && <div className="sp-alert danger" role="alert">{error||historyError}</div>}
     {!validRange&&<div className="sp-alert" role="alert">请选择有效月份区间，开始月份不能晚于结束月份，最长支持120个月。</div>}
     <section className="sp-card" aria-label="人员费用">

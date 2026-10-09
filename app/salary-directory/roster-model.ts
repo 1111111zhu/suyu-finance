@@ -1,7 +1,11 @@
+import type { WorkBook } from "xlsx";
 export type Issue = { field: string; reason: string; message: string };
 export type RawRow = Record<string, string | number | boolean | null>;
 export type Normalized = { values: Record<string, string | boolean>; sources: Record<string, string>; issues: Issue[] };
 export type Engine = {
+  isSpreadsheetFile(filename: string): boolean;
+  spreadsheetAccept: string;
+  readSpreadsheet(library: unknown, bytes: ArrayBuffer, filename: string, options?: Record<string, unknown>): WorkBook;
   rosterFields: [string, string, string[]][];
   rosterFieldMap(headers: string[]): { map: Record<string, string>; issues: Issue[] };
   normalizeRosterRow(row: RawRow, mapping: { map: Record<string, string>; issues: Issue[] }): Normalized;
@@ -32,7 +36,10 @@ export function pickSheet(sheets: SourceSheet[], role: Role) {
   return matches.length === 1 ? matches[0].name : "";
 }
 
+export function isRosterSheet(name: string) { return /在职|离职/.test(name); }
+
 export function parseSheet(name: string, grid: unknown[][], engine: Engine): SourceSheet | null {
+  if (!isRosterSheet(name)) return null;
   for (let i = 0; i < Math.min(grid.length, 20); i++) {
     const rawHeaders = grid[i].map(value => String(value ?? "").trim());
     const counts = new Map<string, number>();
