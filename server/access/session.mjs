@@ -1,3 +1,4 @@
+import {memberRole,payrollTagIds,roleCapabilities,roleAllows} from './member-policy.mjs';
 import {createHash,randomBytes} from 'node:crypto';
 import {readFileSync,statSync} from 'node:fs';
 import {createPool} from '../../database/payroll/pool.mjs';
@@ -32,17 +33,12 @@ async function api(path,params={},withToken=true){
  if(!response.ok||data.errcode)throw accessError(503,'企业微信身份核验失败');
  return data;
 }
-export function classifyMember(member,tag,departments,financeId){
- if(member.status!==1)return 'none';
- const descendants=new Set([Number(financeId)]);
- for(let n=0;n<departments.length;n++)for(const d of departments)if(descendants.has(Number(d.parentid)))descendants.add(Number(d.id));
- // Only explicit manager tag members qualify; department-wide tags are deliberately not manager grants.
- if((tag.userlist||[]).some(u=>u.userid===member.userid))return 'manager';
- return (member.department||[]).some(id=>descendants.has(Number(id)))?'finance':'none';
+export function classifyMember(member,tag,departments,financeId,payrollTags=[]){
+ return memberRole(member,tag,departments,financeId,payrollTags);
 }
 async function qualify(userid){
- const [member,tag,departments]=await Promise.all([api('user/get',{userid}),api('tag/get',{tagid:process.env.WECOM_MANAGER_TAG_ID}),api('department/list')]);
- return {userid,displayName:member.name||userid,role:classifyMember(member,tag,departments.department||[],process.env.WECOM_FINANCE_DEPARTMENT_ID)};
+ const [member,tag,departments,...payrollTags]=await Promise.all([api('user/get',{userid}),api('tag/get',{tagid:process.env.WECOM_MANAGER_TAG_ID}),api('department/list'),...payrollTagIds.map(tagid=>api('tag/get',{tagid}))]);
+ return {userid,displayName:member.name||userid,role:classifyMember(member,tag,departments.department||[],process.env.WECOM_FINANCE_DEPARTMENT_ID,payrollTags)};
 }
 export async function getAccess(request){
  if(localAccess(request))return {userid:'local-preview',displayName:'本机开发验收',role:process.env.SUYU_LOCAL_PREVIEW_ROLE==='finance'?'finance':'manager',local:true};
@@ -59,7 +55,7 @@ export async function getAccess(request){
 }
 export async function requireAccess(request,capability='rd'){
  const user=await getAccess(request);if(!user)throw accessError(401,'请使用企业微信登录');
- if(user.role==='none'||capability==='payroll'&&user.role!=='manager')throw accessError(403,'没有访问权限');
+ if(!roleAllows(user.role,capability,new URL(request.url).pathname))throw accessError(403,'没有访问权限');
  if(!['GET','HEAD','OPTIONS'].includes(request.method)&&!localAccess(request)&&request.headers.get('origin')!==process.env.SUYU_PUBLIC_ORIGIN)throw accessError(403,'请从本网站提交操作');
  return user;
 }
@@ -69,7 +65,7 @@ export async function authResponse(request){
  if(methods[path]&&request.method!==methods[path])return Response.json({error:'请求方法不支持'},{status:405,headers:{Allow:methods[path],'Cache-Control':'no-store'}});
  if(path==='/api/auth/session'){
   const user=await getAccess(request);
-  return Response.json({user,capabilities:{rd:!!user&&user.role!=='none',payroll:user?.role==='manager'},configured:configured()},{headers:{'Cache-Control':'no-store'}});
+  return Response.json({user,capabilities:roleCapabilities(user?.role),configured:configured()},{headers:{'Cache-Control':'no-store'}});
  }
  if(path==='/api/auth/logout'&&request.method==='POST'){
   if(request.headers.get('origin')!==(localAccess(request)?'http://127.0.0.1:3220':process.env.SUYU_PUBLIC_ORIGIN))throw accessError(403,'请从本网站退出');

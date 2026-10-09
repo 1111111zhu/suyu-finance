@@ -1,3 +1,4 @@
+import {payrollActor} from '../access/payroll-tag-actor.mjs';
 import {requireAccess} from '../access/session.mjs';
 import { readFileSync, statSync } from 'node:fs';
 import { createPool } from '../../database/payroll/pool.mjs';
@@ -106,8 +107,7 @@ export function payrollViteMiddleware() {
           workspaceAuth: async req => {
             const request=new Request('http://127.0.0.1:3220'+req.url,{headers:req.headers,method:req.method});
             const access=await requireAccess(request,'payroll');
-            const {rows:[user]}=await pool.query('SELECT id,username,display_name FROM payroll.users WHERE enabled AND username=$1',[access.local?process.env.SUYU_LOCAL_PAYROLL_ACTOR||'admin':'wecom:'+access.userid]);
-            if(!user)throw Object.assign(new Error('经理工资操作账号尚未配置'),{status:403,code:'PAYROLL_AUTH_REQUIRED'});
+            const user=await payrollActor(pool,access);
             return {user:{id:user.id,username:user.username,displayName:user.display_name},csrfToken:'workspace-origin-protected'};
           },
           personnelService,

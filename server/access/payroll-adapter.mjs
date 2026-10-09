@@ -1,3 +1,4 @@
+import {payrollActor} from './payroll-tag-actor.mjs';
 import {Readable} from 'node:stream';
 import {readFileSync} from 'node:fs';
 import {requireAccess,authResponse} from './session.mjs';
@@ -17,8 +18,7 @@ export async function payrollResponse(request){
   const personnelService=corpId&&secretFile?createPersonnelService({pool,corpId,appSecret:readFileSync(secretFile,'utf8').trim()}):null;
   handler=createPayrollHandler({pool,publicOrigin:process.env.SUYU_PUBLIC_ORIGIN||'http://127.0.0.1:3220',production:process.env.NODE_ENV==='production',corpId,personnelService,confirmationService:createWorkspaceConfirmationService({pool,corpId}),workspaceAuth:async req=>req.workspaceSession});
  }
- const {rows:[user]}=await pool.query('SELECT id,username,display_name FROM payroll.users WHERE enabled AND username=$1',[access.local?process.env.SUYU_LOCAL_PAYROLL_ACTOR||'admin':'wecom:'+access.userid]);
- if(!user)throw Object.assign(new Error('经理工资操作账号尚未配置'),{status:403});
+ const user=await payrollActor(pool,access);
  const bytes=Buffer.from(await request.arrayBuffer());if(bytes.length>20*1024*1024)throw Object.assign(new Error('文件过大'),{status:413});
  const req=Readable.from(bytes.length?[bytes]:[]);req.url=new URL(request.url).pathname+new URL(request.url).search;req.method=request.method;req.headers=Object.fromEntries(request.headers);req.socket={remoteAddress:'127.0.0.1'};
  req.workspaceSession={user:{id:user.id,username:user.username,displayName:user.display_name},csrfToken:'workspace-origin-protected'};
