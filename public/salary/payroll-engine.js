@@ -4,16 +4,16 @@ globalThis.PayrollEngine = (() => {
     ['姓名','name','text',['员工姓名']],['公司','company','text',['签约公司']],['一级部门','dept','text',['部门','一级部门名称']],
     ['二级部门','subdept','text',['二级部门名称']],['银行卡号','bankCard','text',['银行卡']],['开户行','bankName','text',['银行','开户银行']],
     ['是否入离职','status','text',['员工状态','在职状态','入离职状态']],['入职日期','join','date',['入职时间','入职日']],['离职日期','leave','date',['离职时间','离职日']],
-    ['应发薪','workdays','number',['应发薪天数']],['实际出勤天数','payableDays','number',['实发薪天数']],
+    ['应发薪','workdays','number',['应发薪天数']],['实际出勤天数','payableDays','number',['实发薪天数','实际出勤','出勤天数']],
     ['基本工资','base','money',['工资基数']],['岗位工资','post','money'],['绩效基数','perfBase','money'],
     ['绩效分数','effectiveScore','number',['绩效系数']],['绩效工资','performancePay','money'],['工资小计','subtotal','money'],
-    ['餐饮津贴','meal','money',['餐补合计']],['交通津贴','transit','money',['交通补贴']],
+    ['餐饮津贴','meal','money',['餐补合计','餐补','餐饮补贴','餐费补贴']],['交通津贴','transit','money',['交通补贴','交通补贴合计']],
     ['其他津贴','otherAllow','money'],['病假补贴','sickSubsidy','money'],['其他加','otherAdd','money'],
-    ['年假天数','annual','number',['年假(天)']],['弹性假天数','flexible','number',['弹性假(天)']],
-    ['调休假天数','compensatory','number',['调休假(天)']],['病假天数','sick','number',['病假(天)']],
-    ['事假天数','personal','number',['事假(天)']],['旷工天数','absent','number',['旷工(天)']],
+    ['年假天数','annual','number',['年假(天)','年假']],['弹性假天数','flexible','number',['弹性假(天)','弹性假']],
+    ['调休假天数','compensatory','number',['调休假(天)','调休假','调休','调休天数','调休(天)']],['病假天数','sick','number',['病假(天)','病假']],
+    ['事假天数','personal','number',['事假(天)','事假']],['旷工天数','absent','number',['旷工(天)','旷工']],
     ['假勤扣薪天数','deductDays','number'],['假勤扣款','attendanceDeduct','money'],['其他减','otherReduction','money'],
-    ['应发工资','gross','money'],['个人社保','social','money',['个人总计']],['个人公积金','fund','money',['个人缴纳']],
+    ['应发工资','gross','money',['应发','应发金额','应发合计','本月应发']],['个人社保','social','money',['个人总计']],['个人公积金','fund','money',['个人缴纳']],
     ['是否实习生','isIntern','intern',['是否实习','实习标识','本月是否为实习生','实习']],['日薪','dailyRate','money'],
     ['转正日期','regularizationDate','date',['转正日','转正时间']],
     ['转正前应出勤天数','probationWorkdays','number',['试用期应出勤天数','转正前出勤天数','试用期计薪天数']],
@@ -62,9 +62,9 @@ globalThis.PayrollEngine = (() => {
     return Number.isFinite(result)?result:NaN;
   }
   function canonicalHeader(header) {
-    const found=[...fields,...netFields].find(([label,,,aliases=[]])=>[label,...aliases].some(alias=>key(alias)===key(header)));
-    if (found) return found[0];
-    return key(header);
+    const token=key(header),withoutUnit=token.replace(/(?:\((?:元|天|分|%)\)|(?:元|天))$/,'');
+    const found=[...fields,...netFields].find(([label,,type,aliases=[]])=>[label,...aliases].some(alias=>key(alias)===token || ['money','number'].includes(type)&&key(alias)===withoutUnit));
+    return found?found[0]:token;
   }
   function rosterIssue(field,reason,headers,message) { return {field,reason,headers,message}; }
   function rosterFieldMap(headers) {
@@ -407,13 +407,13 @@ globalThis.PayrollEngine = (() => {
       if (!name) issues.push('应发工资表姓名为空');
       if (indexed.duplicates.has(name)) issues.push('应发工资表姓名重复，计算沿用首条；无法唯一比对');
       if (!('是否实习生' in row)) issues.push('应发工资表缺少实习生标识，按普通员工计算');
-      const employee={id:`UP${result.length+1}`,deductionIssues:[],paidDayIssues:[],payrollBlocked:false,late:false};
+      const employee={_uploadedGross:true,_uploadedGrossRecord:{...row},id:`UP${result.length+1}`,deductionIssues:[],paidDayIssues:[],payrollBlocked:false,late:false};
       for (const [label,field,type] of fields) {
         const value=row[label];
         if (type==='money'||type==='number') {
           const parsed=numeric(value);
           if ((label==='应发工资'&&blank(value)) || (!blank(value)&&!Number.isFinite(parsed))) issues.push(`${label}缺失或无效，按 0 计算`);
-          employee[field]=Number.isFinite(parsed)?(type==='money'?round(parsed):parsed):0;
+          employee[field]=Number.isFinite(parsed)?parsed:0;
         } else if (type==='intern') employee[field]=intern(value);
         else employee[field]=blank(value)?'':type==='date'?dateValue(value):String(value).trim();
       }
@@ -460,7 +460,7 @@ globalThis.PayrollEngine = (() => {
       e.otherDeduct=deductionAmount(sources.afterTax,name,['其它代扣','其他代扣'],'其它代扣',issues);
       e.otherReduction=e.isIntern?0:round(Number(e.otherReduction)||0);
       e.remark=String(sources.afterTax?.map(canonicalRow).find(row=>nameKey(row['姓名'])===name)?.['备注'] ?? '');
-      e.gross=round(Number(e.gross)||0);
+      e.gross=Number(e.gross)||0;
       e.afterTaxTotal=round(e.utility+e.mealDeduct+e.otherDeduct);
       e.net=e.isIntern
         ? round(e.gross-e.tax-e.afterTaxTotal)

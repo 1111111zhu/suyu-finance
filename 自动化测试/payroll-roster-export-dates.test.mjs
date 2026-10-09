@@ -18,21 +18,21 @@ function app(){
 }
 
 
-test('gross and net XLSX use roster join date instead of stale employee or uploaded gross dates',()=>{
+test('generated exports use roster join dates while uploaded gross dates are authoritative for net',()=>{
  const run=app();
  run("sourceRows.roster[0]['入职日期']='2024/3/8';sourceRows.salary[0]['入职日期']='2020-01-01';recalculateEmployees();generatedEmployees[0].join='2021-01-01';generatedEmployees[0].joinRaw='2021-01-01';");
  assert.equal(run('detailSheet(true).H3.v'),'2024/3/8');
  run("state.payrollStage='net';commitSource('grossUpload',{filename:'旧应发.xlsx',rows:[{姓名:'测试员工',入职日期:'2021-06-30',应发工资:10000,是否实习生:''}]});recalculateEmployees();");
- assert.equal(run('detailSheet(false).H3.v'),'2024/3/8');
+ assert.equal(run('detailSheet(false).H3.v'),'2021-06-30');
  assert.equal(run('employees[0].gross'),10000);
  assert.equal(run('detailSheet(false)[excelColumn(exportHeaders().indexOf("应发工资"))+"3"].v'),10000);
  for(const value of [null,'','  ']) {
   run(`sourceRows.roster[0]['入职日期']=${JSON.stringify(value)};recalculateEmployees();`);
   assert.equal(run('detailSheet(true).H3.v'),'');
-  assert.equal(run('detailSheet(false).H3.v'),'');
+  assert.equal(run('detailSheet(false).H3.v'),'2021-06-30');
  }
  run('sourceRows.roster=[];recalculateEmployees()');
- assert.equal(run('detailSheet(false).H3.v'),'');
+ assert.equal(run('detailSheet(false).H3.v'),'2021-06-30');
 });
 
 test('roster export dates preserve original cells and leave unmatched people blank',()=>{
@@ -65,16 +65,16 @@ test('serialized XLSX date cells are readable text or empty and money formulas s
 });
 
 
-test('both exports preserve original join and leave cells without arithmetic or contract-end fallback',()=>{
+test('generated exports preserve roster cells and net exports preserve uploaded gross cells without date fallbacks',()=>{
  const run=app();
  run("sourceRows.roster[0]['入职日期']='2024/1/1';sourceRows.roster[0]['离职日期']='2026/9/18';sourceRows.roster[0]['劳动合同止']='2026-09-30';recalculateEmployees();generatedEmployees[0].leave='2026-09-17';generatedEmployees[0].leaveRaw='2026-09-17';");
  assert.equal(run('detailSheet(true).I3.v'),'2026/9/18');
  assert.equal(run('detailSheet(true).H3.v'),'2024/1/1');
  run("state.payrollStage='net';commitSource('grossUpload',{filename:'旧应发.xlsx',rows:[{姓名:'测试员工',入职日期:'2021-06-30',离职日期:'2026-09-17',应发工资:10000,是否实习生:''}]});recalculateEmployees();");
- assert.equal(run('detailSheet(false).I3.v'),'2026/9/18');
+ assert.equal(run('detailSheet(false).I3.v'),'2026-09-17');
  run("sourceRows.roster[0]['离职日期']='';recalculateEmployees()");
  assert.equal(run('detailSheet(true).I3.v'),'');
- assert.equal(run('detailSheet(false).I3.v'),'');
+ assert.equal(run('detailSheet(false).I3.v'),'2026-09-17');
  run("sourceRows.roster[0]['离职日期']=46283;globalThis.result=exportRecord({name:'测试员工'});");
  assert.equal(run("result['离职日期']"),46283);
  run("sourceRows.roster[0]['入职日期']=new Date(2024,0,1);sourceRows.roster[0]['离职日期']=new Date(2026,8,18);globalThis.result=exportRecord({name:'测试员工'});");
@@ -87,7 +87,7 @@ test('export retains an original departure from another month and blank dates ne
  const run=app();
  run("sourceRows.roster[0]['离职日期']='2026/8/31'");
  assert.equal(run("exportRecord({name:'测试员工'})['离职日期']"),'2026/8/31');
- run("sourceRows.roster[0]['离职日期']='';sourceRows.roster[0]['入职日期']='';sourceRows.roster[0]['员工状态']='入职';recalculateEmployees();globalThis.exported=[];downloadXlsx=(book,name)=>exported.push(name);downloadGross();state.payrollStage='net';recalculateEmployees();downloadCsv();");
+ run("delete sourceRows.grossUpload;sourceRows.roster[0]['离职日期']='';sourceRows.roster[0]['入职日期']='';sourceRows.roster[0]['员工状态']='入职';recalculateEmployees();globalThis.exported=[];downloadXlsx=(book,name)=>exported.push(name);downloadGross();state.payrollStage='net';recalculateEmployees();downloadCsv();");
  assert.deepEqual(Array.from(run('exported')),['应发工资表_2026-09.xlsx','实发工资表_2026-09.xlsx']);
  assert.equal(run('detailSheet(true).H3.v'),'');
  assert.equal(run('detailSheet(false).I3.v'),'');

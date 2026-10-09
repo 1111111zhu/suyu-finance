@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-all-formulas-v1"></script>
+  <script src="./payroll-engine.js?v=20261009-source-fidelity-v1"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -658,7 +658,8 @@
         }
       }
       const wanted = aliases.map(canonicalKey);
-      const match = keys.find(key => wanted.includes(canonicalKey(key)));
+      const canonicalWanted=aliases.map(alias=>canonicalKey(PayrollEngine.canonicalHeader(alias)));
+      const match=keys.find(key=>wanted.includes(canonicalKey(key))) ?? keys.find(key=>canonicalWanted.includes(canonicalKey(PayrollEngine.canonicalHeader(key))));
       return match === undefined ? null : row[match];
     }
     function parseNumber(value) {
@@ -798,7 +799,11 @@
         if(regularizationConflict) exceptions.push(`转正日期冲突：计薪月花名册 ${rosterRegularization}，基本工资表 ${salaryRegularization}；请人工核对后重新上传，不能确认正式工资`);
         const regularizationValue=firstPresent(rosterRegularization,salaryRegularization,salaryRegularizationRaw), regularizationDate=excelDate(regularizationValue);
         if (regularizationValue !== null && !/^\d{4}-\d{2}-\d{2}$/.test(regularizationDate)) exceptions.push('转正日期无效，请填写 YYYY-MM-DD 格式日期');
-        return {id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), regularizationDate, probationWorkdays:firstPresent(rowValue(row,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数']),probationDays.value), regularWorkdays:firstPresent(rowValue(row,['转正后应出勤天数','转正后出勤天数','转正后计薪天数']),regularDays.value), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), probationTotal:parseOptionalNumber(probationTotal.value), regularTotal:parseOptionalNumber(regularTotal.value), probationBase:parseOptionalNumber(probationBase.value), regularBase:parseOptionalNumber(regularBase.value), probationPost:parseOptionalNumber(probationPost.value), regularPost:parseOptionalNumber(regularPost.value), probationPerfBase:parseOptionalNumber(probationPerfBase.value), regularPerfBase:parseOptionalNumber(regularPerfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
+        const _sourceValues=Object.fromEntries(Object.entries({base:salary,post,perfBase,effectiveScore:performance,payableDays:paidDays,meal:attendance,transit,otherAllow,otherAdd,annual,flexible,compensatory,sick,personal,absent,otherReduction}).map(([field,item])=>[field,item.source&&item.found?item.value:null]));
+        for(const field of ['company','dept','subdept','bankCard','bankName']) {
+          const header=rosterDiagnosis.sources[field];_sourceValues[field]=header?row[header]:null;
+        }
+        return {_sourceValues,id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), regularizationDate, probationWorkdays:firstPresent(rowValue(row,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数']),probationDays.value), regularWorkdays:firstPresent(rowValue(row,['转正后应出勤天数','转正后出勤天数','转正后计薪天数']),regularDays.value), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), probationTotal:parseOptionalNumber(probationTotal.value), regularTotal:parseOptionalNumber(regularTotal.value), probationBase:parseOptionalNumber(probationBase.value), regularBase:parseOptionalNumber(regularBase.value), probationPost:parseOptionalNumber(probationPost.value), regularPost:parseOptionalNumber(regularPost.value), probationPerfBase:parseOptionalNumber(probationPerfBase.value), regularPerfBase:parseOptionalNumber(regularPerfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
       }).filter(profile=>PayrollEngine.rosterRowInMonth(rosterRows[Number(profile.id.slice(3))-1],currentMonth) && PayrollEngine.rosterIdentityIssues(rosterRows[Number(profile.id.slice(3))-1]).length===0).map(profile => {
         const sourceIndex=Number(profile.id.slice(3))-1;
         const roster=PayrollEngine.normalizeRosterRow(rosterRows[sourceIndex],undefined,currentMonth);
@@ -821,7 +826,7 @@
       other: {names:['其他表','其他加减','其他津贴'], fields:['其他津贴','其他加','其他减']},
       social: {names:['社保','社会保险'], fields:['个人总计','个人社保','公司总计']},
       fund: {names:['公积金'], fields:['个人缴纳','个人公积金','公司缴纳']},
-      grossUpload: {names:['应发工资'],fields:['应发工资']},
+      grossUpload: {names:['应发'],fields:['应发工资','应发','应发金额','应发合计','本月应发']},
       afterTax: {names:['税后代扣'],fields:['水电代扣','餐费代扣','其它代扣']},
       netSocial: {names:[],fields:[]},
       netFund: {names:[],fields:[]},
@@ -849,7 +854,7 @@
       other:[['其他津贴'],['其他加','其他加项'],['其他减','其他减项']],
       netSocial:[['个人总计','个人社保'],['公司总计','公司缴纳社保']],
       netFund:[['个人缴纳','个人公积金'],['公司缴纳','公司缴纳公积金']],
-      grossUpload:[['应发工资']],tax:[['税','个税','个人所得税','税额']],
+      grossUpload:[['应发工资','应发','应发金额','应发合计','本月应发']],tax:[['税','个税','个人所得税','税额']],
       afterTax:[['水电代扣','水电费合计'],['餐费代扣','餐费合计'],['其它代扣','其他代扣']]
     };
     function fieldLabelMatches(text,alias) {
@@ -857,11 +862,11 @@
       return label==='税'?value==='税'||/^(?:本月|当月)?税(?:额|表|金额|\(元\))?$/.test(value):value.includes(label);
     }
     function normalizeSourceFields(rows,key,filename,sheetName) {
-      const groups=sourceFieldGroups[key]||[],headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
+      const groups=(sourceFieldGroups[key]||[]).map(group=>[...new Set([...group,...(PayrollEngine.fields.find(([label])=>label===group[0])?.[3]||[])])]),headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
       const mappings=[];
-      const groupMatches=(text,group)=>{const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
+      const groupMatches=(text,group)=>{if(key==='grossUpload' && /应发薪|天数/.test(text))return false;if(key==='attendance' && /天数$/.test(group[0]) && /补贴|津贴|工资|金额|扣款|小时|分钟/.test(text))return false;const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
       for(const group of groups) {
-        const exact=headers.filter(h=>group.some(alias=>canonicalKey(h)===canonicalKey(alias)));
+        const exact=headers.filter(h=>group.some(alias=>canonicalKey(h)===canonicalKey(alias) || PayrollEngine.canonicalHeader(h)===group[0]));
         const labeled=headers.filter(h=>groupMatches(h,group));
         const candidates=exact.length?exact:labeled;
         if(candidates.length>1)throw new Error(`${sheetName}：${group[0]}需要唯一的对应列，请核对表头`);
@@ -890,15 +895,15 @@
     }
     function matchSource(filename, rows) {
       const name=canonicalKey(filename),sheetName=canonicalKey(rows.sheetName),headers=[...new Set(rows.flatMap(row=>Object.keys(row)))].filter(h=>!h.startsWith('_')).map(canonicalKey);
+      if([name,sheetName].some(label=>label.includes('应发')&&!/应发.*天数|应发薪(?:\.[a-z0-9]+)?$/.test(label)) || headers.some(header=>header.includes('应发')&&!/应发薪|天数/.test(header)))return {key:'grossUpload',reason:'名称或表头含“应发”，实发核算以上传表为准'};
       if([name,sheetName,...headers].some(label=>label.includes('其他加')))return {key:'other',reason:'文件名、工作表名或表头含“其他加”'};
       if(rows.some(row=>row._deductionSource))return {key:'afterTax',reason:'餐费 / 水电费表'};
       if([name,sheetName].some(n=>n.includes('税后代扣')) || headers.some(h=>['水电代扣','其它代扣','其他代扣','餐费代扣'].includes(h)))return {key:'afterTax',reason:'文件名、工作表名或表头匹配税后代扣'};
-      if([name,sheetName].some(n=>n.includes('应发工资')) || headers.includes('应发工资'))return {key:'grossUpload',reason:'应发工资表'};
       if(state.payrollStage==='gross' && (['社保','社会保险','公积金'].some(label=>name.includes(label)||sheetName.includes(label)) || headers.some(header=>['个人总计','个人社保','个人缴纳','个人公积金'].includes(header))))return {key:'',reason:'社保、公积金请在实发阶段上传，应发阶段无需上传'};
       if(name.includes('税')||sheetName.includes('税'))return {key:'tax',reason:'文件名或工作表名含“税”'};
-      const rules=Object.entries(sourceRules).filter(([key])=>!['social','fund','netSocial','netFund'].includes(key));
+      const rules=Object.entries(sourceRules).filter(([key])=>!['social','fund','netSocial','netFund','grossUpload'].includes(key));
       rules.push(['social',sourceRules.social],['fund',sourceRules.fund]);
-      const aliasesFor=(key,rule)=>[...rule.names,...rule.fields,...(sourceFieldGroups[stageSourceKey(key)]||[]).flat()];
+      const aliasesFor=(key,rule)=>[...rule.names,...rule.fields,...(sourceFieldGroups[stageSourceKey(key)]||[]).flatMap(group=>[...group,...(PayrollEngine.fields.find(([label])=>label===group[0])?.[3]||[])])];
       const named=text=>rules.filter(([key,rule])=>aliasesFor(key,rule).some(alias=>fieldLabelMatches(text,alias))).map(([key])=>stageSourceKey(key));
       for(const [text,reason] of [[sheetName,'工作表名匹配'],[name,'文件名匹配']]) {
         const namedMatches=[...new Set(named(text))],financialMatches=namedMatches.filter(key=>key!=='roster');
@@ -1229,7 +1234,7 @@
     }
     function renderComparison() {
       const result=state.comparison || {status:'not-needed',differences:[]};
-      const labels={'not-needed':'无需比对：未上传应发工资表',unavailable:'未校验：缺少第一阶段生成结果',equal:'两张应发工资表一致',different:`两张应发工资表存在 ${result.differences.length} 项差异，可继续计算和导出`};
+      const labels={'not-needed':'无需比对：未上传应发工资表',unavailable:'未校验：缺少第一阶段生成结果',equal:'两张应发工资表一致',different:`两张应发工资表存在 ${result.differences.length} 项差异，以上传应发表为准，可继续计算和导出`};
       const rows=result.differences;
       return `<details class="card section-body" style="margin-bottom:16px" ${rows.length?'open':''}><summary role="status">${labels[result.status]}</summary>${rows.length?`<div class="table-wrap" style="max-height:400px;overflow:auto"><table class="data-table"><thead><tr><th>姓名</th><th>字段</th><th>第一阶段值</th><th>上传表值</th><th>差额</th><th>差异原因</th></tr></thead><tbody>${rows.map(d=>`<tr><td>${escapeHtml(d.name)}</td><td>${escapeHtml(d.field)}</td><td>${escapeHtml(differenceValue(d.before))}</td><td>${escapeHtml(differenceValue(d.after))}</td><td>${d.delta===null?'—':money(d.delta)}</td><td>${escapeHtml(d.reason)}</td></tr>`).join('')}</tbody></table></div>`:''}</details>`;
     }
@@ -1468,13 +1473,22 @@
       return PayrollEngine.blank(value)?'':value;
     }
     function exportRecord(e,grossOnly=false) {
-      const gross=PayrollEngine.grossRecord(e);
-      // Export the original roster cells, without payroll date adjustments or fallbacks.
-      gross['入职日期']=rosterExportDate(e,'join');
-      gross['离职日期']=rosterExportDate(e,'leave');
+      const gross=PayrollEngine.grossRecord(e), input=e._input||e, raw=input._sourceValues||{};
+      const sourceFields={base:'base',post:'post',perfBase:'perfBase',effectiveScore:'score',payableDays:'actualPaidDays',meal:'meal',transit:'transit',otherAllow:'otherAllow',otherAdd:'otherAdd',annual:'annual',flexible:'flexible',compensatory:'compensatory',sick:'sick',personal:'personal',absent:'absent',otherReduction:'otherReduction',company:'company',dept:'dept',subdept:'subdept',bankCard:'bankCard',bankName:'bankName'};
+      if(!e._uploadedGross) {
+        gross['入职日期']=rosterExportDate(e,'join');gross['离职日期']=rosterExportDate(e,'leave');
+      }
       return Object.fromEntries(exportDescriptors(grossOnly).map(([label,field,type])=>{
         const isGrossField=PayrollEngine.fields.some(([,grossField])=>grossField===field);
-        return [label,field==='isIntern'?(e.isIntern?'是':''):isGrossField?gross[label]:type==='money'?PayrollEngine.round(num(e[field])):e[field] ?? ''];
+        let value=field==='isIntern'?(e.isIntern?'是':''):isGrossField?gross[label]:type==='money'?PayrollEngine.round(num(e[field])):e[field]??'';
+        if(e._uploadedGross && isGrossField && !['isIntern','social','fund'].includes(field)) value=e._uploadedGrossRecord[label]??null;
+        else if(!e._uploadedGross && field in sourceFields && !(e.regularizationActive&&['base','post','perfBase'].includes(field)) && !(e.late&&field==='effectiveScore')) {
+          value=Object.hasOwn(raw,field)?raw[field]:input[sourceFields[field]]??value;
+        }
+        if((type==='money'||type==='number')&&!PayrollEngine.blank(value)) {
+          const parsed=PayrollEngine.numeric(value);if(Number.isFinite(parsed))value=parsed;
+        }
+        return [label,value];
       }));
     }
     function comparisonRows(rows) {
@@ -1498,7 +1512,7 @@
       const e=employee, p=e._input || e, generated=grossOnly || !sourceRows.grossUpload;
       const descriptors=exportDescriptors(grossOnly), types=new Map(descriptors.map(([,field,type])=>[field,type]));
       const value=field=>num(sheet[ref(field)]?.v);
-      const literal=value=>String(num(value));
+      const literal=value=>String(num(value)),numberRef=field=>`N(${ref(field)})`;
       const set=(field,expression,computed)=>{
         if(!types.has(field) || e[field]===null) return;
         const money=types.get(field)==='money', target=money?PayrollEngine.round(num(e[field])):num(e[field]);
@@ -1522,8 +1536,8 @@
       if(generated) {
         if(e.isIntern) {
           // Intern payroll uses either the fixed salary or attendance times the configured daily rate.
-          for(const field of ['post','perfBase','effectiveScore','performancePay','meal','transit','otherAllow','sickSubsidy','otherAdd','annual','flexible','compensatory','sick','personal','absent','deductDays','attendanceDeduct','otherReduction']) set(field,'0',0);
-          if(e.internPayMode==='daily') {set('base','0',0);set('subtotal',`${ref('payableDays')}*${literal(e.dailyRate)}`,value('payableDays')*num(e.dailyRate));}
+          for(const field of ['performancePay','sickSubsidy','deductDays','attendanceDeduct']) set(field,'0',0);
+          if(e.internPayMode==='daily') {set('base','0',0);set('subtotal',`${numberRef('payableDays')}*${literal(e.dailyRate)}`,value('payableDays')*num(e.dailyRate));}
           else set('subtotal',ref('base'),value('base'));
           set('gross',ref('subtotal'),value('subtotal'));
         } else {
@@ -1553,20 +1567,20 @@
           } else if(e.regularizationActive && e.regularizationBlocked) {
             for(const field of ['base','post','perfBase'])set(field,'0',0);
           }
-          set('performancePay',`${ref('perfBase')}*${ref('effectiveScore')}`,value('perfBase')*value('effectiveScore'));
+          set('performancePay',`${numberRef('perfBase')}*${numberRef('effectiveScore')}`,value('perfBase')*value('effectiveScore'));
           const subtotal=totalSegments || sum(['base','post','performancePay']);
           set('subtotal',subtotal.expression,subtotal.amount);
-          set('sickSubsidy',`2660/21.75*${ref('sick')}*0.8`,2660/21.75*value('sick')*0.8);
+          set('sickSubsidy',`2660/21.75*${numberRef('sick')}*0.8`,2660/21.75*value('sick')*0.8);
           if(e.deductDays!==null) {
             const leave=sum(['sick','personal','absent']);
-            if(e.status==='离职') set('deductDays',`IF(${ref('workdays')}=${ref('payableDays')},0,21.75-${ref('payableDays')})`,value('workdays')===value('payableDays')?0:21.75-value('payableDays'));
+            if(['离职','入职'].includes(e.status)) set('deductDays',`IF(${ref('workdays')}=${ref('payableDays')},0,21.75-${ref('payableDays')})`,value('workdays')===value('payableDays')?0:21.75-value('payableDays'));
             else if(e.status==='在职') set('deductDays',`IF(${ref('workdays')}=${ref('payableDays')},0,${leave.expression})`,value('workdays')===value('payableDays')?0:leave.amount);
-            else set('deductDays',leave.expression,leave.amount);
+            else set('deductDays',`IF(${leave.expression}<>0,21.75-${numberRef('payableDays')},0)`,leave.amount?21.75-value('payableDays'):0);
           }
           set('attendanceDeduct',`${ref('subtotal')}/21.75*${ref('deductDays')}`,value('subtotal')/21.75*value('deductDays'));
           for(const [field,aliases] of [['otherAllow',['其他津贴']],['otherAdd',['其他加','其他加项']],['otherReduction',['其他减','其他减项']]])aggregate('other',field,aliases);
           const additions=sum(['subtotal','meal','transit','otherAllow','sickSubsidy','otherAdd']);
-          set('gross',`${additions.expression}-${ref('attendanceDeduct')}-${ref('otherReduction')}`,additions.amount-value('attendanceDeduct')-value('otherReduction'));
+          set('gross',`${additions.expression}-${numberRef('attendanceDeduct')}-${numberRef('otherReduction')}`,additions.amount-value('attendanceDeduct')-value('otherReduction'));
         }
       }
       if(!grossOnly) {
@@ -1574,7 +1588,7 @@
         else for(const [field,aliases] of [['utility',['水电代扣','水电费代扣','水电费合计']],['mealDeduct',['餐费代扣','餐费合计']],['otherDeduct',['其它代扣','其他代扣']]])aggregate('afterTax',field,aliases);
         const deductions=sum(['otherDeduct','utility','mealDeduct']);
         set('afterTaxTotal',deductions.expression,deductions.amount);
-        set('net',e.isIntern?ref('gross'):`${ref('gross')}-${ref('social')}-${ref('fund')}-${ref('tax')}-${ref('afterTaxTotal')}`,e.isIntern?value('gross'):value('gross')-value('social')-value('fund')-value('tax')-value('afterTaxTotal'));
+        set('net',e.isIntern?numberRef('gross'):`${numberRef('gross')}-${numberRef('social')}-${numberRef('fund')}-${numberRef('tax')}-${numberRef('afterTaxTotal')}`,e.isIntern?value('gross'):value('gross')-value('social')-value('fund')-value('tax')-value('afterTaxTotal'));
         const cost=sum(['gross','companySocial','companyFund']);set('companyCost',cost.expression,cost.amount);
       }
     }
@@ -1595,14 +1609,14 @@
       list.forEach((e,index)=>{
         const row=index+3;
         descriptors.forEach(([,field,type],column)=>{
-          if(type==='money' && data[index][column]!==null)numericCell(ws,excelColumn(column)+row,data[index][column]);
-          if(type==='number' && data[index][column]!==null)ws[excelColumn(column)+row]={t:'n',v:num(data[index][column]),z:'0.########'};
+          if(type==='money' && Number.isFinite(data[index][column]))ws[excelColumn(column)+row]={t:'n',v:data[index][column],z:'0.00########'};
+          if(type==='number' && Number.isFinite(data[index][column]))ws[excelColumn(column)+row]={t:'n',v:num(data[index][column]),z:'0.########'};
         });
         applyPayrollExportFormulas(ws,e,field=>ref(field,row),grossOnly);
         const issues=visibleIssues(e,grossOnly?'gross':'net');
         if(issues.length) {ws['A'+row] ||= {t:'s',v:e.name||''};ws['A'+row].c=[{a:'算薪异常',t:issues.join('；')}];}
       });
-      descriptors.forEach(([,field,type],column)=>{if(type==='money')numericCell(ws,ref(field,list.length+3),total[column],list.length?`ROUND(SUM(${ref(field,3)}:${ref(field,list.length+2)}),2)`:'0');});
+      descriptors.forEach(([,field,type],column)=>{if(type==='money')numericCell(ws,ref(field,list.length+3),PayrollEngine.round(list.reduce((sum,_,i)=>sum+num(ws[ref(field,i+3)]?.v),0)),list.length?`ROUND(SUM(${ref(field,3)}:${ref(field,list.length+2)}),2)`:'0');});
       const missing=grossOnly?[]:(state.comparison?.differences || []).filter(d=>d.reason==='上传表缺失人员');
       const errors=importSession().items.filter(item=>item.error).map(item=>item.filename+'：'+item.error+'；沿用当前可用数据');
       const notes=[...missing.map(d=>d.name+'：上传表缺失人员'),...errors];
@@ -1669,10 +1683,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-all-formulas-v1"></script>
-  <script src="./workbench-pages.js?v=20261009-all-formulas-v1"></script>
-  <script src="./personnel-directory.js?v=20261009-all-formulas-v1"></script>
-  <script src="./workbench-ui.js?v=20261009-all-formulas-v1"></script>
+  <script src="./workbench-core.js?v=20261009-source-fidelity-v1"></script>
+  <script src="./workbench-pages.js?v=20261009-source-fidelity-v1"></script>
+  <script src="./personnel-directory.js?v=20261009-source-fidelity-v1"></script>
+  <script src="./workbench-ui.js?v=20261009-source-fidelity-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>

@@ -52,7 +52,9 @@ globalThis.PayrollWorkbench = (() => {
     if(Object.hasOwn(o,'actualPaidDays')) p.paidDayIssues=(p.paidDayIssues||[]).filter(x=>!(/实际出勤天数|未上传考勤|考勤统计表中未找到/.test(x)));
     const e=original.calc(p,month,days);
     e._workbenchKey=k;
-    e._input={...p};
+    e._input={...p,_sourceValues:{...p._sourceValues}};
+    const exportedFields={score:'effectiveScore',actualPaidDays:'payableDays'};
+    for(const [field,value] of Object.entries(o))if(!computedFields.has(field)&&!netFields.has(field))e._input._sourceValues[exportedFields[field]||field]=value;
     e._grossOriginal=round(original.calc(profile,month,days).gross);
     if(!e.isIntern) {
       if(Object.hasOwn(o,'performancePay')) {
@@ -200,9 +202,11 @@ globalThis.PayrollWorkbench = (() => {
   downloadSlip=()=>{
     if(!workbookReady())return;const e=selected(),gross=state.payrollStage==='gross';if(!e)return;
     const items=gross?exportDescriptors(true):exportDescriptors(false);
-    const rows=[['员工工资明细',monthLabel(currentMonth)],['阶段',gross?'应发工资':'实发工资'],...items.map(([label,field])=>[label,field==='isIntern'?(e.isIntern?'是':'否'):e[field]??''])];
+    const record=exportRecord(e,gross);
+    const rows=[['员工工资明细',monthLabel(currentMonth)],['阶段',gross?'应发工资':'实发工资'],...items.map(([label])=>[label,record[label]??''])];
     const ws=formatNumbers(window.XLSX.utils.aoa_to_sheet(rows));
     const ref=f=>'B'+(items.findIndex(d=>d[1]===f)+3);
+    items.forEach(([,field,type])=>{const cell=ws[ref(field)];if(cell?.t==='n'&&['money','number'].includes(type))cell.z=type==='money'?'0.00########':'0.########';});
     applyPayrollExportFormulas(ws,e,ref,gross);
     const notes=adjustmentNotes(e);if(notes.length)ws.B1.c=[{a:'工资调整',t:notes.join('\n')}];
     ws['!cols']=[{wch:28},{wch:28}];const book=window.XLSX.utils.book_new();window.XLSX.utils.book_append_sheet(book,ws,gross?'应发明细':'实发明细');

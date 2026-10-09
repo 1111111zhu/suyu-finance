@@ -25,10 +25,10 @@ function recalc(sheet,address,stack=new Set()){
   assert.ok(!stack.has(address),'circular formula '+address);const next=new Set(stack).add(address);
   let expression=cell.f.replace(/([A-Z]+)(\d+):([A-Z]+)(\d+)/g,(_,a,b,c,d)=>{
     assert.equal(a,c);return Array.from({length:Number(d)-Number(b)+1},(_,i)=>recalc(sheet,a+(Number(b)+i),next)).join(',');
-  }).replace(/\b[A-Z]+\d+\b/g,ref=>String(recalc(sheet,ref,next))).replace(/(?<![<>!=])=(?!=)/g,'===');
+  }).replace(/\b[A-Z]+\d+\b/g,ref=>String(recalc(sheet,ref,next))).replace(/<>/g,'!==').replace(/(?<![<>!=])=(?!=)/g,'===');
   const DATE=(y,m,d)=>Date.UTC(y,m-1,d)/86400000;
   const NETWORKDAYS=(a,b)=>{let n=0;for(let d=a;d<=b;d++){const day=new Date(d*86400000).getUTCDay();if(day!==0&&day!==6)n++;}return n;};
-  const result=Function('SUM','ROUND','IF','DATE','NETWORKDAYS',`return (${expression})`)((...v)=>v.reduce((a,b)=>a+b,0),(v,d)=>Math.sign(v)*Math.round(Math.abs(v)*10**d+1e-8)/10**d,(condition,a,b)=>condition?a:b,DATE,NETWORKDAYS);
+  const result=Function('N','SUM','ROUND','IF','DATE','NETWORKDAYS',`return (${expression})`)(v=>typeof v==='number'?v:0,(...v)=>v.reduce((a,b)=>a+b,0),(v,d)=>Math.sign(v)*Math.round(Math.abs(v)*10**d+1e-8)/10**d,(condition,a,b)=>condition?a:b,DATE,NETWORKDAYS);
   assert.ok(Number.isFinite(result),address+' '+cell.f);return result;
 }
 function verify(run,gross,required){
@@ -53,20 +53,20 @@ const scenarios=[
   ['intern fixed',`isIntern:true,base:3500,actualPaidDays:22`]
 ];
 for(const [name,inputs] of scenarios)test(name+' formulas recalculate in both exports',()=>{
-  const run=app();run(`const profile={...employees[0]._input,${inputs}};generatedEmployees=[calcSalary(profile,currentMonth,currentWorkdays)];employees=PayrollEngine.calculateNet(generatedEmployees,{netSocial:[{姓名:'测试员工',个人总计:500,公司总计:1000}],netFund:[{姓名:'测试员工',个人缴纳:300,公司缴纳:300}],tax:[{姓名:'测试员工',税:200}],afterTax:[{姓名:'测试员工',水电代扣:10,餐费代扣:30,其它代扣:20}]});state.payrollStage='net';`);
+  const run=app();run(`const profile={...employees[0]._input,_sourceValues:undefined,${inputs}};generatedEmployees=[calcSalary(profile,currentMonth,currentWorkdays)];employees=PayrollEngine.calculateNet(generatedEmployees,{netSocial:[{姓名:'测试员工',个人总计:500,公司总计:1000}],netFund:[{姓名:'测试员工',个人缴纳:300,公司缴纳:300}],tax:[{姓名:'测试员工',税:200}],afterTax:[{姓名:'测试员工',水电代扣:10,餐费代扣:30,其它代扣:20}]});state.payrollStage='net';`);
   verify(run,true,grossComputed);verify(run,false,[...grossComputed,...netComputed]);
 });
 test('raw inputs stay numeric and edits propagate through performance, subtotal, gross and net',()=>{
   const run=app();run(`sourceRows.salary=[{姓名:'测试员工',基本工资:10000,绩效基数:1000}];sourceRows.performance=[{姓名:'测试员工',绩效系数:0.8}];state.payrollStage='net';recalculateEmployees();`);
   const {sheet,ref}=verify(run,false,[...grossComputed,...netComputed]);
-  for(const field of ['base','post','perfBase','effectiveScore','meal','payableDays','social','tax'])assert.equal(sheet[ref(field)].f,undefined,field);
+  for(const field of ['base','post','perfBase','effectiveScore','meal','payableDays','social','tax'])assert.equal(sheet[ref(field)]?.f,undefined,field);
   const before=recalc(sheet,ref('net'));sheet[ref('perfBase')].v+=100;
   assert.equal(recalc(sheet,ref('performancePay')),880);assert.equal(recalc(sheet,ref('net'))-before,80);
 });
 test('uploaded gross values remain source values while net calculations have formulas',()=>{
   const run=app();run(`sourceRows.grossUpload=[{姓名:'测试员工',公司:'测试公司',一级部门:'研发',基本工资:9000,绩效基数:1000,绩效工资:777,工资小计:9777,应发工资:9654,假勤扣薪天数:2,假勤扣款:123,是否实习生:'否'}];state.payrollStage='net';recalculateEmployees();`);
   const {sheet,ref}=verify(run,false,netComputed);
-  for(const field of grossComputed)assert.equal(sheet[ref(field)].f,undefined,field+' imported directly');
+  for(const field of grossComputed)assert.equal(sheet[ref(field)]?.f,undefined,field+' imported directly');
   assert.equal(sheet[ref('gross')].v,9654);assert.equal(sheet[ref('subtotal')].v,9777);
 });
 test('blocked attendance stays blank instead of gaining a zero formula',()=>{
@@ -87,4 +87,9 @@ test('individual slips share calculation formulas and summaries count employees 
   const books=run('captured');for(const book of books){const sheet=book.Sheets[book.SheetNames[0]];for(const [address,cell] of Object.entries(sheet))if(cell?.f)assert.ok(Math.abs(recalc(sheet,address)-cell.v)<1e-7);const labels=Object.entries(sheet).filter(([a,c])=>a.startsWith('A')&&grossComputed.some(f=>run(`exportDescriptors(true).find(d=>d[1]===${JSON.stringify(f)})[0]`)===c.v));assert.equal(labels.length,grossComputed.length);for(const [address]of labels)assert.ok(sheet['B'+address.slice(1)].f);}
   const summary=run('summarySheet()');assert.match(summary.B2.f,/COUNTIF/);assert.match(summary.B3.f,/SUM/);
   const desc=Array.from(run('exportDescriptors(false).map(d=>d[1])'));const netCol=XLSX.utils.encode_col(desc.indexOf('net'));assert.match(summary.K2.f,new RegExp(netCol+'\\$3'));
+});
+
+test('new hires use the departure deduction formula and attendance edits recalculate the exported days',()=>{
+  const run=app();run(`const profile={...employees[0]._input,_sourceValues:undefined,status:'入职',join:'2026-09-16',actualPaidDays:10,sick:0,personal:0,absent:0};generatedEmployees=[calcSalary(profile,currentMonth,currentWorkdays)];employees=PayrollEngine.calculateNet(generatedEmployees,{});state.payrollStage='net';`);
+  const {sheet,ref}=verify(run,false,[...grossComputed,...netComputed]);assert.equal(recalc(sheet,ref('deductDays')),11.75);sheet[ref('payableDays')].v=20;assert.equal(recalc(sheet,ref('deductDays')),1.75);
 });
