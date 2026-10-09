@@ -62,7 +62,7 @@ globalThis.PayrollEngine = (() => {
     return Number.isFinite(result)?result:NaN;
   }
   function canonicalHeader(header) {
-    const token=key(header),withoutUnit=token.replace(/(?:\((?:元|天|分|%)\)|(?:元|天))$/,'');
+    const token=key(header),withoutUnit=token.replace(/(?:\((?:元|天|分|%)\)|(?:元|天))$/,'').replace(/^(年假|弹性假|调休假?|病假|事假|旷工)\((?:h|小时)\)$/i,'$1');
     const found=[...fields,...netFields].find(([label,,type,aliases=[]])=>[label,...aliases].some(alias=>key(alias)===token || ['money','number'].includes(type)&&key(alias)===withoutUnit));
     return found?found[0]:token;
   }
@@ -253,7 +253,8 @@ globalThis.PayrollEngine = (() => {
     return !values.leave || values.leave.slice(0,7)>=month;
   }
   function paidLeaveFromRow(row = {}) {
-    const categories = ['年假','调休','弹性假','产检假','产假','陪产假','婚假','丧假','哺乳假'];
+    const paidCategories = ['年假','调休','弹性假','产检假','产假','陪产假','婚假','丧假','哺乳假'];
+    const categories = [...paidCategories,'病假','事假','旷工'];
     const entries = Object.entries(row);
     const normalize = label => key(label).replace(/^调休假/, '调休').replace(/^婚嫁/, '婚假');
     const remark = entries.filter(([label]) => /备注/.test(key(label))).map(([,value]) => String(value ?? '')).join('；');
@@ -281,7 +282,7 @@ globalThis.PayrollEngine = (() => {
       }
       breakdown[category] = count;
     }
-    return {days:Object.values(breakdown).reduce((sum,value)=>sum+value,0), breakdown, remark};
+    return {days:paidCategories.reduce((sum,category)=>sum+breakdown[category],0), breakdown, remark};
   }
   function canonicalRow(row) {
     const result={};

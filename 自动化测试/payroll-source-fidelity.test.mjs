@@ -44,11 +44,11 @@ test('every numeric source field matches input across ordinary and intern export
  assert.ok(cell(out,'绩效工资',3).f);assert.ok(cell(out,'应发工资',4).f);
  assert.equal(a.run(`generatedEmployees.find(e=>e.name==='乙').gross`),8123.46,'intern allowances/leave are exported but payroll policy still uses the fixed salary');
 });
-test('blank input fields remain blank, never silently zeroed; deduction formulas still export',async()=>{
+test('blank numeric sources export zero and text fields stay blank',async()=>{
  const a=app();await a.importFiles([file('花名册.xlsx',[['人员',[['姓名','工号','公司','二级部门','入职日期'],['甲','TEST-A','测试公司',null,'2025-01-02']]]])],'roster');
  await a.importFiles([file('工资.xlsx',[['工资',[['姓名','基本工资','岗位工资'],['甲',9000,null]]]])],'salary');
  await a.importFiles([file('考勤.xlsx',[['考勤',[['姓名','实际出勤天数','调休假','病假','餐饮津贴'],['甲',22,null,null,null]]]])],'attendance');
- const out=exported(a);for(const label of ['二级部门','岗位工资','调休假天数','病假天数','餐饮津贴'])assert.equal(cell(out,label,3)?.v,undefined,label);
+ const out=exported(a);assert.equal(cell(out,'二级部门',3)?.v,undefined);for(const label of ['岗位工资','调休假天数','病假天数','餐饮津贴'])assert.equal(cell(out,label,3)?.v,0,label);
  assert.ok(cell(out,'假勤扣款',3).f);
 });
 test('restored legacy rows use shared aliases without needing reupload; sick allowance is not mistaken for days',()=>{
@@ -101,4 +101,16 @@ test('provided local attendance workbook agrees with every source-backed exporte
    const expected=sourceValue===null||sourceValue===''?undefined:Number.isFinite(parsed)?parsed:sourceValue;
    assert.equal(cell(out,field,r)?.v,expected,field+' source row '+r);
  }}
+});
+
+test('leave recovered from remarks survives export with zeros for unused numeric fields',async()=>{
+ const a=app();await a.importFiles([file('花名册.xlsx',[['人员',roster('甲','TEST-A')]])],'roster');
+ await a.importFiles([file('工资.xlsx',[['工资',[['姓名','基本工资'],['甲',9000]]]])],'salary');
+ await a.importFiles([file('考勤.xlsx',[['考勤',[['姓名','实际出勤天数','调休假天数','病假天数','备注'],['甲',20,null,null,'调休假1.5天；病假0.5天；年假1天；事假0.25天']]]])] ,'attendance');
+ const out=exported(a);for(const [label,value] of [['调休假天数',1.5],['病假天数',0.5],['年假天数',1],['事假天数',0.25],['旷工天数',0],['弹性假天数',0],['岗位工资',0],['餐饮津贴',0],['交通津贴',0],['其他加',0],['其他减',0]])assert.equal(cell(out,label,3)?.v,value,label);
+});
+
+test('legacy attendance hour-labelled columns and explicit zero map to exported leave fields',()=>{
+ const a=app();a.run(`sourceRows={roster:[{姓名:'甲',工号:'TEST-A',入职日期:'2025-01-02'}],salary:[{姓名:'甲',基本工资:9000}],attendance:[{姓名:'甲',实际出勤:20,'调休假(H)':1.25,'病假（H）':0.5,'年假(H)':0,'弹性假(H)':0,'事假(H)':0,'旷工(H)':0}]};recalculateEmployees();`);
+ const out=exported(a);for(const [label,value] of [['调休假天数',1.25],['病假天数',0.5],['年假天数',0],['弹性假天数',0],['事假天数',0],['旷工天数',0]])assert.equal(cell(out,label,3)?.v,value,label);
 });
