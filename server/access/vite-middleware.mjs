@@ -5,6 +5,7 @@ export function accessViteMiddleware(){return {name:'suyu-access-public-guard',a
  const capability=routeCapability(path,req.method);if(!capability)return next();
  void requireAccess(request,capability).then(user=>{
   if(user.role==='finance'&&(path==='/rd-cost'||path.startsWith('/rd-cost/results')||path.startsWith('/rd-cost/index.html')||path.startsWith('/calculate'))){res.writeHead(302,{Location:'/rd-cost/analysis?embed=1','Cache-Control':'no-store'});return res.end();}
+  if(path.startsWith('/salary/')&&/\.(?:html|js)$/.test(path))res.setHeader('Cache-Control','private, no-store, max-age=0');
   next();
  }).catch(error=>{res.writeHead(error.status||503,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify({error:error.message||'访问失败'}));});
  });}};}
