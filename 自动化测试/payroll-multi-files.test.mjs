@@ -22,6 +22,35 @@ function file(name,sheets){
  return {name,size:bytes.byteLength,arrayBuffer:async()=>bytes};
 }
 const roster=(name,id)=>[['员工姓名','工号','入职日期'],[name,id,'2025-01-01']];
+test('explicit other upload maps unnamed amounts by employee through saved batches and XLSX export',async()=>{
+ const a=app();await a.importFiles([file('花名册.xlsx',[['人员',[['姓名','工号','入职日期'],['甲','001','2025-01-01'],['乙','002','2025-01-01']]]])],'roster');
+ await a.importFiles([file('工资.xlsx',[['工资',[['姓名','基本工资'],['甲',1000],['乙',2000]]]])],'salary');
+ await a.importFiles([file('补发明细.xlsx',[['Sheet1',[['员工姓名','金额（元）'],['乙',500],[' 甲 ','￥1,250.50']]],['第二笔',[['姓名','金额'],['甲',49.5]]]])],'other');
+ assert.equal(a.run('importSession().items.length'),0);
+ assert.deepEqual(Array.from(a.run('employees.map(e=>e.otherAdd)')),[1300,500]);
+ assert.deepEqual(Array.from(a.run('employees.map(e=>e.gross)')),[2300,2500]);
+ a.run('saveBatchData();globalThis.saved=structuredClone(currentBatch());state.batches.push({...saved,name:"恢复批次",active:false});setCurrentBatch(state.batches[1]);');
+ const sheet=a.run('detailSheet(true)'),headers=a.run('exportHeaders(true)'),col=label=>XLSX.utils.encode_col(headers.indexOf(label));
+ const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'应发工资');
+ const exported=XLSX.read(XLSX.write(book,{type:'buffer',bookType:'xlsx'}),{type:'buffer',cellFormula:true}).Sheets['应发工资'];
+ assert.equal(exported[col('其他加')+'3'].v,1300);assert.equal(exported[col('其他加')+'4'].v,500);assert.equal(exported[col('其他加')+'5'].v,1800);
+ assert.equal(exported[col('应发工资')+'3'].v,2300);assert.equal(exported[col('应发工资')+'4'].v,2500);assert.equal(exported[col('应发工资')+'5'].v,4800);
+ assert.match(exported[col('应发工资')+'3'].f,new RegExp(col('其他加')+'3'));
+ assert.equal(a.run('sourceRows.other[0]._importSource.filename'),'补发明细.xlsx');
+});
+test('explicit unnamed other amounts reject ambiguous or invalid columns without losing prior additions',async()=>{
+ const a=app();await a.importFiles([file('补发.xlsx',[['Sheet1',[['姓名','金额'],['甲',100]]]])],'other');
+ for(const grid of [[['姓名','金额','总金额'],['甲',200,300]],[['姓名','金额'],['甲','无效']],[['姓名','金额'],['甲',null]],[['姓名','天数'],['甲',2]]]) {
+  await a.importFiles([file('补发.xlsx',[['Sheet1',grid]])],'other','replace');
+  assert.equal(a.run('sourceRows.other[0].其他加'),100);assert.match(a.run('importSession().summary'),/原有资料已保留/);
+ }
+});
+test('manual module resolution maps plain amounts and preserves explicit zero',async()=>{
+ const a=app();await a.importFiles([file('补发.xlsx',[['Sheet1',[['姓名','金额'],['甲',0],['乙',200]]]])]);
+ assert.equal(a.run('importSession().items.length'),1);a.run('resolveImport(0,"other")');
+ assert.equal(a.run('importSession().items.length'),0);
+ assert.equal(a.run('sourceRows.other[0].其他加'),0);assert.equal(a.run('sourceRows.other[1].其他加'),200);
+});
 test('two roster files merge, repeated upload replaces only that file, all rows retain provenance',async()=>{
  const a=app();
  await a.importFiles([file('花名册A.xlsx',[['人员一',roster('甲','001')]]),file('花名册B.xlsx',[['人员二',roster('乙','002')]])],'roster');

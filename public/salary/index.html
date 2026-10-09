@@ -436,7 +436,7 @@
       {key:'salary',name:'员工基本工资表',icon:'薪',desc:'基本工资、岗位工资、绩效基数及转正前后薪资'},
       {key:'performance',name:'绩效考核表',icon:'绩',desc:'读取所有含姓名、绩效系数的工作表；指定人员缺省系数为 1'},
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
-      {key:'other',name:'其他表',icon:'其',desc:'其他津贴、其他加、其他减'},
+      {key:'other',name:'其他加 / 减',icon:'其',desc:'按姓名匹配；仅含姓名和金额的表作为其他加，津贴和减项需标明项目'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
       {key:'tax',name:'个税表',icon:'税',desc:'姓名、税 / 个税 / 个人所得税 / 税额',stage:'net'},
       {key:'netSocial',name:'社保表',icon:'保',desc:'第二阶段：个人总计、公司总计',stage:'net'},
@@ -894,8 +894,12 @@
       const named=groups.filter(group=>groupMatches(sheetName,group));
       const targets=named.length?named:groups.filter(group=>groupMatches(filename,group));
       const missing=targets.filter(group=>!mappings.some(([label])=>label===group[0]));
+      // Selecting the other-addition module is sufficient to label a plain name/amount workbook.
+      // Keep explicitly labeled allowances/reductions separate and reject unmapped data.
+      const unnamedOther=key==='other' && !targets.length && !mappings.length;
+      if(unnamedOther)missing.push(['其他加']);
       if(missing.length) {
-        const generic=headers.filter(h=>/^(?:金额|总计金额|合计金额|总金额|金额合计|数值|值|天数|系数|分数)(?:\(元\)|\(天\)|元|天)?$/.test(canonicalKey(h)));
+        const generic=headers.filter(h=>unnamedOther?/^(?:金额|总计金额|合计金额|总金额|金额合计)(?:\(元\)|元)?$/.test(canonicalKey(h)):/^(?:金额|总计金额|合计金额|总金额|金额合计|数值|值|天数|系数|分数)(?:\(元\)|\(天\)|元|天)?$/.test(canonicalKey(h)));
         if(missing.length!==1 || generic.length!==1)throw new Error(`${sheetName}：名称已识别${missing.map(g=>g[0]).join('、')}，但对应数值列不唯一，请核对表头`);
         mappings.push([missing[0][0],generic[0]]);
       }
