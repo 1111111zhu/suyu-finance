@@ -241,7 +241,7 @@ globalThis.PayrollEngine = (() => {
       if(n>=0&&a!==undefined&&a>=0){header=i;nameCol=n;amountCol=a;break;}
       if(utility&&n>=0&&i>0){const prev=grid[i-1].findIndex(v=>/水/.test(String(v))&&/电/.test(String(v))&&/合计/.test(String(v)));if(prev>=0){header=i;nameCol=n;amountCol=prev;break;}}
     }
-    if(header<0){if(!/餐费|水电/.test(filename+sheetName))return null;throw new Error(utility?'水电表需包含“备注”和同一单元格含“水、电、合计”的金额表头':'餐费表需包含“姓名”和“总计金额”或“代扣金额”表头');}
+    if(header<0){if(!/餐费|水电/.test(filename+sheetName)||!grid.flat().some(v=>key(v).includes('姓名')||key(v)==='备注'))return null;throw new Error(utility?'水电表需包含“备注”和同一单元格含“水、电、合计”的金额表头':'餐费表需包含“姓名”和“总计金额”或“代扣金额”表头');}
     const result=[];
     for(let i=header+1;i<grid.length;i++) {
       const row=grid[i], name=String(row[nameCol]??'').trim();
