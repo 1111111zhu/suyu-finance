@@ -162,6 +162,7 @@ globalThis.PayrollWorkbench = (() => {
   function markReviewed(e) {const d=data(),k=key(e);if(scope()==='netGenerated'&&d.taxReview)delete d.taxReview[k];d.reviewed[scope()+':'+k]=JSON.stringify([e.gross,e.net,overrides(e)]);saveBatchData();}
   function isReviewed(e) {return data().reviewed[scope()+':'+key(e)]===JSON.stringify([e.gross,e.net,overrides(e)]);}
   function source(e,field) {
+    if(['score','performancePay'].includes(field) && e.performanceDefault)return {label:'绩效缺省规则：指定人员未提供系数，默认 1',filename:'',row:null,sheet:'',record:{姓名:e.name,绩效系数:1}};
     let sourceKey=fields[field]?.[1];
     if(state.payrollStage==='net'&&sourceKey==='social')sourceKey='netSocial';
     if(state.payrollStage==='net'&&sourceKey==='fund')sourceKey='netFund';

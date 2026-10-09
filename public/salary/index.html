@@ -365,11 +365,11 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-source-fidelity-v1"></script>
+  <script src="./payroll-engine.js?v=20261009-upload-replace-preview-v1"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
-  <link rel="stylesheet" href="./workbench-pages.css">
+  <link rel="stylesheet" href="./workbench-pages.css?v=20261009-upload-replace-preview-v1">
   <link rel="stylesheet" href="./suyu-theme.css">
   <link rel="stylesheet" href="./personnel-directory.css">
 </head>
@@ -434,7 +434,7 @@
     const sourceSheets = [
       {key:'roster',name:'花名册',icon:'人',desc:'员工范围与入离职、实习生标识、转正日期'},
       {key:'salary',name:'员工基本工资表',icon:'薪',desc:'基本工资、岗位工资、绩效基数及转正前后薪资'},
-      {key:'performance',name:'绩效考核表',icon:'绩',desc:'绩效系数'},
+      {key:'performance',name:'绩效考核表',icon:'绩',desc:'读取所有含姓名、绩效系数的工作表；指定人员缺省系数为 1'},
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
       {key:'other',name:'其他表',icon:'其',desc:'其他津贴、其他加、其他减'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
@@ -699,18 +699,30 @@
       const workbook=PayrollEngine.readSpreadsheet(window.XLSX,await file.arrayBuffer(),file.name,{cellDates:true});
       if (!workbook.SheetNames.length) throw new Error('Excel 文件没有可读取的工作表');
       const items=[],skipped=[];
+      const preview={filename:file.name,sheets:workbook.SheetNames.map(name=>{
+        const sheet=workbook.Sheets[name],range=sheet['!ref']?window.XLSX.utils.decode_range(sheet['!ref']):null;
+        if(!range)return {name,grid:[],rowCount:0,columnCount:0};
+        const rowCount=range.e.r+1,columnCount=range.e.c+1;
+        // Sample display cells independently of the employee-row parser, including cover sheets.
+        const grid=Array.from({length:Math.min(rowCount,200)},(_,r)=>Array.from({length:Math.min(columnCount,50)},(_,c)=>{
+          const cell=sheet[window.XLSX.utils.encode_cell({r,c})];return cell?window.XLSX.utils.format_cell(cell):'';
+        }));
+        return {name,grid,rowCount,columnCount,truncated:rowCount>200||columnCount>50};
+      })};
       const rosterBook=/花名册|人员名册|员工名册/.test(file.name) || explicitKey==='roster';
       for(const sheetName of workbook.SheetNames) {
         if(rosterBook && /年假台账|使用说明|说明|年度台账/.test(sheetName)) {skipped.push(sheetName);continue;}
         const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
-        const headerIndex=grid.findIndex(row=>row.some(v=>PayrollEngine.canonicalHeader(v)==='姓名'));
+        const performanceHeaderIndex=grid.findIndex(row=>row.some(v=>PayrollEngine.canonicalHeader(v)==='姓名') && row.some(v=>['绩效系数','绩效分数'].includes(PayrollEngine.canonicalHeader(v))));
+        const headerIndex=performanceHeaderIndex>=0 && (explicitKey==='performance' || /绩效|系数/.test(file.name+sheetName)) ? performanceHeaderIndex : grid.findIndex(row=>row.some(v=>PayrollEngine.canonicalHeader(v)==='姓名'));
         // Explanation/cover sheets have no employee rows. Expense layouts have their own name column.
         const directDeduction=/水电代扣|餐费代扣|其它代扣|其他代扣|税后代扣/.test(file.name+sheetName) || headerIndex>=0 && grid[headerIndex].some(h=>/水电代扣|餐费代扣|其它代扣|其他代扣/.test(String(h)));
         const expense=directDeduction?null:PayrollEngine.deductionRowsFromGrid(grid,file.name,sheetName);
         if(headerIndex<0 && !expense) {skipped.push(sheetName);continue;}
-        let rows=expense || PayrollEngine.rowsFromGrid(grid);
+        let rows=expense || PayrollEngine.rowsFromGrid(headerIndex>=0?grid.slice(headerIndex):grid);
         rows.sheetName=sheetName;rows.sourceStartRow=headerIndex+2;
         const match=explicitKey?{key:explicitKey,reason:'指定模块'}:matchSource(file.name,rows);
+        if(match.key==='performance' && headerIndex>=0 && !grid[headerIndex].some(h=>['绩效分数','绩效系数'].includes(PayrollEngine.canonicalHeader(h))) && !grid[headerIndex].some(h=>/^(?:金额|数值|值|系数|分数)$/.test(canonicalKey(h)))) {skipped.push(sheetName);continue;}
         if(!expense) rows=normalizeSourceFields(rows,match.key,file.name,sheetName);
         let cursor=headerIndex+1;
         rows=rows.map(row=>{
@@ -734,7 +746,7 @@
           return normalized;
         });
         rows.sheetName=sheetName;rows.sourceStartRow=headerIndex+2;
-        items.push({filename:file.name,rows,...match});
+        items.push({filename:file.name,rows,preview,...match});
       }
       if(!items.length)throw new Error(rosterBook?'花名册未找到可读取的在职或离职子表或人员数据表，请核对姓名表头':'Excel 文件未找到含姓名及员工数据的工作表');
       const combined=items.flatMap(item=>item.rows);
@@ -758,6 +770,7 @@
         } });
       return {map, duplicates};
     }
+    const defaultPerformanceNames=new Set(['李辉','刘浩','高玲','王刘超','董清华','赵红英','苏晓建']);
     function importedEmployees() {
       const rosterRows = sourceRows.roster || [];
       const tables = Object.fromEntries(sourceSheets.filter(sheet=>(sheet.stage || 'gross')==='gross' && Object.hasOwn(sourceRows,sheet.key)).map(({key}) => [key, tableFor(key)]));
@@ -766,6 +779,8 @@
       return sortEmployeesInternLast(rosterRows.map((row, index) => {
         const rosterDiagnosis=PayrollEngine.normalizeRosterRow(row,undefined,currentMonth);
         const name=String(rowValue(row,['姓名']) ?? '').trim(), isIntern=isInternValue(internFlagValue(row)), salary=link('salary',name,['基本工资','工资基数']), post=link('salary',name,['岗位工资']), perfBase=link('salary',name,['绩效基数']), probationTotal=link('salary',name,['转正前工资','试用期工资','转正前月薪','试用期月薪','转正前'],null), regularTotal=link('salary',name,['转正后工资','正式工资','转正后月薪','正式月薪','转正后'],null), probationBase=link('salary',name,['转正前基本工资','试用期基本工资']), regularBase=link('salary',name,['转正后基本工资','转正基本工资','正式基本工资']), probationPost=link('salary',name,['转正前岗位工资','试用期岗位工资']), regularPost=link('salary',name,['转正后岗位工资','转正岗位工资','正式岗位工资']), probationPerfBase=link('salary',name,['转正前绩效基数','试用期绩效基数']), regularPerfBase=link('salary',name,['转正后绩效基数','转正绩效基数','正式绩效基数']), regularizationSalaryDate=link('salary',name,['转正日期','转正日','转正时间'],null), probationDays=link('attendance',name,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数'],null), regularDays=link('attendance',name,['转正后应出勤天数','转正后出勤天数','转正后计薪天数'],null), performance=link('performance',name,['绩效系数','绩效分数']), attendance=link('attendance',name,['餐补合计']), transit=link('attendance',name,['交通补贴']), otherAllow=link('other',name,['其他津贴']), otherAdd=link('other',name,['其他加']), annual=link('attendance',name,['年假天数','年假(天)','年假（天）']), flexible=link('attendance',name,['弹性假天数','弹性假(天)','弹性假（天）']), compensatory=link('attendance',name,['调休假天数','调休假(天)','调休假（天）']), sick=link('attendance',name,['病假天数','病假（天）','病假(天)']), personal=link('attendance',name,['事假天数','事假（天）','事假(天)']), absent=link('attendance',name,['旷工天数','旷工（天）','旷工(天)']), companySocial=link('social',name,['公司总计']), companyFund=link('fund',name,['公司缴纳']), social=link('social',name,['个人总计','个人社保']), fund=link('fund',name,['个人缴纳','个人公积金']), otherReduction=link('other',name,['其他减']), otherDeduct=link('other',name,['其他代扣']), utility=link('utility',name,['水电费合计']), mealDeduct=link('meal',name,['餐费合计']), tax=link('tax',name,['税','个税','个人所得税','税额']);
+        const performanceDefault=defaultPerformanceNames.has(canonicalKey(name)) && (!performance.found || PayrollEngine.blank(performance.value) || ['—','-'].includes(String(performance.value).trim()));
+        if(performanceDefault) performance.value=1;
         if (tax.found) { const taxRow=tables.tax.map.get(canonicalKey(name)), exact=Object.keys(taxRow).find(key=>canonicalKey(key)==='税'); if (exact!==undefined) tax.value=taxRow[exact]; }
         const paidDays=link('attendance',name,['实际出勤天数','实发薪天数'],null);
         const duplicateSources=Object.entries(tables).filter(([key,table])=>!netSourceKeys.includes(key) && table.duplicates.has(canonicalKey(name))).map(([key])=>sourceSheets.find(sheet=>sheet.key===key)?.name || key);
@@ -783,7 +798,7 @@
         if (tables.roster?.duplicates.has(canonicalKey(name))) exceptions.push('花名册存在重复姓名');
         if (!isIntern && salary.source && !salary.found) exceptions.push('员工基本工资表未找到匹配');
         if (!isIntern && !salary.source) exceptions.push('未上传员工基本工资表，当前金额不含完整月薪');
-        if (!isIntern && performance.source && !performance.found) exceptions.push('绩效考核表未找到匹配');
+        if (!isIntern && performance.source && !performance.found && !performanceDefault) exceptions.push('绩效考核表未找到匹配');
         const deductionIssues=[];
         (isIntern?[paidDays]:[salary,post,perfBase,probationTotal,regularTotal,probationBase,regularBase,probationPost,regularPost,probationPerfBase,regularPerfBase,regularizationSalaryDate,probationDays,regularDays,performance,attendance,transit,otherAllow,otherAdd,annual,flexible,compensatory,sick,personal,absent,otherReduction]).forEach(item=>{if(item.duplicate) exceptions.push('源表存在重复姓名');});
         if (isIntern && !Object.prototype.hasOwnProperty.call(internDailyRates(),canonicalKey(name))) exceptions.push('日薪未设置');
@@ -800,10 +815,11 @@
         const regularizationValue=firstPresent(rosterRegularization,salaryRegularization,salaryRegularizationRaw), regularizationDate=excelDate(regularizationValue);
         if (regularizationValue !== null && !/^\d{4}-\d{2}-\d{2}$/.test(regularizationDate)) exceptions.push('转正日期无效，请填写 YYYY-MM-DD 格式日期');
         const _sourceValues=Object.fromEntries(Object.entries({base:salary,post,perfBase,effectiveScore:performance,payableDays:paidDays,meal:attendance,transit,otherAllow,otherAdd,annual,flexible,compensatory,sick,personal,absent,otherReduction}).map(([field,item])=>[field,item.source&&item.found?item.value:null]));
+        if(performanceDefault) _sourceValues.effectiveScore=1;
         for(const field of ['company','dept','subdept','bankCard','bankName']) {
           const header=rosterDiagnosis.sources[field];_sourceValues[field]=header?row[header]:null;
         }
-        return {_sourceValues,id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), regularizationDate, probationWorkdays:firstPresent(rowValue(row,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数']),probationDays.value), regularWorkdays:firstPresent(rowValue(row,['转正后应出勤天数','转正后出勤天数','转正后计薪天数']),regularDays.value), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), probationTotal:parseOptionalNumber(probationTotal.value), regularTotal:parseOptionalNumber(regularTotal.value), probationBase:parseOptionalNumber(probationBase.value), regularBase:parseOptionalNumber(regularBase.value), probationPost:parseOptionalNumber(probationPost.value), regularPost:parseOptionalNumber(regularPost.value), probationPerfBase:parseOptionalNumber(probationPerfBase.value), regularPerfBase:parseOptionalNumber(regularPerfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
+        return {_sourceValues,performanceDefault,id:`IMP${String(index+1).padStart(3,'0')}`, name, isIntern, dailyRate:internDailyRates()[canonicalKey(name)], deductionIssues, rosterRow:index+2, paidDayIssues, actualPaidDays:paidDays.value, payrollSourceBlocked:payrollSourceBlocked && !isIntern, company:String(rowValue(row,['公司']) ?? ''), dept:String(rowValue(row,['一级部门','一级部门名称']) ?? '未分配'), subdept:String(rowValue(row,['二级部门','二级部门名称']) ?? '—'), bankCard:String(rowValue(row,['银行卡号']) ?? ''), bankName:String(rowValue(row,['开户行','银行']) ?? ''), status, statusRaw:statusValue ?? status, join:excelDate(joinValue), joinRaw:rosterDateValue(joinValue), leave:excelDate(leaveValue), leaveRaw:rosterDateValue(leaveValue), regularizationDate, probationWorkdays:firstPresent(rowValue(row,['转正前应出勤天数','试用期应出勤天数','转正前出勤天数','试用期计薪天数']),probationDays.value), regularWorkdays:firstPresent(rowValue(row,['转正后应出勤天数','转正后出勤天数','转正后计薪天数']),regularDays.value), base:parseNumber(salary.value), post:parseNumber(post.value), perfBase:parseNumber(perfBase.value), probationTotal:parseOptionalNumber(probationTotal.value), regularTotal:parseOptionalNumber(regularTotal.value), probationBase:parseOptionalNumber(probationBase.value), regularBase:parseOptionalNumber(regularBase.value), probationPost:parseOptionalNumber(probationPost.value), regularPost:parseOptionalNumber(regularPost.value), probationPerfBase:parseOptionalNumber(probationPerfBase.value), regularPerfBase:parseOptionalNumber(regularPerfBase.value), score:parseNumber(performance.value), meal:parseNumber(attendance.value), transit:parseNumber(transit.value), otherAllow:parseNumber(otherAllow.value), otherAdd:parseNumber(otherAdd.value), annual:parseNumber(annual.value), flexible:parseNumber(flexible.value), compensatory:parseNumber(compensatory.value), companySocial:parseNumber(companySocial.value), companyFund:parseNumber(companyFund.value), sick:parseNumber(sick.value), personal:parseNumber(personal.value), absent:parseNumber(absent.value), social:parseNumber(social.value), fund:parseNumber(fund.value), otherReduction:parseNumber(otherReduction.value), otherDeduct:0, utility:0, mealDeduct:0, tax:0, exception:exceptions.join('；')};
       }).filter(profile=>PayrollEngine.rosterRowInMonth(rosterRows[Number(profile.id.slice(3))-1],currentMonth) && PayrollEngine.rosterIdentityIssues(rosterRows[Number(profile.id.slice(3))-1]).length===0).map(profile => {
         const sourceIndex=Number(profile.id.slice(3))-1;
         const roster=PayrollEngine.normalizeRosterRow(rosterRows[sourceIndex],undefined,currentMonth);
@@ -926,21 +942,25 @@
       state.liveImport=true;
       const previous=sourceRows[key] || [],previousFilename=state.sourceStatus[key]?.filename;
       // Distinct files append. Reuploading a filename replaces only that file's rows.
-      const retained=previous.filter(row=>(row._importSource?.filename || row._deductionSource?.filename || row._rosterSource?.filename || previousFilename)!==item.filename);
-      const incoming=item.rows.map(row=>({...row,_importSource:{...row._importSource,filename:item.filename}}));
+      const retained=item.replace?[]:previous.filter(row=>(row._importSource?.filename || row._deductionSource?.filename || row._rosterSource?.filename || previousFilename)!==item.filename);
+      const incoming=item.rows.map(row=>({...row,_importSource:{...row._importSource,filename:row._importSource?.filename || item.filename}}));
       sourceRows[key]=[...retained,...incoming];
       sourceRows[key].sheetName=[...new Set(sourceRows[key].map(row=>row._importSource?.sheetName||row._rosterSource?.sheetName||row._deductionSource?.sheetName).filter(Boolean))].join('、') || item.rows.sheetName || previous.sheetName || '';
       sourceRows[key].sourceStartRow=retained.length?2:item.rows.sourceStartRow || 2;
       if(key==='grossUpload') state.grossSource='uploaded';
       if (key==='roster') pruneInternDailyRates(sourceRows.roster);
       const filenames=[...new Set(sourceRows[key].map(row=>row._importSource?.filename || row._deductionSource?.filename || row._rosterSource?.filename || previousFilename).filter(Boolean))];
-      state.sourceStatus[key]={uploaded:true,filename:filenames.join('、'),filenames,files:filenames.length,rows:sourceRows[key].length,parsed:true};
+      const previews=item.replace?{}:{...(state.sourceStatus[key]?.previews || {})};
+      for(const preview of item.previews || (item.preview?[item.preview]:[]))previews[preview.filename]=preview;
+      state.sourceStatus[key]={uploaded:true,filename:filenames.join('、'),filenames,files:filenames.length,rows:sourceRows[key].length,parsed:true,previews};
       recalculateEmployees();saveBatchData();
       Object.assign(currentBatch(),{employees:employees.length,sources:Object.keys(sourceRows).length,status:'待计算'});
       state.calculated=false;
     }
-    async function importFiles(files, explicitKey='') {
+    async function importFiles(files, explicitKey='', mode='append') {
       const session=importSession(), batch=currentBatch(), stage=state.payrollStage;
+      const replacing=mode==='replace';
+      if(replacing && !stageSheets().some(sheet=>sheet.key===explicitKey))return;
       if (session.busy || !files.length) return;
       session.busy=true;session.summary='正在解析文件…';render('upload');
       const parsed=[];
@@ -962,6 +982,16 @@
         }
         // Never apply an asynchronous import to a different payroll batch.
         if (currentBatch()!==batch || state.payrollStage!==stage) {session.summary='已取消：解析期间切换了工资批次，请重新选择文件';return;}
+        if(replacing) {
+          const failures=parsed.filter(item=>item.error || item.key!==explicitKey || !item.rows?.length);
+          if(failures.length || !parsed.length) {
+            session.items.push(...failures.map(item=>({...item,error:`替换未执行，原有资料已保留：${item.error || item.reason || '未找到有效数据'}`})));
+            session.summary='替换未执行：所选文件未全部解析成功，原有资料已保留';return;
+          }
+          const unique=[...new Map(parsed.map(item=>[item.filename,item])).values()];
+          commitSource(explicitKey,{filename:unique.map(item=>item.filename).join('、'),rows:unique.flatMap(item=>item.rows),previews:unique.map(item=>item.preview),replace:true});
+          session.summary=`已替换${sourceSheets.find(sheet=>sheet.key===explicitKey).name}：${unique.length} 个文件，${sourceRows[explicitKey].length} 行`;return;
+        }
         let imported=0;
         for (const item of parsed) {
           if(!item.error && item.key && stageSheets().some(sheet=>sheet.key===item.key)) {
@@ -974,7 +1004,7 @@
         if (currentBatch()===batch) {render('upload');showToast(session.summary);}
       }
     }
-    async function handleSourceInput(input) { return importFiles(input.files,input.dataset.sourceInput); }
+    async function handleSourceInput(input) { const files=Array.from(input.files || []);const mode=input.dataset.importMode || 'append';input.value='';input.dataset.importMode='append';return importFiles(files,input.dataset.sourceInput,mode); }
     function resolveImport(index, key) {
       const session=importSession(), item=session.items[index];
       if (session.busy || !item || item.error || !sourceRules[key]) return;
@@ -1271,7 +1301,7 @@
         <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 Excel / CSV 文件，单个文件 ≤ 20MB · 费用表读取全部工作表，仅在本机浏览器解析</div></div>
         ${renderImportReview()}${renderRosterFieldDiagnostics()}
         ${!net&&received.length?`<p class="section-desc" role="status">已接收扣款表：${received.map(sheet=>sheet.name).join('、')}；已保存到第二步。</p>`:''}
-        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" multiple hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'重新上传':'选择文件'} ${icon.upload}</button></div>`;}).join('')}</div>
+        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" multiple hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'追加上传':'选择文件'} ${icon.upload}</button>${st.uploaded?`<button class="btn btn-sm" data-upload="${sheet.key}" data-upload-mode="replace" ${busy?'disabled':''}>替换</button><button class="btn btn-sm" data-source-preview="${sheet.key}">预览</button>`:''}</div>`;}).join('')}</div>
         ${net?(deductionNotice()?`<div class="alert orange" style="margin-top:16px">${deductionNotice()}</div>`:''):`<p class="section-desc" style="margin-top:16px">${!ready?'请先上传花名册以确定员工范围。':missing.length?missing.map(sheet=>sheet.name).join('、')+'未上传；实际出勤天数需考勤表提供，其余缺失数值按 0 计算。':'应发源表已上传。'}</p>`}
         <div class="upload-bottom"><span class="muted">${net?'税后扣款统一取税后代扣表；异常与比对差异不限制计算或导出。':'个人社保、公积金仅供个税测算参考，不影响应发工资金额。'}</span><button class="btn btn-primary" data-calculate ${!ready||busy?'disabled':''}>${net?'计算／更新实发工资':'计算应发工资'}</button></div></div>`;
     }
@@ -1387,7 +1417,8 @@
       content.querySelector('#payrollSettings')?.addEventListener('submit', event=>{event.preventDefault();applyPayrollSettings(content.querySelector('#payrollYear').value+'-'+content.querySelector('#payrollMonth').value,content.querySelector('#payrollDays').value,content.querySelector('#makeupWorkdays')?.value || '');});
       content.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.go==='mapping'&&state.payrollStage==='gross'&&!hasPayrollRoster()){showToast('请先上传花名册以确定员工范围');return;}render(el.dataset.go);}));
       content.querySelectorAll('[data-step-view]').forEach(el=>el.addEventListener('click',()=>render(el.dataset.stepView)));
-      content.querySelectorAll('[data-upload]').forEach(btn=>btn.addEventListener('click',()=>document.getElementById('file-'+btn.dataset.upload).click()));
+      content.querySelectorAll('[data-upload]').forEach(btn=>btn.addEventListener('click',()=>{const input=document.getElementById('file-'+btn.dataset.upload);input.dataset.importMode=btn.dataset.uploadMode || 'append';input.value='';input.click();}));
+      content.querySelectorAll('[data-source-preview]').forEach(btn=>btn.addEventListener('click',()=>openSourcePreview(btn.dataset.sourcePreview)));
       content.querySelectorAll('[data-source-input]').forEach(input=>input.addEventListener('change',()=>handleSourceInput(input)));
       content.querySelectorAll('[data-intern-rate]').forEach(input=>input.addEventListener('change',()=>{if(setInternDailyRate(decodeURIComponent(input.dataset.internRate),input.value)===false)return;render('mapping');showToast('日薪已保存并重算');}));
       const selectAllInterns=content.querySelector('#selectAllInterns'); if(selectAllInterns) selectAllInterns.addEventListener('change',()=>content.querySelectorAll('[data-intern-select]').forEach(input=>input.checked=selectAllInterns.checked));
@@ -1683,10 +1714,11 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-source-fidelity-v1"></script>
-  <script src="./workbench-pages.js?v=20261009-source-fidelity-v1"></script>
-  <script src="./personnel-directory.js?v=20261009-source-fidelity-v1"></script>
-  <script src="./workbench-ui.js?v=20261009-source-fidelity-v1"></script>
+  <script src="./source-preview.js?v=20261009-upload-replace-preview-v1"></script>
+  <script src="./workbench-core.js?v=20261009-upload-replace-preview-v1"></script>
+  <script src="./workbench-pages.js?v=20261009-upload-replace-preview-v1"></script>
+  <script src="./personnel-directory.js?v=20261009-upload-replace-preview-v1"></script>
+  <script src="./workbench-ui.js?v=20261009-upload-replace-preview-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>

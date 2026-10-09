@@ -11,7 +11,7 @@ function app(){
  for(const file of ['payroll-engine.js','payroll-email-engine.js'])run(fs.readFileSync(new URL(file,base),'utf8'));
  run(fs.readFileSync(new URL('index.html',base),'utf8').match(/<script>\s*([\s\S]*?)<\/script>/)[1]);
  run('render=()=>{};showToast=()=>{};bindView=()=>{};');
- for(const file of ['workbench-core.js','workbench-pages.js','workbench-ui.js'])run(fs.readFileSync(new URL(file,base),'utf8'));
+ for(const file of ['source-preview.js','workbench-core.js','workbench-pages.js','workbench-ui.js'])run(fs.readFileSync(new URL(file,base),'utf8'));
  run('render=()=>{};showToast=()=>{};bindView=()=>{};');
  run(`currentMonth='2026-09';currentWorkdays=22;state.sourceStatus={};sourceRows={};state.liveImport=true;state.payrollStage='gross';state.batches=[{name:'测试批次',month:currentMonth,workdays:22,active:true,draftOrigin:'empty',data:{internDailyRates:{}}}];`);
  return {run,importFiles:run('importFiles'),parse:run('parseXlsxFile')};
@@ -88,4 +88,71 @@ test('salary components and social contributions split by field keep matching by
  a.run("state.payrollStage='net';recalculateEmployees();render=()=>{}");
  await a.importFiles([file('个人社保.xlsx',[['Sheet1',[['姓名','金额'],['甲',100]]]]),file('公司总计.xlsx',[['Sheet1',[['姓名','金额'],['甲',200]]]])]);
  assert.equal(a.run('employees[0].social'),100);assert.equal(a.run('employees[0].companySocial'),200);assert.equal(a.run('employees[0].companyCost'),1500);
+});
+
+
+test('replace swaps the entire selected module atomically, preserving other modules and every new file',async()=>{
+ const a=app();await a.importFiles([file('花名册.xlsx',[['人员',roster('甲','001')]])],'roster');
+ await a.importFiles([file('工资A.xlsx',[['薪资',[['姓名','基本工资'],['甲',1000]]]]),file('工资B.xlsx',[['薪资',[['姓名','岗位工资'],['甲',200]]]])],'salary');
+ const before=a.run('JSON.stringify(sourceRows.roster)');
+ await a.importFiles([file('新工资.xlsx',[['一',[['姓名','基本工资'],['甲',3000]]],['二',[['姓名','绩效基数'],['甲',100]]]]),file('岗位.xlsx',[['岗位',[['姓名','岗位工资'],['甲',500]]]])],'salary','replace');
+ assert.equal(a.run('employees[0].base'),3000);assert.equal(a.run('employees[0].post'),500);
+ assert.equal(a.run('sourceRows.salary.length'),3);assert.equal(a.run('state.sourceStatus.salary.files'),2);
+ assert.deepEqual(Array.from(a.run('state.sourceStatus.salary.filenames')),['新工资.xlsx','岗位.xlsx']);assert.equal(a.run('JSON.stringify(sourceRows.roster)'),before);
+ assert.deepEqual(Array.from(a.run('Object.keys(state.sourceStatus.salary.previews)')),['新工资.xlsx','岗位.xlsx']);
+ const old=a.run('JSON.stringify(currentBatch().data)');
+ await a.importFiles([file('有效.xlsx',[['薪资',[['姓名','基本工资'],['甲',9999]]]]),file('坏表.xlsx',[['说明',[['没有姓名和数据']]]])],'salary','replace');
+ assert.equal(a.run('JSON.stringify(currentBatch().data)'),old);assert.equal(a.run('employees[0].base'),3000);assert.match(a.run('importSession().summary'),/原有资料已保留/);
+});
+test('performance reads all matching sheets and defaults only the seven named employees, preserving zero and supplied values',async()=>{
+ const a=app(),names=['李辉','刘浩','高玲','王刘超','董清华','赵红英','苏晓建','其他人'];
+ await a.importFiles([file('花名册.xlsx',[['人员',[['姓名','工号','入职日期'],...names.map((n,i)=>[n,String(i+1),'2025-01-01'])]]])],'roster');
+ await a.importFiles([file('工资.xlsx',[['工资',[['姓名','基本工资','绩效基数'],...names.map(n=>[n,1000,100])]]])],'salary');
+ assert.deepEqual(Array.from(a.run('employees.map(e=>e.score)')),[1,1,1,1,1,1,1,0]);
+ await a.importFiles([file('月度绩效.xlsx',[
+ ['说明',[['填写说明']]],['人员说明',[['姓名','部门'],['李辉','研发']]],
+ ['研发',[['姓名'],[],['姓名','绩效系数'],['李辉',0],['刘浩',0.8],['高玲',null]]],
+ ['生产',[['姓名','绩效系数'],['王刘超','90%'],['董清华',''],['其他人',0.6]]],
+ ['销售',[['姓名','绩效系数'],['赵红英',1.2]]]])],'performance');
+ assert.equal(a.run('importSession().items.length'),0);
+ assert.deepEqual(Array.from(a.run('employees.map(e=>e.score)')),[0,0.8,1,0.9,1,1.2,1,0.6]);
+ assert.equal(a.run('sourceRows.performance.length'),7);assert.equal(a.run('employees[2].performancePay'),100);
+ assert.equal(a.run('exportRecord(employees[2],true)["绩效分数"]'),1);
+ assert.match(a.run('PayrollWorkbench.source(employees[2],"score").label'),/默认 1/);
+ assert.equal(a.run('sourceRows.performance.find(r=>r.姓名==="李辉")._importSource.rowNumber'),4);
+ await a.importFiles([file('新的系数.xlsx',[['全员',[['姓名','绩效系数'],['高玲',0.7]]]])],'performance','replace');
+ assert.equal(a.run('sourceRows.performance.length'),1);assert.equal(a.run('employees[0].score'),1);assert.equal(a.run('employees[2].score'),0.7);
+});
+test('defaults appear in exported formula inputs and retain the late-hire precedence',async()=>{
+ const a=app();await a.importFiles([file('花名册.xlsx',[['人员',[['姓名','工号','入职日期','是否入离职'],['李辉','1','2026-09-16','入职'],['刘浩','2','2025-01-01','在职']]]])],'roster');
+ await a.importFiles([file('工资.xlsx',[['工资',[['姓名','基本工资','绩效基数'],['李辉',1000,100],['刘浩',1000,100]]]])],'salary');
+ assert.equal(a.run('employees[0].score'),1);assert.equal(a.run('employees[0].effectiveScore'),0);
+ const headers=a.run('exportHeaders(true)'),ws=a.run('detailSheet(true)'),column=XLSX.utils.encode_col(headers.indexOf('绩效分数'));
+ assert.equal(ws[column+'3'].v,0);assert.equal(ws[column+'4'].v,1);assert.equal(a.run('employees[1].performancePay'),100);
+});
+test('preview retains all workbook sheets, escapes cells, is read-only, and survives saved batch restoration',async()=>{
+ const a=app(),uploaded=file('绩效.xlsx',[['说明',[['<script>alert(1)</script>']]],['团队A',[['姓名','绩效系数'],['李辉',0.8]]],['团队B',[['姓名','绩效系数'],['刘浩',1]]]]);
+ await a.importFiles([uploaded],'performance');
+ const before=a.run('JSON.stringify(sourceRows.performance)');
+ assert.deepEqual(Array.from(a.run('sourcePreviewFiles("performance")[0].sheets.map(s=>s.name)')),['说明','团队A','团队B']);
+ const html=a.run('sourcePreviewTable(sourcePreviewFiles("performance")[0].sheets[0])');assert.match(html,/&lt;script&gt;/);assert.ok(!html.includes('<script>'));
+ assert.equal(a.run('JSON.stringify(sourceRows.performance)'),before);
+ a.run('saveBatchData();globalThis.saved=structuredClone(currentBatch());state.batches.push({...saved,name:"恢复批次",active:false});setCurrentBatch(state.batches[1]);');
+ assert.equal(a.run('sourcePreviewFiles("performance")[0].sheets[2].grid[1][0]'),'刘浩');
+ for(const stage of ['gross','net']){a.run(`state.payrollStage='${stage}';state.sourceStatus[stageSheets()[0].key]={uploaded:true}`);const html=a.run('PayrollWorkbenchPages.upload()');assert.match(html,/data-upload-mode="replace"/);assert.match(html,/data-source-preview=/);}
+});
+test('large previews explicitly cap display while import reads beyond the preview, and old batches have a truthful fallback',async()=>{
+ const a=app(),grid=[['姓名','绩效系数'],...Array.from({length:250},(_,i)=>['员工'+i,0.8])];
+ await a.importFiles([file('绩效.xlsx',[['全部',grid]])],'performance');assert.equal(a.run('sourceRows.performance.length'),250);
+ assert.equal(a.run('sourcePreviewFiles("performance")[0].sheets[0].grid.length'),200);assert.equal(a.run('sourcePreviewFiles("performance")[0].sheets[0].rowCount'),251);
+ assert.equal(a.run('sourcePreviewFiles("performance")[0].sheets[0].truncated'),true);
+ a.run('delete state.sourceStatus.performance.previews;');assert.equal(a.run('sourcePreviewFiles("performance")[0].importedOnly'),true);
+});
+test('replacement works for second-stage deductions and same-file retries reset their input mode',async()=>{
+ const a=app();a.run("state.payrollStage='net'");
+ await a.importFiles([file('社保A.xlsx',[['社保',[['姓名','个人总计'],['甲',100]]]]),file('社保B.xlsx',[['社保',[['姓名','个人总计'],['乙',200]]]])],'netSocial');
+ const bytes=file('新社保.xlsx',[['社保',[['姓名','个人总计'],['甲',300]]]]);
+ a.run('globalThis.input={files:[],value:"old-path",dataset:{sourceInput:"netSocial",importMode:"replace"}}');
+ const input=a.run('input');input.files=[bytes];await a.run('handleSourceInput')(input);
+ assert.equal(input.value,'');assert.equal(input.dataset.importMode,'append');assert.equal(a.run('sourceRows.netSocial.length'),1);assert.equal(a.run('sourceRows.netSocial[0].个人总计'),300);
 });
