@@ -83,7 +83,7 @@ export function preparePeople(sheet: SourceSheet | undefined, role: Role, engine
 export function salaryRows(people: Person[], engine: Engine) {
   return people.map(person => Object.fromEntries(engine.rosterFields.flatMap(([field, label]) => {
     const raw = person.raw[person.sources[field]];
-    const value = ["bankCard", "bankName"].includes(field) ? raw : person.values[field];
+    const value = ["bankCard", "bankName", "join", "leave", "regularizationDate", "contractEnd"].includes(field) ? raw : person.values[field];
     return value === undefined || value === null || value === "" ? [] : [[label, value]];
   })) as RawRow);
 }

@@ -214,7 +214,25 @@ globalThis.PayrollEngine = (() => {
       try{data=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{data=new TextDecoder('gb18030').decode(bytes);}
       type='string';
     }
-    const book=library.read(data,{...options,type});
+    // Excel dates are calendar serials, not instants. Reading them as Date
+    // applies historical timezone offsets and can move midnight to yesterday.
+    const book=library.read(data,{...options,type,cellDates:false,cellNF:true});
+    const date1904=book.Workbook?.WBProps?.date1904===true;
+    for(const sheetName of book.SheetNames) {
+      for(const [address,cell] of Object.entries(book.Sheets[sheetName] || {})) {
+        if(address.startsWith('!') || cell?.t!=='n' || !library.SSF?.is_date(cell.z || '')) continue;
+        // Leave time-only cells numeric. Decode calendar dates from the original
+        // serial and workbook epoch, without a JavaScript Date conversion.
+        const format=String(cell.z || '').replace(/"[^"]*"|\[[^\]]*\]|\\./g,'');
+        if(!/[yd]/i.test(format)) continue;
+        const date=library.SSF.parse_date_code(cell.v,{date1904});
+        if(!date) continue;
+        const day=`${String(date.y).padStart(4,'0')}-${String(date.m).padStart(2,'0')}-${String(date.d).padStart(2,'0')}`;
+        const time=date.H || date.M || date.S || date.u
+          ? `T${String(date.H).padStart(2,'0')}:${String(date.M).padStart(2,'0')}:${String(date.S).padStart(2,'0')}` : '';
+        cell.t='s';cell.v=day+time;cell.w=cell.v;
+      }
+    }
     if(/\.csv$/i.test(filename)&&isRosterSheet(filename)&&book.SheetNames.length===1) {
       const name=String(filename).replace(/\.csv$/i,'');book.Sheets[name]=book.Sheets[book.SheetNames[0]];delete book.Sheets[book.SheetNames[0]];book.SheetNames=[name];
     }

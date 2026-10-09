@@ -25,7 +25,7 @@ async function loadEngine(): Promise<Engine> {
   if (target.PayrollEngine?.readSpreadsheet) return target.PayrollEngine;
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "/salary/payroll-engine.js?v=20261009-excel-formats";
+    script.src = "/salary/payroll-engine.js?v=20261009-calendar-dates-v2";
     script.onload = () => resolve(); script.onerror = () => reject(new Error("人员识别组件加载失败，请刷新重试。"));
     (document.head as unknown as HTMLElement).appendChild(script);
   });

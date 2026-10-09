@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-multi-files-v1"></script>
+  <script src="./payroll-engine.js?v=20261009-calendar-dates-v2"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -1445,13 +1445,26 @@
     }
     function exportHeaders(grossOnly=false) { return exportDescriptors(grossOnly).map(field=>field[0]); }
     function rosterExportDate(employee,field) {
-      let matches=(sourceRows.roster || [])
-        .map(row=>({row,...PayrollEngine.normalizeRosterRow(row,undefined,currentMonth)}))
-        .filter(({values})=>canonicalKey(values.name)===canonicalKey(employee.name));
-      if(employee.employeeNumber && employee.employeeNumber!==employee.id) matches=matches.filter(({values})=>canonicalKey(values.employeeNumber)===canonicalKey(employee.employeeNumber));
-      if(employee.company) matches=matches.filter(({values})=>!values.company || canonicalKey(values.company)===canonicalKey(employee.company));
+      const rows=sourceRows.roster || [];
+      const realNumber=employee.employeeNumber && employee.employeeNumber!==employee.id;
+      const samePerson=values=>canonicalKey(values.name)===canonicalKey(employee.name)
+        && (!realNumber || canonicalKey(values.employeeNumber)===canonicalKey(employee.employeeNumber))
+        && (!employee.company || !values.company || canonicalKey(values.company)===canonicalKey(employee.company));
+      const generated=generatedEmployees.filter(samePerson);
+      const source=employee.rosterSource || (generated.length===1?generated[0].rosterSource:null);
+      const sourceMatches=source?rows.filter(row=>{
+        const origin=row._rosterSource;
+        return origin && origin.sheetName===source.sheetName && origin.rowNumber===source.rowNumber
+          && (!source.filename || origin.filename===source.filename);
+      }):[];
+      const candidates=sourceMatches.length===1?sourceMatches:rows;
+      const matches=candidates.flatMap(row=>{
+        const map=PayrollEngine.rosterFieldMap(Object.keys(row)).map;
+        const values={name:row[map.name],employeeNumber:row[map.employeeNumber],company:row[map.company]};
+        return samePerson(values)?[{row,map}]:[];
+      });
       if(matches.length!==1) return '';
-      const match=matches[0],header=PayrollEngine.rosterFieldMap(Object.keys(match.row)).map[field],value=header?match.row[header]:null;
+      const {row,map}=matches[0],value=map[field]?row[map[field]]:null;
       return PayrollEngine.blank(value)?'':value;
     }
     function exportRecord(e,grossOnly=false) {
@@ -1574,10 +1587,10 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./workbench-core.js?v=20261009-multi-files-v1"></script>
-  <script src="./workbench-pages.js?v=20261009-multi-files-v1"></script>
-  <script src="./personnel-directory.js?v=20261009-multi-files-v1"></script>
-  <script src="./workbench-ui.js?v=20261009-multi-files-v1"></script>
+  <script src="./workbench-core.js?v=20261009-calendar-dates-v2"></script>
+  <script src="./workbench-pages.js?v=20261009-calendar-dates-v2"></script>
+  <script src="./personnel-directory.js?v=20261009-calendar-dates-v2"></script>
+  <script src="./workbench-ui.js?v=20261009-calendar-dates-v2"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
