@@ -1,0 +1,125 @@
+{
+  "source": "User-confirmed live payroll server",
+  "host": "123.207.188.183",
+  "root": "/opt/suyu-finance/current",
+  "capturedAt": "2026-10-10T10:24:20+08:00",
+  "archiveSha256": "68bd4df0bf02da3af10874ff54781a5e47647ea130d4a535406fdc01e9137231",
+  "files": [
+    {
+      "path": "public/salary/calculation-model.js",
+      "sha256": "6faf80964e6f5a85e5b6da5f8f9fefab8af25dd35a9b073326b4a41efd895b12"
+    },
+    {
+      "path": "public/salary/design/styles/canvases.css",
+      "sha256": "4949047974151ac9af2209fc258d0f137fb813a524678ce4b43b27f93e3009b2"
+    },
+    {
+      "path": "public/salary/design/styles/components.css",
+      "sha256": "e003178f2e98a72064b6411e135bba24920e6e52db7e68b3f19b8f67f5f4a96d"
+    },
+    {
+      "path": "public/salary/design/styles/foundations.css",
+      "sha256": "672a659a9aa71fa2db372adc35b99d3e07f85458c64384c2547e0e6d201feed9"
+    },
+    {
+      "path": "public/salary/design/styles/gallery.css",
+      "sha256": "1de880d36d3d3ff48e3bccc44a07adcd18c7019fda34444115120d5e3b79c4b1"
+    },
+    {
+      "path": "public/salary/design/styles/motion.css",
+      "sha256": "fd39404fb2dc08f5b363d2ecba715bcdaddaeaed9da7756d70d643c5b12d2bf0"
+    },
+    {
+      "path": "public/salary/design/styles/payroll.css",
+      "sha256": "f1e3b4583812140489c42e190749e4ce300f6df3f35f88e2197d255150176d65"
+    },
+    {
+      "path": "public/salary/design/styles/widget.css",
+      "sha256": "942a1f9cb5ee95e7a4d6a3e5eb4397b50f754af487bb6edab6c9d1f7ec55501a"
+    },
+    {
+      "path": "public/salary/design/tokens/tokens.css",
+      "sha256": "8e6a264d96afa77f3fc26ed12486984c4ae29677fdece924b7579e460891c3b0"
+    },
+    {
+      "path": "public/salary/email-page.js",
+      "sha256": "1414e60bbdb9b90e732b07fee7b519bf7d9d5245f1f7805c4bbed1223792c0f4"
+    },
+    {
+      "path": "public/salary/email.html",
+      "sha256": "573ac6ef9c123c7852042e28d2fdd780759121ce491f8978b565aef54e7855fc"
+    },
+    {
+      "path": "public/salary/index.html",
+      "sha256": "de2b4b6075242f49888cb19100dc81a1b45ff92081535b8037150ca65a423333"
+    },
+    {
+      "path": "public/salary/payroll-email-engine.js",
+      "sha256": "48419a523f5c5a177572e49138fa4bc09ba24b602c6437eb1e93ec4d4ae8afbe"
+    },
+    {
+      "path": "public/salary/payroll-engine.js",
+      "sha256": "408351521da9b8b34903bc946cf3f94bff4088f5e4136031e92bc06c74e39352"
+    },
+    {
+      "path": "public/salary/personnel-directory.css",
+      "sha256": "bfda4092dfd6448a2012471adb60e5dd1bc4025f5455af4f4abdf3e1f4d5d3db"
+    },
+    {
+      "path": "public/salary/personnel-directory.js",
+      "sha256": "40b0390cb6e6ce3612af3159259c41d782d5836407bfda7159dc696a4f715652"
+    },
+    {
+      "path": "public/salary/source-preview.js",
+      "sha256": "734df67b3660647ce718c5837c0934c4249b28cada482955723290fe289b574a"
+    },
+    {
+      "path": "public/salary/suyu-theme.css",
+      "sha256": "cc7b448cf470fea6136ef8e9c00209a51fb13aed953009b1b40825a5ec1d7611"
+    },
+    {
+      "path": "public/salary/workbench-cloud.css",
+      "sha256": "fe1d11db7f85435cdb681f2422fb4dfc6a084c25cc4fe852e34adbcb09728d58"
+    },
+    {
+      "path": "public/salary/workbench-cloud.js",
+      "sha256": "dea77c2d361138ecab35117fd5bf88a02a5637b670ab6b98dc8cad1931a7ec2d"
+    },
+    {
+      "path": "public/salary/workbench-compute.js",
+      "sha256": "616ce270eb97d33fd8fdde0fae5cb08cba5c3a07eb4654e2689260cd552224cf"
+    },
+    {
+      "path": "public/salary/workbench-core.js",
+      "sha256": "3aebd79a054f7535df3a68dac7444f503d5df6e8aca009e303f9dd38aebd58df"
+    },
+    {
+      "path": "public/salary/workbench-pages.css",
+      "sha256": "35d7653dd200698fc42809a6b9b62c803980774093dc9a2ac471abee9a330431"
+    },
+    {
+      "path": "public/salary/workbench-pages.js",
+      "sha256": "503e2c695adc56a35ca1ac4b93b0a2be486c317582c39fd6641cfa58b11e5408"
+    },
+    {
+      "path": "public/salary/workbench-ui.js",
+      "sha256": "c320d03028648db7e76b0fb2a7f90a0be8ca931480a4ece041ae73a237d7b89f"
+    },
+    {
+      "path": "public/salary/workbench-wecom-directory.css",
+      "sha256": "101fb49e1bf211e8d812d83d70b6e26a451cf5d82b5feca56ab36aed5c1f0b5c"
+    },
+    {
+      "path": "public/salary/workbench-wecom-directory.js",
+      "sha256": "8fd20ff8341db6bd551148691d1eb3d39d5fbba9734d99670b35fad1932fcf75"
+    },
+    {
+      "path": "public/salary/workbench.css",
+      "sha256": "fe1c4a69fa0f990ceadaa3c8a69c016426915974b29fa0198582cca57ab86f5e"
+    },
+    {
+      "path": "public/salary/xlsx.full.min.js",
+      "sha256": "c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99"
+    }
+  ]
+}
