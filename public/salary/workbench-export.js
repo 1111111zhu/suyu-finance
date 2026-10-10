@@ -1,7 +1,7 @@
-/* Snapshot immediately; workbook creation and ZIP serialization run off the UI thread. */
+/* Snapshot immediately; workbook creation and ZIP serialization run on the server. */
 globalThis.PayrollExport=(()=>{
-  const workerURL=new URL('export-worker.js?v=20261010-import-perf-v1',document.currentScript?.src||new URL('salary/workbench-export.js',location.origin+'/'));
-  let pending=null,sequence=0;
+
+  let pending=null;
   function snapshot(clone=true){
     const batch=currentBatch();
     // Export needs source identity/status, not image previews or a second copy of all batch data.
@@ -33,26 +33,18 @@ globalThis.PayrollExport=(()=>{
       if(PayrollWorkbench.orphaned('gross').length){showToast('应发调整存在未关联员工，请先关联后导出');return false;}
       if(!generatedEmployees.length){showToast('没有第一阶段生成结果，请先上传应发工资源表');return false;}
     }else if(!payrollExportReady())return false;
-    if(typeof Worker==='undefined'){showToast('当前浏览器不支持后台导出，请升级浏览器');return false;}
-    const exportToken=token(),batch=exportToken.batch,version={month:currentMonth,stage:state.payrollStage,revision:batch.workbench?.revision||0,createdAt:new Date().toISOString()},id=++sequence;
-    let worker;
-    try{worker=new Worker(workerURL);}catch{showToast('后台导出无法启动，请重试',5000);return false;}
-    pending={id,worker};
+    const exportToken=token(),batch=exportToken.batch,version={month:currentMonth,stage:state.payrollStage,revision:batch.workbench?.revision||0,createdAt:new Date().toISOString()};
+    pending={};
     try {
       showToast('正在后台生成工资表，可继续操作页面');
-      const result=await new Promise((resolve,reject)=>{
-        const timer=setTimeout(()=>reject(new Error('工资表导出超时，请重试')),120000);
-        worker.onmessage=({data})=>{if(data.id!==id)return;clearTimeout(timer);if(data.error)reject(new Error(data.error));else resolve(data);};
-        worker.onerror=()=>{clearTimeout(timer);reject(new Error('后台导出失败，请重试'));};
-        worker.onmessageerror=()=>{clearTimeout(timer);reject(new Error('后台导出结果读取失败，请重试'));};
-        try{worker.postMessage({id,kind,version,snapshot:snapshot(false)});}catch(error){clearTimeout(timer);reject(error);}
-      });
+      const response=await PayrollWorkbookAPI.binary('files/export',{kind,version,snapshot:snapshot(false)});
+      const result={bytes:await response.arrayBuffer(),filename:decodeURIComponent(response.headers.get('X-Workbook-Filename')||'工资表.xlsx')};
       const blob=new Blob([result.bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),url=URL.createObjectURL(blob),a=document.createElement('a');
       try{a.href=url;a.download=result.filename;document.body.appendChild(a);a.click();}finally{a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
       showToast(`${result.filename} 已导出${currentBatch()!==batch?'（导出时的批次）':''}`);
       return {batch,version,filename:result.filename,token:exportToken};
     }catch(error){showToast(error.message||'工资表导出失败',5000);return false;}
-    finally{try{worker.terminate();}finally{pending=null;}}
+    finally{pending=null;}
   }
   downloadGross=()=>run('gross');downloadCsv=()=>run(state.payrollStage==='gross'?'gross':'net');downloadSlip=()=>run('slip');
   return {run,snapshot,matchesCurrent,get busy(){return Boolean(pending);}};

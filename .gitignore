@@ -49,3 +49,6 @@ __pycache__/
 *.backup
 /payroll-backups/
 /.local/
+
+# Built by prebuild; source is salary-editor/.
+/public/salary/editor-assets/
