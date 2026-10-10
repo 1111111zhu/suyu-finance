@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261010-other-add-header-v1"></script>
+  <script src="./payroll-engine.js?v=20261010-personal-benefits-v1"></script>
   <script src="./payroll-email-engine.js?v=20261009-email-template-v2"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -439,8 +439,9 @@
       {key:'other',name:'其他加 / 减',icon:'其',desc:'按姓名匹配；读取表头含“其他加”的金额列，津贴和减项需标明项目'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
       {key:'tax',name:'个税表',icon:'税',desc:'姓名、税 / 个税 / 个人所得税 / 税额',stage:'net'},
-      {key:'netSocial',name:'社保表',icon:'保',desc:'第二阶段：个人总计、公司总计',stage:'net'},
-      {key:'netFund',name:'公积金表',icon:'积',desc:'第二阶段：个人缴纳、公司缴纳',stage:'net'},
+      {key:'netBenefits',name:'社保公积金',icon:'保',desc:'按姓名读取社保个人明细、公积金个人明细子表；个人缴纳＋个人补缴',stage:'net'},
+      {key:'netSocial',name:'社保个人明细',icon:'保',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
+      {key:'netFund',name:'公积金个人明细',icon:'积',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
       {key:'afterTax',name:'税后代扣表',icon:'扣',desc:'可上传多张餐费、水电费或其他代扣表；水电费可选',stage:'net'}
     ];
 
@@ -732,6 +733,8 @@
       })};
       const rosterBook=/花名册|人员名册|员工名册/.test(file.name) || explicitKey==='roster';
       for(const sheetName of workbook.SheetNames) {
+        const benefitKey=benefitSheetKey(sheetName);
+        if(explicitKey==='netBenefits' && !benefitKey){skipped.push(sheetName);continue;}
         if(rosterBook && /年假台账|使用说明|说明|年度台账/.test(sheetName)) {skipped.push(sheetName);continue;}
         const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
         const performanceHeaderIndex=grid.findIndex(row=>row.some(v=>PayrollEngine.canonicalHeader(v)==='姓名') && row.some(v=>['绩效系数','绩效分数'].includes(PayrollEngine.canonicalHeader(v))));
@@ -739,10 +742,11 @@
         // Explanation/cover sheets have no employee rows. Expense layouts have their own name column.
         const directDeduction=/水电代扣|餐费代扣|其它代扣|其他代扣|税后代扣/.test(file.name+sheetName) || headerIndex>=0 && grid[headerIndex].some(h=>/水电代扣|餐费代扣|其它代扣|其他代扣/.test(String(h)));
         const expense=directDeduction?null:PayrollEngine.deductionRowsFromGrid(grid,file.name,sheetName);
-        if(headerIndex<0 && !expense) {skipped.push(sheetName);continue;}
+        if(headerIndex<0 && !expense) {if(benefitKey && (explicitKey==='netBenefits'||state.payrollStage==='net'))throw new Error(`${sheetName}：缺少姓名表头`);skipped.push(sheetName);continue;}
         let rows=expense || PayrollEngine.rowsFromGrid(headerIndex>=0?grid.slice(headerIndex):grid);
         rows.sheetName=sheetName;rows.sourceStartRow=headerIndex+2;
-        const match=explicitKey?{key:explicitKey,reason:'指定模块'}:matchSource(file.name,rows);
+        if(benefitKey && !rows.length)throw new Error(`${sheetName}：没有可读取的个人明细`);
+        const match=explicitKey==='netBenefits'?{key:benefitKey,reason:'社保公积金个人明细子表'}:explicitKey?{key:explicitKey,reason:'指定模块'}:state.payrollStage==='net'&&benefitKey?{key:benefitKey,reason:'个人明细子表名称'}:matchSource(file.name,rows);
         if(match.key==='performance' && headerIndex>=0 && !grid[headerIndex].some(h=>['绩效分数','绩效系数'].includes(PayrollEngine.canonicalHeader(h))) && !grid[headerIndex].some(h=>/^(?:金额|数值|值|系数|分数)$/.test(canonicalKey(h)))) {skipped.push(sheetName);continue;}
         if(!expense) rows=normalizeSourceFields(rows,match.key,file.name,sheetName);
         let cursor=headerIndex+1;
@@ -866,6 +870,7 @@
       fund: {names:['公积金'], fields:['个人缴纳','个人公积金','公司缴纳']},
       grossUpload: {names:['应发'],fields:['应发工资','应发','应发金额','应发合计','本月应发']},
       afterTax: {names:['税后代扣'],fields:['水电代扣','餐费代扣','其它代扣']},
+      netBenefits: {names:[],fields:[]},
       netSocial: {names:[],fields:[]},
       netFund: {names:[],fields:[]},
       tax: {names:['税'], fields:['税','个税','个人所得税','税额']}
@@ -899,7 +904,41 @@
       const value=canonicalKey(text),label=canonicalKey(alias);
       return label==='税'?value==='税'||/^(?:本月|当月)?税(?:额|表|金额|\(元\))?$/.test(value):value.includes(label);
     }
+    function benefitSheetKey(name) {
+      const text=canonicalKey(name),social=text.includes('社保个人明细'),fund=text.includes('公积金个人明细');
+      if(social&&fund)throw new Error(`${name}：子表名称同时包含社保和公积金，无法确定类型`);
+      return social?'netSocial':fund?'netFund':'';
+    }
+    function benefitStatus() {
+      const entries=['netSocial','netFund'].map(k=>state.sourceStatus[k]).filter(s=>s?.uploaded);
+      const filenames=[...new Set(entries.flatMap(s=>s.filenames||[s.filename]).filter(Boolean))];
+      return {uploaded:entries.length>0,complete:entries.length===2,filename:filenames.join('、'),filenames,files:filenames.length,rows:entries.reduce((n,s)=>n+(s.rows||0),0),previews:Object.assign({},...entries.map(s=>s.previews||{})),demo:entries.length>0&&entries.every(s=>s.demo)};
+    }
+    function displayStageSheets(){return stageSheets().filter(s=>!s.hidden);}
     function normalizeSourceFields(rows,key,filename,sheetName) {
+      if(key==='netBenefits')return rows.map(row=>{
+        const sheet=row._importSource?.sheetName||sheetName,kind=benefitSheetKey(sheet);
+        if(!kind)throw new Error('需要名称包含社保个人明细或公积金个人明细的子表');
+        return {...normalizeSourceFields([row],kind,filename,sheet)[0],_benefitType:kind};
+      });
+      if(['netSocial','netFund'].includes(key)&&benefitSheetKey(sheetName)) {
+        if(benefitSheetKey(sheetName)!==key)throw new Error(`${sheetName}：社保公积金类型不匹配`);
+        const headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
+        const columns=['个人缴纳','个人补缴'].map(label=>{
+          const candidates=headers.filter(h=>canonicalKey(h).includes(label));
+          if(candidates.length!==1)throw new Error(`${sheetName}：需要唯一的“${label}”表头`);
+          return candidates[0];
+        });
+        return rows.map(row=>{
+          const values=columns.map(column=>{
+            if(PayrollEngine.blank(row[column]))return 0;
+            const value=PayrollEngine.numeric(row[column]);
+            if(!Number.isFinite(value))throw new Error(`${sheetName}：${row.姓名||''}的${column}金额无效`);
+            return value;
+          });
+          return {...row,[key==='netSocial'?'个人社保':'个人公积金']:PayrollEngine.round(values[0]+values[1]),_benefitSource:{filename,sheetName,columns}};
+        });
+      }
       const groups=(sourceFieldGroups[key]||[]).map(group=>[...new Set([...group,...(PayrollEngine.fields.find(([label])=>label===group[0])?.[3]||[])])]),headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
       const mappings=[];
       const groupMatches=(text,group)=>{if(key==='grossUpload' && /应发薪|天数/.test(text))return false;if(key==='attendance' && /天数$/.test(group[0]) && /补贴|津贴|工资|金额|扣款|小时|分钟/.test(text))return false;const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
@@ -965,6 +1004,11 @@
       return {key:'',reason:candidates.length?'识别存在歧义，请指定模块':'未识别到模块，请手动指定'};
     }
     function commitSource(key, item, deferUpdate=false) {
+      if(key==='netBenefits'){
+        const rows=normalizeSourceFields(item.rows,key,item.filename,item.rows.sheetName||'');
+        for(const kind of ['netSocial','netFund']){const selected=rows.filter(row=>row._benefitType===kind);if(selected.length)commitSource(kind,{...item,rows:selected},true);}
+        if(!deferUpdate){recalculateEmployees();saveBatchData();}return;
+      }
       if (['social','fund'].includes(key) || (state.payrollStage==='gross' && ['netSocial','netFund'].includes(key))) throw new Error('社保、公积金请在实发阶段上传');
       if (!state.liveImport) {
         sourceRows={};
@@ -983,14 +1027,16 @@
       const filenames=[...new Set(sourceRows[key].map(row=>row._importSource?.filename || row._deductionSource?.filename || row._rosterSource?.filename || previousFilename).filter(Boolean))];
       const previews=item.replace?{}:{...(state.sourceStatus[key]?.previews || {})};
       for(const preview of item.previews || (item.preview?[item.preview]:[]))previews[preview.filename]=preview;
-      state.sourceStatus[key]={uploaded:true,filename:filenames.join('、'),filenames,files:filenames.length,rows:sourceRows[key].length,parsed:true,previews};
+      state.sourceStatus[key]={uploaded:sourceRows[key].length>0,filename:filenames.join('、'),filenames,files:filenames.length,rows:sourceRows[key].length,parsed:true,previews};
+      state.sourceStatus.netBenefits=benefitStatus();
       if(!deferUpdate){recalculateEmployees();saveBatchData();}
       Object.assign(currentBatch(),{employees:employees.length,sources:Object.keys(sourceRows).length,status:'待计算'});
       state.calculated=false;
     }
     function removeSource(key) {
-      if(importSession().busy || !stageSheets().some(sheet=>sheet.key===key) || !state.sourceStatus[key]?.uploaded || state.sourceStatus[key]?.demo)return false;
+      if(importSession().busy || !stageSheets().some(sheet=>sheet.key===key) || !(key==='netBenefits'?benefitStatus():state.sourceStatus[key])?.uploaded || (key==='netBenefits'?benefitStatus():state.sourceStatus[key])?.demo)return false;
       const name=sourceSheets.find(sheet=>sheet.key===key)?.name || '表格';
+      if(key==='netBenefits'){for(const k of ['netSocial','netFund']){delete sourceRows[k];delete state.sourceStatus[k];}}
       delete sourceRows[key];delete state.sourceStatus[key];
       if(key==='roster')pruneInternDailyRates([]);
       state.calculated=false;
@@ -1028,6 +1074,13 @@
         }
         // Never apply an asynchronous import to a different payroll batch.
         if (currentBatch()!==batch || state.payrollStage!==stage) {session.summary='已取消：解析期间切换了工资批次，请重新选择文件';return;}
+        if(replacing && explicitKey==='netBenefits') {
+          const failures=parsed.filter(item=>item.error||!['netSocial','netFund'].includes(item.key)||!item.rows?.length);
+          if(failures.length||!parsed.length){session.items.push(...failures.map(item=>({...item,error:`替换未执行，原有资料已保留：${item.error||item.reason||'没有个人明细'}`})));session.summary='替换失败，原有资料已保留';return;}
+          for(const key of ['netSocial','netFund']){delete sourceRows[key];delete state.sourceStatus[key];}
+          for(const item of parsed)commitSource(item.key,item,true);
+          recalculateEmployees();saveBatchData();session.summary='已替换社保公积金资料';return;
+        }
         if(replacing) {
           const failures=parsed.filter(item=>item.error || item.key!==explicitKey || !item.rows?.length);
           if(failures.length || !parsed.length) {
@@ -1037,6 +1090,9 @@
           const unique=[...new Map(parsed.map(item=>[item.filename,item])).values()];
           commitSource(explicitKey,{filename:unique.map(item=>item.filename).join('、'),rows:unique.flatMap(item=>item.rows),previews:unique.map(item=>item.preview),replace:true});
           session.summary=`已替换${sourceSheets.find(sheet=>sheet.key===explicitKey).name}：${unique.length} 个文件，${sourceRows[explicitKey].length} 行`;return;
+        }
+        if(explicitKey==='netBenefits')for(const filename of new Set(parsed.filter(item=>!item.error&&['netSocial','netFund'].includes(item.key)).map(item=>item.filename))){
+          for(const kind of ['netSocial','netFund'])if(!parsed.some(item=>item.filename===filename&&item.key===kind)&&(sourceRows[kind]||[]).some(row=>row._importSource?.filename===filename))commitSource(kind,{filename,rows:[]},true);
         }
         let imported=0;
         for (const item of parsed) {
@@ -1347,7 +1403,7 @@
     function renderOverview() { return renderUpload(); }
     function renderUpload() {
       const net=state.payrollStage==='net', ready=stageReady(), busy=importSession().busy;
-      const sheets=stageSheets();
+      const sheets=displayStageSheets();
       const received=sourceSheets.filter(sheet=>deductionKeys.includes(sheet.key)&&state.sourceStatus[sheet.key]?.uploaded);
       const missing=missingSourceSheets().filter(sheet=>!netSourceKeys.includes(sheet.key));
       const title=net?'第二步 · 补充扣款，计算实发':'第一步 · 计算应发工资';
@@ -1374,7 +1430,7 @@
     }
     function renderMapping() {
       const names=stageSheets().map(sheet=>sheet.name);
-      const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保表','个人总计 / 个人社保'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','公积金表','个人缴纳 / 个人公积金'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣');
+      const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保公积金 · 社保个人明细','个人缴纳＋个人补缴'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','社保公积金 · 公积金个人明细','个人缴纳＋个人补缴'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣');
       return `${renderUpload()}${state.payrollStage==='gross'?renderInternRates():''}<details class="card section-body" style="margin-top:20px"><summary>查看字段映射</summary><div class="table-wrap"><table class="map-table"><thead><tr><th>目标字段</th><th>来源表</th><th>源字段</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('')}${state.payrollStage==='gross'?'<tr><td>是否实习</td><td>花名册</td><td>是否实习生 / 是否实习 / 实习标识 / 员工类型</td></tr>':''}${state.payrollStage==='net'?'<tr><td>个税</td><td>个税</td><td>税 / 个税 / 个人所得税 / 税额</td></tr>':''}</tbody></table></div></details>`;
     }
     function renderResults() { return state.payrollStage==='net'?renderNetResults():renderGrossResults(); }
@@ -1704,6 +1760,10 @@
         }
       }
       if(!grossOnly) {
+        if(!e.isIntern)for(const [source,field] of [['netSocial','social'],['netFund','fund']]){
+          const row=exportRowsForName(sourceRows[source]||[],e.name)[0];
+          if(row?._benefitSource){const values=row._benefitSource.columns.map(column=>num(row[column]));set(field,`SUM(${values.map(literal).join(',')})`,values.reduce((n,v)=>n+v,0));}
+        }
         if(e.isIntern) for(const field of ['social','fund','tax','utility','mealDeduct','otherDeduct'])set(field,'0',0);
         else for(const [field,aliases] of [['utility',['水电代扣','水电费代扣','水电费合计']],['mealDeduct',['餐费代扣','餐费合计']],['otherDeduct',['其它代扣','其他代扣']]])aggregate('afterTax',field,aliases);
         const deductions=sum(['otherDeduct','utility','mealDeduct']);
@@ -1804,14 +1864,14 @@
     recalculateEmployees();
     // Mount the workbench after the original payroll module is ready.
   </script>
-  <script src="./source-preview.js?v=20261009-calendar-cache-v3"></script>
+  <script src="./source-preview.js?v=20261010-personal-benefits-v1"></script>
   <script src="./workbench-storage.js?v=20261010-responsive-v2"></script>
   <script src="./workbench-core.js?v=20261010-responsive-v2"></script>
-  <script src="./workbench-export.js?v=20261010-other-add-header-v1"></script>
-  <script src="./workbench-pages.js?v=20261010-responsive-v2"></script>
+  <script src="./workbench-export.js?v=20261010-personal-benefits-v1"></script>
+  <script src="./workbench-pages.js?v=20261010-personal-benefits-v1"></script>
   <script src="./personnel-directory.js?v=20261009-calendar-cache-v3"></script>
   <script src="./workbench-ui.js?v=20261010-responsive-v2"></script>
-  <script src="./workbench-import.js?v=20261010-other-add-header-v1"></script>
+  <script src="./workbench-import.js?v=20261010-personal-benefits-v1"></script>
   <script src="./workbench-compute.js?v=20261010-server-compute-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>

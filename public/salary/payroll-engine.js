@@ -497,8 +497,8 @@ globalThis.PayrollEngine = (() => {
       const get=(key,aliases,label)=>amount(sources[key],name,aliases,label,issues);
       e.companySocial=get('netSocial',['公司总计','公司缴纳社保','公司总计（社保）'],'公司缴纳社保');
       e.companyFund=get('netFund',['公司缴纳','公司缴纳公积金','公司缴纳（公积金）'],'公司缴纳公积金');
-      e.social=e.isIntern?0:get('netSocial',['个人总计','个人社保'],'个人社保');
-      e.fund=e.isIntern?0:get('netFund',['个人缴纳','个人公积金'],'个人公积金');
+      e.social=e.isIntern?0:get('netSocial',['个人社保','个人总计'],'个人社保');
+      e.fund=e.isIntern?0:get('netFund',['个人公积金','个人缴纳'],'个人公积金');
       // 实习生不承担个人社保、公积金；个税和税后代扣仍按上传资料扣除。
       e.tax=get('tax',['税','个税','个人所得税','税额'],'个税');
       e.utility=deductionAmount(sources.afterTax,name,['水电代扣','水电费代扣','水电费合计'],'水电代扣',issues);

@@ -1,6 +1,6 @@
 /* Export the immutable, already calculated snapshot. Never recalculate payroll here. */
 globalThis.window=globalThis;
-importScripts('./xlsx.full.min.js','./payroll-engine.js?v=20261010-other-add-header-v1','./payroll-email-engine.js','./calculation-model.js?v=20261010-other-add-header-v1','./workbench-core.js');
+importScripts('./xlsx.full.min.js','./payroll-engine.js?v=20261010-personal-benefits-v1','./payroll-email-engine.js','./calculation-model.js?v=20261010-personal-benefits-v1','./workbench-core.js');
 self.onmessage=({data:request})=>{
   try {
     const s=request.snapshot;

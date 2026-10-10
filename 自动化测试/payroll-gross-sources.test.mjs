@@ -54,8 +54,8 @@ test('net still deducts contributions exactly once with matching export formulas
   const run=app();
   run(`sourceRows.netSocial=[{姓名:'测试员工',个人总计:500,公司总计:1000}];sourceRows.netFund=[{姓名:'测试员工',个人缴纳:300,公司缴纳:300}];sourceRows.tax=[{姓名:'测试员工',税:200}];sourceRows.afterTax=[{姓名:'测试员工',其它代扣:100}];state.payrollStage='net';recalculateEmployees();`);
   assert.equal(run('employees[0].net'),8900);assert.equal(run('employees[0].companyCost'),11300);
-  assert.match(run('PayrollWorkbenchPages.upload()'),/data-source-input="netSocial"/);
-  assert.match(run('PayrollWorkbenchPages.upload()'),/data-source-input="netFund"/);
+  assert.match(run('PayrollWorkbenchPages.upload()'),/data-source-input="netBenefits"/);
+  assert.doesNotMatch(run('PayrollWorkbenchPages.upload()'),/data-source-input="netSocial"|data-source-input="netFund"/);
   assert.equal(run('detailSheet(false)[excelColumn(exportHeaders(false).indexOf("实发工资"))+"3"].v'),8900);
   assert.match(run('detailSheet(false)[excelColumn(exportHeaders(false).indexOf("实发工资"))+"3"].f'),/ROUND/);
   run('state.payrollStage="gross";recalculateEmployees()');
