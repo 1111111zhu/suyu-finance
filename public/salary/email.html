@@ -1,0 +1,10 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>工资邮件生成</title>
+<style>body{font:14px/1.7 Arial,"Microsoft YaHei",sans-serif;background:#f5f6f8;color:#222;margin:0}main{max-width:1000px;margin:32px auto;padding:24px;background:white;border-radius:12px}h1{font-size:24px}label{display:inline-block;margin:8px 16px 8px 0}input,select,button,textarea{font:inherit;padding:8px;border:1px solid #ccd0d7;border-radius:6px}button{cursor:pointer}textarea{width:100%;box-sizing:border-box;min-height:100px}#preview{padding:20px;border:1px solid #ddd;margin:16px 0;overflow:auto}#status{color:#8a5300}section{margin:16px 0}details{margin:16px 0}</style>
+<main><h1>工资邮件生成</h1><p>直接上传实发工资表，核对正文后复制到邮箱。文件在浏览器内读取。</p>
+<label>月份 <input id="month" type="month"></label><label>公司 <input id="company" value="溯驭技术"></label><label>称呼 <input id="name" value="董博"></label>
+<p><input id="file" type="file" accept=".xlsx,.xls,.csv"><label>工作表 <select id="sheet"></select></label></p><p id="status">请上传实发工资表。</p>
+<div id="sections"></div><label>合计发薪成本 <input id="total" type="number" step="0.01"></label><label>平均人员成本 <input id="average" type="number" step="0.01"></label>
+<details><summary>部门成本（部门、总成本、平均成本，以制表符分列）</summary><textarea id="departments"></textarea></details>
+<label style="display:block">补充说明<textarea id="manual"></textarea></label><button id="generate">重新生成正文</button> <button id="copy">复制正文（保留表格）</button>
+<div id="preview"></div><details><summary>编辑最终正文</summary><textarea id="body" style="min-height:450px"></textarea></details><p><a href="./index.html">返回工资测算系统</a></p></main>
+<script src="./xlsx.full.min.js"></script><script src="./payroll-engine.js"></script><script src="./payroll-email-engine.js?v=20261009-email-template-v2"></script><script src="./email-page.js?v=20261009-email-v3"></script></html>

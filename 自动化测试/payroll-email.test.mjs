@@ -58,3 +58,23 @@ test('editable sections and recipient survive body rendering without inventing e
   assert.match(body,/本月实习生劳务核算情况/);
   assert.match(body,/2325元/);
 });
+
+test('template attendance groups have matching headers and HTML keeps shared column alignment',()=>{
+  const engine=context.PayrollEmailEngine;
+  const draft=engine.defaultDraft();
+  draft.sections.attendanceDeduct='王竞宇\t1.00\t965.52\t事假';
+  draft.sections.attendanceNoDeduct='毕文龙\t年假\t0.56\n赵锦涛\t调休假\t0.69\n倪亚洲\t弹性假\t3.00';
+  draft.sections.overtime='张云锋\t71\t2414';
+  const body=engine.render(draft,{month:'2026-07'});
+  assert.match(body,/姓名\t假勤扣薪天数\t假勤扣款\t假期类型\n王竞宇/);
+  assert.match(body,/姓名\t年假\n毕文龙\t0.56\n姓名\t调休假\n赵锦涛\t0.69\n姓名\t弹性假\n倪亚洲\t3.00/);
+  assert.match(body,/姓名\t调休假系统余额\t加班费\n张云锋/);
+  assert.match(body,/赵锦涛\t0.69/);
+  const extracted=engine.extract([{姓名:'甲',调休假天数:1,年假天数:2,公司总成本:100}]);
+  assert.match(extracted.sections.attendanceNoDeduct,/调休假/);
+  const html=engine.renderHtml(body);
+  assert.equal((html.match(/<table /g)||[]).length,3);
+  assert.match(html,/<th style="text-align:left/);
+  assert.match(html,/<td style="text-align:left/);
+  assert.doesNotMatch(engine.renderHtml('<img src=x onerror=alert(1)>'),/<img/);
+});
