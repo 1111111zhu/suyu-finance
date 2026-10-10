@@ -118,6 +118,7 @@ jobs:
           done
           [[ "$SERVER_PORT" =~ ^[0-9]+$ ]] || { echo "SERVER_PORT must be numeric" >&2; exit 1; }
           (( SERVER_PORT >= 1 && SERVER_PORT <= 65535 )) || { echo "SERVER_PORT is out of range" >&2; exit 1; }
+          [[ "$SERVER_HOST" == 123.207.188.183 ]] || { echo "Production secrets point to another host; no files uploaded." >&2; exit 1; }
           [[ "$SERVER_HOST" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo "SERVER_HOST contains unsupported characters" >&2; exit 1; }
           [[ "$SERVER_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || { echo "SERVER_USER contains unsupported characters" >&2; exit 1; }
           [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "DEPLOY_PATH must be an absolute safe path" >&2; exit 1; }
@@ -168,6 +169,5 @@ jobs:
             'bash -s' -- "$DEPLOY_PATH" "$GITHUB_SHA" < 运维脚本/deploy-node-release.sh
 
       - name: Verify public website
-        if: env.SITE_URL != ''
         shell: bash
-        run: curl --retry 8 --retry-all-errors --retry-delay 3 --fail --silent --show-error "${SITE_URL%/}/" >/dev/null
+        run: curl --retry 8 --retry-all-errors --retry-delay 3 --fail --silent --show-error "https://finance.seeextech.com/" >/dev/null
