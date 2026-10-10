@@ -186,7 +186,7 @@ globalThis.PayrollWorkbench = (() => {
     const record=records[0]||null,source=record?._importSource||record?._rosterSource;
     return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:[...new Set(records.map(r=>r._importSource?.filename||r._rosterSource?.filename||state.sourceStatus[sourceKey]?.filename||''))].join('、'),row:source?.rowNumber??(record?rows.indexOf(record)+(rows.sourceStartRow||2):null),sheet:[...new Set(records.map(r=>r._importSource?.sheetName||r._rosterSource?.sheetName||rows.sheetName||''))].join('、'),record:records.length>1&&sourceKey==='other'?{合计金额:e[field],来源明细:records}:record};
   }
-  commitSource=(k,item)=>{
+  commitSource=(k,item,deferUpdate=false)=>{
     if(state.calculating)throw new Error('工资正在计算，请等待或取消后再上传');
     if(!state.liveImport) {
       currentBatch().workbench=null;rawProfiles.clear();
@@ -197,7 +197,7 @@ globalThis.PayrollWorkbench = (() => {
     }
     else if(data().history.length) data().sourceChanged=true;
     currentBatch().draftOrigin='user-import';
-    preview=null;return original.commit(k,item);
+    preview=null;return original.commit(k,item,deferUpdate);
   };
   // Existing exports retain their sheet layout and receive an explicit adjustment term in formulas.
   detailSheet=(grossOnly=false)=>{
@@ -269,25 +269,63 @@ globalThis.PayrollWorkbench = (() => {
     original.recalc();saveBatchData();
   };
   function openDB(){return new Promise((resolve,reject)=>{if(!globalThis.indexedDB){reject(new Error('本地存储不可用'));return;}const req=indexedDB.open('payroll-workbench-local',1);req.onupgradeneeded=()=>req.result.createObjectStore('workspace');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
-  let persistVersion=0, persistScheduled=false;
-  function schedulePersist() {
+  let persistVersion=0, persistScheduled=false, persistTimer=null, startPersist=null;
+  const localIds=new WeakMap(), dirtyBatches=new Map(), storedIds=new Set();
+  let localSequence=0,pendingTrash,clearTrash=false;
+  function localId(batch) {
+    if(!localIds.has(batch))localIds.set(batch,globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${++localSequence}`);
+    return localIds.get(batch);
+  }
+  function schedulePersist(batch=currentBatch()) {
     persistVersion++;
+    dirtyBatches.set(batch,persistVersion);
+    for(const item of state.batches)if(!storedIds.has(localId(item)))dirtyBatches.set(item,persistVersion);
     if(persistScheduled)return;
     persistScheduled=true;
-    queue=queue.then(async()=>{
+    const ready=new Promise(resolve=>{startPersist=resolve;});
+    if(globalThis.PayrollLocalStore)persistTimer=setTimeout(()=>startPersist?.(),160);else startPersist();
+    queue=queue.catch(()=>{}).then(async()=>{
+      await ready;clearTimeout(persistTimer);startPersist=null;
       try {
         let saved;
-        do {saved=persistVersion;await persist();} while(saved!==persistVersion);
+        do {saved=persistVersion;await persist();if(storageError)break;} while(saved!==persistVersion);
       } finally {persistScheduled=false;}
     });
   }
-  async function persist(){try{const db=await openDB();await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(state.batches,'batches');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();storageError='';}catch(e){storageError=e.message||'无法保存到本机';}}
-  saveBatchData=()=>{original.save();
+  async function flush() {
+    if(!persistScheduled && dirtyBatches.size)schedulePersist();
+    clearTimeout(persistTimer);startPersist?.();
+    await queue;return storageError;
+  }
+  async function persist() {
+    const changes=[...dirtyBatches].filter(([batch])=>state.batches.includes(batch));
+    const capturedTrash=pendingTrash,capturedClear=clearTrash,order=state.batches.map(localId),activeId=localId(currentBatch());
+    try {
+      if(globalThis.PayrollLocalStore) {
+        await PayrollLocalStore.save({batches:changes.map(([batch])=>({id:localId(batch),batch})),
+          order,activeId,
+          ...(capturedTrash?{trash:capturedTrash}:{}),clearTrash:capturedClear});
+      } else {
+        const db=await openDB();
+        try {await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(state.batches,'batches');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});} finally {db.close();}
+      }
+      for(const [batch,version] of changes)if(dirtyBatches.get(batch)===version)dirtyBatches.delete(batch);
+      for(const batch of [...dirtyBatches.keys()])if(!state.batches.includes(batch))dirtyBatches.delete(batch);
+      storedIds.clear();for(const id of order)storedIds.add(id);
+      if(pendingTrash===capturedTrash)pendingTrash=undefined;if(capturedClear)clearTrash=false;
+      storageError='';
+    } catch(error) {storageError=error.message||'无法保存到本机';}
+  }
+  const personnelSaveCache=new WeakMap();
+  saveBatchData=({editorOnly=false}={})=>{original.save();
     const b=currentBatch(), real=state.liveImport && b.draftOrigin!=='demo' && !Object.values(state.sourceStatus).some(st=>st?.demo);
     if(real){
       const ready=b.status==='已计算' || b.status==='已归档';
       const netReady=ready && state.payrollStage==='net';
       const rows=netReady?employees:generatedEmployees;
+      const signature=[rows,ready,netReady,Boolean(state.sourceStatus.netSocial?.uploaded),Boolean(state.sourceStatus.netFund?.uploaded)];
+      const cached=personnelSaveCache.get(b);
+      if(!editorOnly || !cached || signature.some((value,index)=>value!==cached[index])) {
       const people=rows.map(e=>{
         const valid=ready && !e.payrollBlocked && !e.regularizationBlocked && !e.payrollSourceBlocked && !String(e.exception||'').split('；').filter(x=>x && !x.includes('转正日期不在当前计薪月份')).length;
         const netValid=valid && netReady && !(e.deductionIssues||[]).length;
@@ -298,11 +336,17 @@ globalThis.PayrollWorkbench = (() => {
       // Preserve the timestamp so an unchanged snapshot remains identical for sync and retry.
       if(!b.personnelAnalysis || JSON.stringify(b.personnelAnalysis.people)!==JSON.stringify(people))
         b.personnelAnalysis={updatedAt:new Date().toISOString(),people};
+      personnelSaveCache.set(b,signature);
+      }
     }
 if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=structuredClone(profiles);if(!hydrating)schedulePersist();notify();};
   async function restore(){
     hydrating=true;
-    try{const db=await openDB();const saved=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('batches');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});db.close();
+    try{let saved;
+      if(globalThis.PayrollLocalStore) {
+        const loaded=await PayrollLocalStore.load();saved=loaded.batches;
+        loaded.batches.forEach((batch,index)=>{localIds.set(batch,loaded.ids[index]);storedIds.add(loaded.ids[index]);});
+      } else {const db=await openDB();try {saved=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('batches');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}finally{db.close();}}
       if(!Array.isArray(saved)||!saved.length)return false;
       state.batches=saved;const b=currentBatch();currentMonth=b.month;currentWorkdays=b.workdays||22;
       sourceRows=structuredClone(b.data?.sourceRows||{});state.sourceStatus=structuredClone(b.data?.sourceStatus||{});
@@ -382,32 +426,50 @@ if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=s
     state.selectedId=employees[0]?.id||'';b.employees=employees.length;data();
     saveBatchData();return b;
   }
-  async function deleteBatch(batch){
+  async function deleteBatchData(batch){
     if(!state.batches.includes(batch))throw new Error('批次已不存在');
-    saveBatchData();await queue;
+    saveBatchData();if(await flush())throw new Error(storageError);
+    if(globalThis.PayrollLocalStore) {pendingTrash=batch;}
+    else {
     const db=await openDB();
     await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(structuredClone(batch),'deletedBatch');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();
+    }
     if(batch===currentBatch()) {
       const next=state.batches.find(b=>b!==batch)||{name:monthLabel(currentMonth)+'工资批次',month:currentMonth,workdays:currentWorkdays,status:'待上传',employees:0,sources:0,date:new Date().toISOString().slice(0,10),draftOrigin:'empty',data:{internDailyRates:{}}};
       if(!state.batches.includes(next))state.batches.push(next);
       setCurrentBatch(next);
     }
-    state.batches.splice(state.batches.indexOf(batch),1);saveBatchData();await queue;
+    state.batches.splice(state.batches.indexOf(batch),1);saveBatchData();await flush();
     if(storageError)throw new Error(storageError);
   }
-  async function restoreDeletedBatch(){
-    const db=await openDB();const batch=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('deletedBatch');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
-    if(!batch){db.close();showToast('没有可恢复的删除记录');return false;}
-    batch.active=false;state.batches.push(batch);saveBatchData();await queue;
-    if(storageError){db.close();throw new Error(storageError);}
-    await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').delete('deletedBatch');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();return true;
+  async function restoreDeletedBatchData(){
+    if(await flush())throw new Error(storageError);
+    let batch,db;
+    if(clearTrash){if(await flush())throw new Error(storageError);return true;}
+    if(globalThis.PayrollLocalStore)batch=await PayrollLocalStore.readTrash();
+    else {db=await openDB();batch=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('deletedBatch');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+    if(!batch){db?.close();showToast('没有可恢复的删除记录');return false;}
+    batch.active=false;state.batches.push(batch);
+    if(globalThis.PayrollLocalStore)clearTrash=true;
+    saveBatchData();await flush();
+    if(storageError){db?.close();throw new Error(storageError);}
+    if(db){await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').delete('deletedBatch');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();}
+    return true;
   }
+  let historyOperation=false;
+  async function withHistoryOperation(action) {
+    if(historyOperation)throw new Error('批次正在保存，请稍候再操作');
+    historyOperation=true;
+    try{return await action();}finally{historyOperation=false;}
+  }
+  const deleteBatch=batch=>withHistoryOperation(()=>deleteBatchData(batch));
+  const restoreDeletedBatch=()=>withHistoryOperation(restoreDeletedBatchData);
   function persistCloudMetadata(batch) {
     if(!state.batches.includes(batch))throw new Error('本机批次已不存在');
-    if(batch===currentBatch())saveBatchData();else {schedulePersist();notify();}
+    if(batch===currentBatch())saveBatchData();else {schedulePersist(batch);notify();}
   }
   return {fields,key,scope,data,selected,overrides,history,value,source,ambiguous,previewChange,clearPreview,saveChange,undo,resetField,markReviewed,isReviewed,restore,orphaned,rebind,
     deleteBatch,restoreDeletedBatch,packCurrent,validateSnapshot,restoreCloud,persistCloudMetadata,currentBatch,
     subscribe:listener=>{listeners.add(listener);return ()=>listeners.delete(listener);},notifyState:notify,
-    flush:async()=>{await queue;return storageError;}, get storageError(){return storageError;}, rawProfiles};
+    flush, get storageError(){return storageError;}, rawProfiles};
 })();

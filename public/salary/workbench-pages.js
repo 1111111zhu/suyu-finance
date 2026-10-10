@@ -19,9 +19,25 @@ globalThis.PayrollWorkbenchPages = (() => {
     const monthOptions=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')).map(m=>`<option value="${m}" ${m===defaultMonth?'selected':''}>${Number(m)}月</option>`).join('');
     return `<details class="wb-parambar"><summary><span>计薪参数</span><strong>${defaultYear}年${Number(defaultMonth)}月 · ${integer(currentWorkdays)} 天</strong><em>调整</em></summary><form id="payrollSettings" class="wb-parambar-panel" aria-label="调整计薪参数"><label><span>年份</span><select class="select" id="payrollYear" aria-label="计薪年份" required>${yearOptions}</select></label><label><span>月份</span><select class="select" id="payrollMonth" aria-label="计薪月份" required>${monthOptions}</select></label><label class="wb-days-field"><span>天数</span><input class="input" id="payrollDays" aria-label="计薪天数" type="number" min="0.01" max="31" step="any" value="${currentWorkdays}" placeholder="" required><em>天</em></label><button class="btn btn-primary" type="submit">应用</button></form></details>`;
   }
+  // Imports, deletes and batch restoration replace source arrays. Retain only the
+  // current roster/month result so unrelated upload progress renders do no scans.
+  let rosterIdentityCache=null;
+  function rosterIdentityRejections(){
+    const rows=sourceRows.roster;
+    if(!rows)return [];
+    if(rosterIdentityCache?.rows===rows&&rosterIdentityCache.length===rows.length&&rosterIdentityCache.month===currentMonth)return rosterIdentityCache.rejected;
+    const rejected=[];
+    rows.forEach((row,i)=>{
+      if(!PayrollEngine.rosterRowInMonth(row,currentMonth))return;
+      const issues=PayrollEngine.rosterIdentityIssues(row);
+      if(issues.length)rejected.push({row,i,issues});
+    });
+    rosterIdentityCache={rows,length:rows.length,month:currentMonth,rejected};
+    return rejected;
+  }
   function upload(){
     const net=state.payrollStage==='net',busy=importSession().busy,sheets=stageSheets(),main=sheets.filter(s=>!net||s.key!=='grossUpload').sort((a,b)=>(a.key==='attendance'?-1:b.key==='attendance'?1:0)),done=main.filter(s=>state.sourceStatus[s.key]?.uploaded).length;
-    const rejected=(sourceRows.roster||[]).map((row,i)=>({row,i,issues:PayrollEngine.rosterIdentityIssues(row)})).filter(x=>PayrollEngine.rosterRowInMonth(x.row,currentMonth)&&x.issues.length);
+    const rejected=net?[]:rosterIdentityRejections();
     const identityNotice=!net&&rejected.length?`<section class="wb-panel"><h3>花名册 ${rejected.length} 行未进入算薪名单</h3><p>必须同时有姓名和工号，请修正原表后重新上传。</p>${rejected.map(x=>`<p>${esc(x.row._rosterSource?.sheetName||'花名册')}第 ${x.row._rosterSource?.rowNumber||x.i+2} 行：${esc(x.issues.join('、'))}</p>`).join('')}</section>`:'';
     const need=net?'扣款资料':'工资资料',total=employees.reduce((s,e)=>s+num(e.gross),0);
     return `${identityNotice}<section class="wb-panel wb-upload-top"><input type="file" id="bulk-source-input" accept="${PayrollEngine.spreadsheetAccept}" multiple hidden><div class="wb-drop-area" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><span class="wb-drop-icon">${icon.upload}</span><div><strong>${busy?'正在读取文件…':'拖入 Excel，自动识别资料'}</strong><p>也可以点击选择多个 Excel / CSV 文件 · 单个不超过 20 MB</p></div><span class="wb-drop-choose">选择文件 ↗</span></div></section><div class="wb-upload-layout"><div class="wb-upload-main">${net?`<section class="wb-panel wb-gross-source">${label('应发工资来源',sourceRows.grossUpload?esc(state.sourceStatus.grossUpload?.filename||'上传应发表'):'',`<span class="wb-pill">${sourceRows.grossUpload?'上传文件':'自动衔接'}</span>`)}<div class="wb-source-total"><strong>¥ ${fmt(total)}</strong><span>${employees.length} 位员工</span>${btn('查看应发明细','workflow','data-stage="gross" data-route="results"')}</div><details class="wb-alternative" ${sourceRows.grossUpload?'open':''}><summary>使用已有应发工资表 <span>⌄</span></summary>${sourceRow(sheets.find(s=>s.key==='grossUpload'),true)}${sourceRows.grossUpload?'<button class="wb-link" data-remove-gross>恢复使用第一阶段结果</button>':'<p>未上传使用第一阶段生成结果，上传后以该文件为准。</p>'}</details></section>`:''}
@@ -74,16 +90,51 @@ globalThis.PayrollWorkbenchPages = (() => {
     const panel=document.getElementById('rule-roster');if(panel){panel.outerHTML=rosterMappingPanel();bindRosterMapping();}
   });
   function bindEmail(){
-    const sync=()=>{const d=ensureEmailDraft(),area=document.getElementById('emailPreview');if(document.activeElement!==area)area.value=emailBody(d);document.getElementById('wbMailCost').textContent='¥ '+fmt(d.summary.total);const list=[...d.validation.errors,...d.validation.warnings];document.getElementById('wbMailValidationSummary').textContent=list.length?list.length+' 项核对提示 ⌄':'核对项已满足';document.getElementById('wbMailValidationIssues').innerHTML=list.map(x=>`<p>${esc(x)}</p>`).join('');document.getElementById('wbMailSaveState').textContent='已保存本批次草稿';document.querySelector('[data-email-apply]').hidden=!d.bodyOverride;document.getElementById('wbBodyMode').textContent=d.bodyOverride?'以手动正文为准':'可直接修改';};
-    for(const [attr,fn] of [['field',setEmailField],['section',setEmailSection],['summary',setEmailSummary]])content.querySelectorAll(`[data-email-${attr}]`).forEach(el=>el.addEventListener('input',()=>{const d=ensureEmailDraft(),manual=d.bodyOverride;fn(el.dataset['email'+attr[0].toUpperCase()+attr.slice(1)],el.value);if(manual){d.bodyOverride=manual;saveBatchData();}sync();}));
-    content.querySelector('[data-email-body]')?.addEventListener('input',e=>{const d=ensureEmailDraft();d.bodyOverride=e.target.value;d.validation=PayrollEmailEngine.validate(d);saveBatchData();sync();});
-    content.querySelector('[data-email-manual-summary]')?.addEventListener('input',e=>{const d=ensureEmailDraft();d.manualSummary=e.target.value;saveBatchData();sync();});
-    content.querySelector('[data-email-ack]')?.addEventListener('change',e=>{const d=ensureEmailDraft();d.acknowledgedWarnings=e.target.checked;d.validation=PayrollEmailEngine.validate(d);saveBatchData();sync();});
-    content.querySelector('[data-email-apply]')?.addEventListener('click',()=>{if(!window.confirm('用当前事项与成本更新正文？手动正文将被替换。'))return;const d=ensureEmailDraft();d.bodyOverride='';saveBatchData();sync();});
+    // This form owns an already initialized draft. Payroll changes rerender the
+    // page; typing must not rebuild/export every employee to check fingerprints.
+    const draft=ensureEmailDraft();
+    const setText=(id,value)=>{const el=document.getElementById(id);if(el&&el.textContent!==value)el.textContent=value;};
+    let validationHtml=null;
+    const sync=(d=draft)=>{
+      if(state.emailDraft!==d||state.view!=='email')return;
+      const area=document.getElementById('emailPreview');
+      if(area&&document.activeElement!==area){const body=emailBody(d);if(area.value!==body)area.value=body;}
+      setText('wbMailCost','¥ '+fmt(d.summary.total));
+      const list=[...d.validation.errors,...d.validation.warnings];
+      setText('wbMailValidationSummary',list.length?list.length+' 项核对提示 ⌄':'核对项已满足');
+      const html=list.map(x=>`<p>${esc(x)}</p>`).join('');
+      if(html!==validationHtml){document.getElementById('wbMailValidationIssues').innerHTML=html;validationHtml=html;}
+      setText('wbMailSaveState','已保存本批次草稿');
+      document.querySelector('[data-email-apply]').hidden=!d.bodyOverride;
+      setText('wbBodyMode',d.bodyOverride?'以手动正文为准':'可直接修改');
+    };
+    const changed=()=>{draft.validation=PayrollEmailEngine.validate(draft);saveBatchData({editorOnly:true});sync();};
+    for(const attr of ['field','section','summary'])content.querySelectorAll(`[data-email-${attr}]`).forEach(el=>el.addEventListener('input',()=>{
+      const field=el.dataset['email'+attr[0].toUpperCase()+attr.slice(1)];
+      if(attr==='field')draft[field]=el.value;
+      else if(attr==='section')draft.sections[field]=el.value;
+      else draft.summary[field]=PayrollEmailEngine.number(el.value);
+      // A manually edited body remains authoritative while editing metadata.
+      changed();
+    }));
+    content.querySelector('[data-email-body]')?.addEventListener('input',e=>{draft.bodyOverride=e.target.value;changed();});
+    content.querySelector('[data-email-manual-summary]')?.addEventListener('input',e=>{draft.manualSummary=e.target.value;changed();});
+    content.querySelector('[data-email-ack]')?.addEventListener('change',e=>{draft.acknowledgedWarnings=e.target.checked;changed();});
+    content.querySelector('[data-email-apply]')?.addEventListener('click',()=>{if(!window.confirm('用当前事项与成本更新正文？手动正文将被替换。'))return;draft.bodyOverride='';changed();});
     content.querySelector('[data-email-copy]')?.addEventListener('click',copyEmailBody);
     content.querySelector('[data-email-open]')?.addEventListener('click',openEmailComposer);
-    content.querySelector('[data-email-refresh]')?.addEventListener('click',()=>{const d=ensureEmailDraft();if(d.bodyOverride&&!window.confirm('更新将替换手动编辑的正文，收件人与主题会保留。继续更新？'))return;ensureEmailDraft(true);render('email');showToast('已更新为本批次最新实发结果');});
-    content.querySelector('[data-email-export]')?.addEventListener('click',()=>{if(!payrollExportReady())return;downloadCsv();const d=ensureEmailDraft();d.attachmentReady=true;saveBatchData();document.getElementById('wbAttachmentStatus').textContent='✓ 已导出，请在邮箱中添加';sync();});
+    content.querySelector('[data-email-refresh]')?.addEventListener('click',()=>{if(draft.bodyOverride&&!window.confirm('更新将替换手动编辑的正文，收件人与主题会保留。继续更新？'))return;ensureEmailDraft(true);render('email');showToast('已更新为本批次最新实发结果');});
+    content.querySelector('[data-email-export]')?.addEventListener('click',async()=>{
+      if(!payrollExportReady())return;
+      const batch=currentBatch(),stage=state.payrollStage,month=currentMonth;
+      const exported=await downloadCsv();
+      if(!exported || globalThis.PayrollExport && !PayrollExport.matchesCurrent(exported))return;
+      if(currentBatch()!==batch||currentMonth!==month||state.payrollStage!==stage)return;
+      const d=ensureEmailDraft();
+      if(d.workbenchStale)return;
+      d.attachmentReady=true;saveBatchData();
+      setText('wbAttachmentStatus','✓ 已导出，请在邮箱中添加');sync(d);
+    });
   }
   function bind(){
     const daysForm=content.querySelector('.wb-days-control'), daysInput=daysForm?.querySelector('#payrollDays');

@@ -24,8 +24,14 @@ for item in manifest['files']:
   if p.is_symlink() or not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=expected:
    raise SystemExit('Source differs; no production files changed: '+str(p))
 PY
+python3 - "$backup" <<'PY'
+from pathlib import Path
+import json,sys
+b=Path(sys.argv[1]);m=json.loads((b/'patch/运维配置/payroll-other-add-manifest.json').read_text())
+(b/'existing-files').write_text('\n'.join([f['path'] for f in m['files']]+['app/page.tsx'])+'\n')
+PY
 cd "$root"
-tar -czf "$backup/source.tar.gz" public/salary/index.html public/salary/calculation-model.js public/salary/payroll-engine.js app/page.tsx
+tar -czf "$backup/source.tar.gz" --files-from "$backup/existing-files"
 cp -a dist "$backup/dist"
 rollback() {
  trap - ERR
