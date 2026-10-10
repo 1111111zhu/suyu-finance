@@ -23,7 +23,7 @@ globalThis.PayrollEngine = (() => {
   ];
   const netFields = [
     ['其它代扣','otherDeduct','money',['其他代扣']],['水电代扣','utility','money',['员工宿舍水电费代扣','水电费代扣','水电费合计']],
-    ['餐费代扣','mealDeduct','money',['餐费合计']],['个税','tax','money',['税','个人所得税','税额']],
+    ['餐费代扣','mealDeduct','money',['餐费合计']],['个税','tax','money',['应退（补）税额','税','个人所得税','税额']],
     ['税后代扣合计','afterTaxTotal','money'],['实发工资','net','money'],
     ['公司缴纳社保','companySocial','money',['公司总计','公司总计（社保）']],
     ['公司缴纳公积金','companyFund','money',['公司缴纳','公司缴纳（公积金）']],['公司总成本','companyCost','money'],['备注','remark','text']
@@ -500,7 +500,7 @@ globalThis.PayrollEngine = (() => {
       e.social=e.isIntern?0:get('netSocial',['个人社保','个人总计'],'个人社保');
       e.fund=e.isIntern?0:get('netFund',['个人公积金','个人缴纳'],'个人公积金');
       // 实习生不承担个人社保、公积金；个税和税后代扣仍按上传资料扣除。
-      e.tax=get('tax',['税','个税','个人所得税','税额'],'个税');
+      e.tax=get('tax',['应退（补）税额','税','个税','个人所得税','税额'],'个税');
       e.utility=deductionAmount(sources.afterTax,name,['水电代扣','水电费代扣','水电费合计'],'水电代扣',issues);
       e.mealDeduct=deductionAmount(sources.afterTax,name,['餐费代扣','餐费合计'],'餐费代扣',issues);
       e.otherDeduct=deductionAmount(sources.afterTax,name,['其它代扣','其他代扣'],'其它代扣',issues);

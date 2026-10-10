@@ -117,7 +117,7 @@ const legacyAliases = {
   otherDeduct: ['其他代扣'],
   utility: ['员工宿舍水电费代扣', '水电费代扣', '水电费合计'],
   mealDeduct: ['餐费合计'],
-  tax: ['税', '个人所得税', '税额'],
+  tax: ['应退（补）税额', '税', '个人所得税', '税额'],
   companySocial: ['公司总计', '公司总计（社保）'],
   companyFund: ['公司缴纳', '公司缴纳（公积金）'],
   employeeNumber: ['员工编号', '员工工号'],
