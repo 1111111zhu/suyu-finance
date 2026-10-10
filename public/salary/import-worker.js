@@ -1,6 +1,6 @@
 /* Local parsing in a background thread. */
 globalThis.window=globalThis;
-importScripts('./xlsx.full.min.js','./payroll-engine.js?v=20261010-personal-benefits-v1','./payroll-email-engine.js','./calculation-model.js?v=20261010-personal-benefits-v1');
+importScripts('./xlsx.full.min.js','./payroll-engine.js?v=20261010-tax-refund-v1','./payroll-email-engine.js','./calculation-model.js?v=20261010-tax-refund-v1');
 self.onmessage=async ({data})=>{
   try {
     state.payrollStage=data.stage;

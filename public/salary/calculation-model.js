@@ -19,7 +19,7 @@ const icon = {
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
       {key:'other',name:'其他加 / 减',icon:'其',desc:'按姓名匹配；读取表头含“其他加”的金额列，津贴和减项需标明项目'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
-      {key:'tax',name:'个税表',icon:'税',desc:'姓名、税 / 个税 / 个人所得税 / 税额',stage:'net'},
+      {key:'tax',name:'个税表',icon:'税',desc:'按姓名匹配，读取应退（补）税额',stage:'net'},
       {key:'netBenefits',name:'社保公积金',icon:'保',desc:'按姓名读取社保个人明细、公积金个人明细子表；个人缴纳＋个人补缴',stage:'net'},
       {key:'netSocial',name:'社保个人明细',icon:'保',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
       {key:'netFund',name:'公积金个人明细',icon:'积',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
@@ -454,7 +454,7 @@ const icon = {
       netBenefits: {names:[],fields:[]},
       netSocial: {names:[],fields:[]},
       netFund: {names:[],fields:[]},
-      tax: {names:['税'], fields:['税','个税','个人所得税','税额']}
+      tax: {names:['税'], fields:['应退（补）税额','税','个税','个人所得税','税额']}
     };
     const importSessions = new WeakMap();
     function importSession() {
@@ -478,7 +478,7 @@ const icon = {
       other:[['其他津贴'],['其他加','其他加项'],['其他减','其他减项']],
       netSocial:[['个人总计','个人社保'],['公司总计','公司缴纳社保']],
       netFund:[['个人缴纳','个人公积金'],['公司缴纳','公司缴纳公积金']],
-      grossUpload:[['应发工资','应发','应发金额','应发合计','本月应发']],tax:[['税','个税','个人所得税','税额']],
+      grossUpload:[['应发工资','应发','应发金额','应发合计','本月应发']],tax:[['税','应退（补）税额','个税','个人所得税','税额']],
       afterTax:[['水电代扣','水电费合计'],['餐费代扣','餐费合计'],['其它代扣','其他代扣']]
     };
     function fieldLabelMatches(text,alias) {
@@ -493,10 +493,20 @@ const icon = {
     function benefitStatus() {
       const entries=['netSocial','netFund'].map(k=>state.sourceStatus[k]).filter(s=>s?.uploaded);
       const filenames=[...new Set(entries.flatMap(s=>s.filenames||[s.filename]).filter(Boolean))];
-      return {uploaded:entries.length>0,complete:entries.length===2,filename:filenames.join('、'),filenames,files:filenames.length,rows:entries.reduce((n,s)=>n+(s.rows||0),0),previews:Object.assign({},...entries.map(s=>s.previews||{})),demo:entries.length>0&&entries.every(s=>s.demo)};
+      const missing=['netSocial','netFund'].filter(k=>!state.sourceStatus[k]?.uploaded).map(k=>k==='netSocial'?'社保个人明细':'公积金个人明细');
+      return {uploaded:entries.length>0,complete:missing.length===0,missing,filename:filenames.join('、'),filenames,files:filenames.length,rows:entries.reduce((n,s)=>n+(s.rows||0),0),previews:Object.assign({},...entries.map(s=>s.previews||{})),demo:entries.length>0&&entries.every(s=>s.demo)};
     }
     function displayStageSheets(){return stageSheets().filter(s=>!s.hidden);}
     function normalizeSourceFields(rows,key,filename,sheetName) {
+      if(key==='tax'){
+        const columns=Object.keys(rows[0]||{}).filter(h=>canonicalKey(h).includes('应退(补)税额'));
+        if(columns.length>1)throw new Error(`${sheetName}：应退（补）税额需要唯一的对应列，请核对表头`);
+        if(columns.length)return rows.map(row=>{
+          const value=PayrollEngine.numeric(row[columns[0]]);
+          if(value===null||!Number.isFinite(value))throw new Error(`${sheetName}：${row.姓名||''}的应退（补）税额缺失或无效`);
+          return {...row,税:value,_taxSource:{filename,sheetName,column:columns[0]}};
+        });
+      }
       if(key==='netBenefits')return rows.map(row=>{
         const sheet=row._importSource?.sheetName||sheetName,kind=benefitSheetKey(sheet);
         if(!kind)throw new Error('需要名称包含社保个人明细或公积金个人明细的子表');
@@ -997,7 +1007,7 @@ const icon = {
         <div class="upload-zone" data-bulk-upload role="button" tabindex="0" aria-label="批量选择 Excel 源表" aria-disabled="${busy}"><div>${icon.upload}</div><div class="upload-zone-title">${busy?'正在解析，请稍候…':'点击选择或将多个 Excel 文件拖入此处'}</div><div class="upload-zone-copy">支持多个 Excel / CSV 文件，单个文件 ≤ 20MB · 费用表读取全部工作表，仅在本机浏览器解析</div></div>
         ${renderImportReview()}${renderRosterFieldDiagnostics()}
         ${!net&&received.length?`<p class="section-desc" role="status">已接收扣款表：${received.map(sheet=>sheet.name).join('、')}；已保存到第二步。</p>`:''}
-        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" multiple hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'追加上传':'选择文件'} ${icon.upload}</button>${st.uploaded?`<button class="btn btn-sm" data-upload="${sheet.key}" data-upload-mode="replace" ${busy?'disabled':''}>替换</button><button class="btn btn-sm" data-source-preview="${sheet.key}">预览</button><button type="button" class="btn btn-sm wb-source-delete" data-source-delete="${sheet.key}" title="删除本模块的全部已上传文件" ${busy||st.demo?'disabled':''}>删除</button>`:''}</div>`;}).join('')}</div>
+        <div class="source-grid" style="margin-top:16px">${sheets.map(sheet=>{const st=sheet.key==='netBenefits'?benefitStatus():state.sourceStatus[sheet.key]||{};return `<div class="source-card"><div class="source-head"><div class="source-icon">${sheet.icon}</div><div><div class="source-name">${sheet.name}</div><div class="source-meta">${sheet.desc}</div></div></div><div class="source-status"><span class="source-filename">${escapeHtml(st.filename||'未上传')}${st.rows?' · '+st.rows+' 行':''}</span><span class="badge ${st.uploaded?'green':net?'orange':'blue'}">${sheet.key==='netBenefits'&&!st.complete?'缺少：'+st.missing.join('、'):st.uploaded?'已解析':sheet.key==='grossUpload'?'可选 · 使用生成结果':net?'未上传 · 暂按 0':'待上传'}</span></div><input type="file" accept="${PayrollEngine.spreadsheetAccept}" id="file-${sheet.key}" data-source-input="${sheet.key}" multiple hidden><button class="btn btn-sm" data-upload="${sheet.key}" ${busy?'disabled':''}>${st.uploaded?'追加上传':'选择文件'} ${icon.upload}</button>${st.uploaded?`<button class="btn btn-sm" data-upload="${sheet.key}" data-upload-mode="replace" ${busy?'disabled':''}>替换</button><button class="btn btn-sm" data-source-preview="${sheet.key}">预览</button><button type="button" class="btn btn-sm wb-source-delete" data-source-delete="${sheet.key}" title="删除本模块的全部已上传文件" ${busy||st.demo?'disabled':''}>删除</button>`:''}</div>`;}).join('')}</div>
         ${net?(deductionNotice()?`<div class="alert orange" style="margin-top:16px">${deductionNotice()}</div>`:''):`<p class="section-desc" style="margin-top:16px">${!ready?'请先上传花名册以确定员工范围。':missing.length?missing.map(sheet=>sheet.name).join('、')+'未上传；实际出勤天数需考勤表提供，其余缺失数值按 0 计算。':'应发源表已上传。'}</p>`}
         <div class="upload-bottom"><span class="muted">${net?'税后扣款统一取税后代扣表；异常与比对差异不限制计算或导出。':'个人社保、公积金仅供个税测算参考，不影响应发工资金额。'}</span><button class="btn btn-primary" data-calculate ${!ready||busy?'disabled':''}>${net?'计算／更新实发工资':'计算应发工资'}</button></div></div>`;
     }
@@ -1013,7 +1023,7 @@ const icon = {
     function renderMapping() {
       const names=stageSheets().map(sheet=>sheet.name);
       const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保公积金 · 社保个人明细','个人缴纳＋个人补缴'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','社保公积金 · 公积金个人明细','个人缴纳＋个人补缴'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣');
-      return `${renderUpload()}${state.payrollStage==='gross'?renderInternRates():''}<details class="card section-body" style="margin-top:20px"><summary>查看字段映射</summary><div class="table-wrap"><table class="map-table"><thead><tr><th>目标字段</th><th>来源表</th><th>源字段</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('')}${state.payrollStage==='gross'?'<tr><td>是否实习</td><td>花名册</td><td>是否实习生 / 是否实习 / 实习标识 / 员工类型</td></tr>':''}${state.payrollStage==='net'?'<tr><td>个税</td><td>个税</td><td>税 / 个税 / 个人所得税 / 税额</td></tr>':''}</tbody></table></div></details>`;
+      return `${renderUpload()}${state.payrollStage==='gross'?renderInternRates():''}<details class="card section-body" style="margin-top:20px"><summary>查看字段映射</summary><div class="table-wrap"><table class="map-table"><thead><tr><th>目标字段</th><th>来源表</th><th>源字段</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('')}${state.payrollStage==='gross'?'<tr><td>是否实习</td><td>花名册</td><td>是否实习生 / 是否实习 / 实习标识 / 员工类型</td></tr>':''}${state.payrollStage==='net'?'<tr><td>个税</td><td>个税</td><td>应退（补）税额</td></tr>':''}</tbody></table></div></details>`;
     }
     function renderResults() { return state.payrollStage==='net'?renderNetResults():renderGrossResults(); }
     function renderSlip() { return state.payrollStage==='net'?renderNetSlip():renderGrossResults(); }

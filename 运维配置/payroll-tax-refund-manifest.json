@@ -1,0 +1,46 @@
+{
+  "version": "20261010-tax-refund-v1",
+  "base": "333a69ca4adeac85c50f05e2f7cedfd706de3720",
+  "files": [
+    {
+      "path": "public/salary/calculation-model.js",
+      "before": "0d6d0c64c9f96e38c1b547993caed170dea1e6fa9151136aef527c462ac037f3",
+      "after": "aed85afe34acd175e6e6d3d3c301ebfeb4df8b3e46c6e1b2336ecfbd9f611d19"
+    },
+    {
+      "path": "public/salary/export-worker.js",
+      "before": "e612c5241de5654f3039ab87a4f69af97c6d1badde59b233531adec49d8cd28f",
+      "after": "0eb7cb3c67129f841d366240698b57a750ec8ab97977fa5819eb563e3e906465"
+    },
+    {
+      "path": "public/salary/import-worker.js",
+      "before": "32537a645a4a030514123365fa16d3374e3fa75a08576f44d9a947bafad50911",
+      "after": "62eb5ce4d3f720c65459796a83ff91802b9989832ca11f0d68b2f8f83b515a75"
+    },
+    {
+      "path": "public/salary/index.html",
+      "before": "8fe2e3d6ba167800d0df59e7227b4d24fb30059ae1680a1975bfbcd607e729fd",
+      "after": "3e9f7c76c0192622843043201a2e51f14bc0a2e0103f9e2efd401d09bb18403f"
+    },
+    {
+      "path": "public/salary/payroll-engine.js",
+      "before": "e8495089a63b49703d5d625d4bf7d85ff79238c943d56c27e4e39896e8d0af47",
+      "after": "60ec4261ddd924b937aabd71b9ae1590b7d49c4ac1ae424d309f8fe7b86dd5d0"
+    },
+    {
+      "path": "public/salary/workbench-export.js",
+      "before": "b6b424c238a96ddd7c99f80d06fae3eff3f6da0eef9ba1a7981bedba6f076306",
+      "after": "3f88663b6f5cd30d551bc40a00afe9b0d0b863b68e04c205d2accc58a26333de"
+    },
+    {
+      "path": "public/salary/workbench-import.js",
+      "before": "40b7dbe52214d4ae8602a2d77e91e65b84d2944cf368e9fa60ea0e1a80627db1",
+      "after": "0783ad7fc3979f8cc7492e52639952ed3d10cbf77e5212751c6d7c88c09bac21"
+    },
+    {
+      "path": "public/salary/workbench-pages.js",
+      "before": "a49824b26ffb7cafec71b1f1e3b8619c86746765136dcc6912b3d6529302ba59",
+      "after": "610028b182dd6914c37fd4f59604e171c1001a1aafb2ffa251aab48da50eda8a"
+    }
+  ]
+}
