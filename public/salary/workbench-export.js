@@ -1,6 +1,6 @@
 /* Snapshot immediately; workbook creation and ZIP serialization run off the UI thread. */
 globalThis.PayrollExport=(()=>{
-  const workerURL=new URL('export-worker.js?v=20261010-tax-refund-v1',document.currentScript?.src||new URL('salary/workbench-export.js',location.origin+'/'));
+  const workerURL=new URL('export-worker.js?v=20261010-import-perf-v1',document.currentScript?.src||new URL('salary/workbench-export.js',location.origin+'/'));
   let pending=null,sequence=0;
   function snapshot(clone=true){
     const batch=currentBatch();
