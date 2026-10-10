@@ -49,6 +49,8 @@ rollback() {
  exit 1
 }
 trap rollback ERR
+# Backups remain private; service-readable source and build output use normal modes.
+umask 022
 python3 - "$root" "$backup/patch" <<'PY'
 from pathlib import Path
 import json,re,shutil,sys
@@ -63,6 +65,8 @@ PY
 node --test 自动化测试/payroll-computation.test.mjs 自动化测试/payroll-computation-api.test.mjs
 RD_LOCAL_PREVIEW=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build > "$backup/build.log" 2>&1
 test -s dist/server/index.js
+chown -R --reference="$backup/dist" dist
+umask 077
 systemctl restart suyu-finance
 for attempt in $(seq 1 30); do
  if curl --fail --silent http://127.0.0.1:3220/ >/dev/null && [[ $(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:3220/api/payroll/calculations/00000000-0000-0000-0000-000000000000) == 401 ]]; then
