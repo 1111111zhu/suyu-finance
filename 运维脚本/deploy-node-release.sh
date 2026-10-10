@@ -41,7 +41,8 @@ else
   tar -xzf "$archive" -C "$stage_dir"
   cd "$stage_dir"
   npm ci --no-audit --no-fund
-  NODE_OPTIONS=--max-old-space-size=1536 npm run build
+  RD_LOCAL_PREVIEW=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build
+  test -s dist/server/index.js
   printf '%s\n' "$release_sha" >"${stage_dir}/DEPLOYED_COMMIT"
   mv -- "$stage_dir" "$release_dir"
 fi
