@@ -1,0 +1,61 @@
+name: Payroll benefit fields production patch
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        type: boolean
+        default: false
+        description: Deploy only the verified benefit-fields payroll patch
+permissions:
+  contents: read
+concurrency:
+  group: payroll-server-compute-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --test 自动化测试/payroll-personal-benefits.test.mjs 自动化测试/payroll-computation.test.mjs 自动化测试/payroll-computation-api.test.mjs
+      - run: bash -n 运维脚本/deploy-payroll-benefit-fields.sh
+      - run: RD_LOCAL_PREVIEW=1 npm run build
+  deploy:
+    if: inputs.deploy == true
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure verified production SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$SERVER_HOST" == 123.207.188.183 ]] || { echo 'Production secrets point to another host; no files uploaded.' >&2; exit 1; }
+          [[ "$SERVER_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ && "$SERVER_PORT" =~ ^[0-9]+$ && -n "$SERVER_SSH_KEY" && -n "$SSH_KNOWN_HOSTS" ]] || exit 1
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/finance_deploy
+          chmod 600 ~/.ssh/finance_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Upload and deploy reviewed patch with backup and rollback
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -p "$SERVER_PORT" -i ~/.ssh/finance_deploy -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 "$SERVER_USER@$SERVER_HOST" 'test -d /opt/suyu-finance/current/dist && systemctl is-active --quiet suyu-finance'
+          git archive --format=tar.gz -o "/tmp/suyu-payroll-benefit-fields-${GITHUB_SHA}.tar.gz" "$GITHUB_SHA"
+          scp -P "$SERVER_PORT" -i ~/.ssh/finance_deploy -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 "/tmp/suyu-payroll-benefit-fields-${GITHUB_SHA}.tar.gz" "$SERVER_USER@$SERVER_HOST:/tmp/"
+          ssh -p "$SERVER_PORT" -i ~/.ssh/finance_deploy -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 "$SERVER_USER@$SERVER_HOST" 'sudo -n bash -s' -- "$GITHUB_SHA" < 运维脚本/deploy-payroll-benefit-fields.sh
+      - name: Verify public login protection
+        run: |
+          test "$(curl --max-time 20 --silent -o /dev/null -w '%{http_code}' https://finance.seeextech.com/api/payroll/calculations/00000000-0000-0000-0000-000000000000)" = 401

@@ -377,10 +377,13 @@ globalThis.PayrollEngine = (() => {
     for(const row of matches){const col=Object.keys(row).find(h=>aliases.some(a=>key(h)===key(a)));const v=numeric(row[col]);if(v===null||!Number.isFinite(v)){issues.push(`${label}金额缺失或无效，按 0 计算`);continue;}total+=v;}
     return round(total);
   }
-  function rowsFromGrid(grid) {
+  function rowsFromGrid(grid, selectedHeaders = null) {
     const headerIndex=grid.findIndex(row=>row.some(value=>canonicalHeader(value)==='姓名'));
     if (headerIndex<0) throw new Error('工作表必须包含“姓名”字段');
-    const headers=grid[headerIndex].map(value=>String(value ?? '').trim());
+    const headers=grid[headerIndex].map(value=>{
+      const header=String(value ?? '').trim();
+      return selectedHeaders && !selectedHeaders.some(label=>key(label)===key(header)) ? '' : header;
+    });
     const nonEmpty=headers.filter(Boolean);
     if (new Set(nonEmpty.map(key)).size!==nonEmpty.length) throw new Error('表头存在重复列，请核对后重新上传');
     const rows=[];

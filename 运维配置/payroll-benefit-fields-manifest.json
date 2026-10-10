@@ -1,0 +1,24 @@
+{
+  "files": [
+    {
+      "path": "public/salary/index.html",
+      "before": "fb8a3f7133a9f5ecfa5d07bd01d2e73b9f27776c7251ae83d9409ded712f4900",
+      "after": "a3134da55b4e19a182da29ffe782cfdc4797844293b79a5d744f91813e7f5152"
+    },
+    {
+      "path": "public/salary/payroll-engine.js",
+      "before": "d22903f94e923ac9697c1cb6144accf7d212ce51c26a96947f46bd5df689c3a3",
+      "after": "e14e394b3e264c4d1b359aa3da4d6efe04e98d11be9b7cc81c781a48c054199c"
+    },
+    {
+      "path": "public/salary/calculation-model.js",
+      "before": "a0cc06ad3b7eebda603251c421eae901f362cc86434889355e548493b2d6004d",
+      "after": "ad579c5e119521979e7e0fcf12e69e1304a498f5eb000adcdf1db05b6cd30bac"
+    },
+    {
+      "path": "public/salary/workbench-pages.js",
+      "before": "c06311bfc3ef4dbf40622f2e51f094d7b0b1f297e9e02ecd3c61ec71c972258e",
+      "after": "9614ffab6b4db24c9cdb78010470bf635276b7eb9305709359367f5b3274048b"
+    }
+  ]
+}

@@ -20,8 +20,8 @@ const icon = {
       {key:'other',name:'其他加 / 减',icon:'其',desc:'按姓名匹配；读取表头含“其他加”的金额列，津贴和减项需标明项目'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
       {key:'tax',name:'个税表',icon:'税',desc:'按姓名匹配，读取应补（退）税额',stage:'net'},
-      {key:'netBenefits',name:'社保公积金',icon:'保',desc:'按姓名读取社保个人明细、公积金个人明细子表；个人缴纳＋个人补缴',stage:'net'},
-      {key:'netSocial',name:'社保个人明细',icon:'保',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
+      {key:'netBenefits',name:'社保公积金',icon:'保',desc:'按姓名读取社保个人明细、公积金个人明细子表；社保个人总计，公积金个人缴纳＋个人补缴',stage:'net'},
+      {key:'netSocial',name:'社保个人明细',icon:'保',desc:'个人总计',stage:'net',hidden:true},
       {key:'netFund',name:'公积金个人明细',icon:'积',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
       {key:'afterTax',name:'税后代扣表',icon:'扣',desc:'可上传多张餐费、水电费或其他代扣表；水电费可选',stage:'net'}
     ];
@@ -336,7 +336,10 @@ const icon = {
         const directDeduction=/水电代扣|餐费代扣|其它代扣|其他代扣|税后代扣/.test(file.name+sheetName) || headerIndex>=0 && grid[headerIndex].some(h=>/水电代扣|餐费代扣|其它代扣|其他代扣/.test(String(h)));
         const expense=directDeduction?null:PayrollEngine.deductionRowsFromGrid(grid,file.name,sheetName);
         if(headerIndex<0 && !expense) {if(benefitKey && (explicitKey==='netBenefits'||state.payrollStage==='net'))throw new Error(`${sheetName}：缺少姓名表头`);skipped.push(sheetName);continue;}
-        let rows=expense || PayrollEngine.rowsFromGrid(headerIndex>=0?grid.slice(headerIndex):grid);
+        const benefitHeaders=benefitKey && (explicitKey==='netBenefits'||state.payrollStage==='net')
+          ? benefitKey==='netSocial'?['姓名','个人总计','公司总计','公司缴纳社保']:['姓名','个人缴纳','个人补缴','公司缴纳','公司缴纳公积金']
+          : null;
+        let rows=expense || PayrollEngine.rowsFromGrid(headerIndex>=0?grid.slice(headerIndex):grid,benefitHeaders);
         rows.sheetName=sheetName;rows.sourceStartRow=headerIndex+2;
         if(benefitKey && !rows.length)throw new Error(`${sheetName}：没有可读取的个人明细`);
         const match=explicitKey==='netBenefits'?{key:benefitKey,reason:'社保公积金个人明细子表'}:explicitKey?{key:explicitKey,reason:'指定模块'}:state.payrollStage==='net'&&benefitKey?{key:benefitKey,reason:'个人明细子表名称'}:matchSource(file.name,rows);
@@ -527,8 +530,8 @@ const icon = {
       if(['netSocial','netFund'].includes(key)&&benefitSheetKey(sheetName)) {
         if(benefitSheetKey(sheetName)!==key)throw new Error(`${sheetName}：社保公积金类型不匹配`);
         const headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
-        const columns=['个人缴纳','个人补缴'].map(label=>{
-          const candidates=headers.filter(h=>canonicalKey(h).includes(label));
+        const columns=(key==='netSocial'?['个人总计']:['个人缴纳','个人补缴']).map(label=>{
+          const candidates=headers.filter(h=>canonicalKey(h)===canonicalKey(label));
           if(candidates.length!==1)throw new Error(`${sheetName}：需要唯一的“${label}”表头`);
           return candidates[0];
         });
@@ -539,7 +542,7 @@ const icon = {
             if(!Number.isFinite(value))throw new Error(`${sheetName}：${row.姓名||''}的${column}金额无效`);
             return value;
           });
-          return {...row,[key==='netSocial'?'个人社保':'个人公积金']:PayrollEngine.round(values[0]+values[1]),_benefitSource:{filename,sheetName,columns}};
+          return {...row,[key==='netSocial'?'个人社保':'个人公积金']:PayrollEngine.round(values.reduce((total,value)=>total+value,0)),_benefitSource:{filename,sheetName,columns}};
         });
       }
       const groups=(sourceFieldGroups[key]||[]).map(group=>[...new Set([...group,...(PayrollEngine.fields.find(([label])=>label===group[0])?.[3]||[])])]),headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
@@ -1034,7 +1037,7 @@ const icon = {
     }
     function renderMapping() {
       const names=stageSheets().map(sheet=>sheet.name);
-      const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保公积金 · 社保个人明细','个人缴纳＋个人补缴'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','社保公积金 · 公积金个人明细','个人缴纳＋个人补缴'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣');
+      const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保公积金 · 社保个人明细','个人总计'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','社保公积金 · 公积金个人明细','个人缴纳＋个人补缴'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣');
       return `${renderUpload()}${state.payrollStage==='gross'?renderInternRates():''}<details class="card section-body" style="margin-top:20px"><summary>查看字段映射</summary><div class="table-wrap"><table class="map-table"><thead><tr><th>目标字段</th><th>来源表</th><th>源字段</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('')}${state.payrollStage==='gross'?'<tr><td>是否实习</td><td>花名册</td><td>是否实习生 / 是否实习 / 实习标识 / 员工类型</td></tr>':''}${state.payrollStage==='net'?'<tr><td>个税</td><td>个税</td><td>应补（退）税额</td></tr>':''}</tbody></table></div></details>`;
     }
     function renderResults() { return state.payrollStage==='net'?renderNetResults():renderGrossResults(); }

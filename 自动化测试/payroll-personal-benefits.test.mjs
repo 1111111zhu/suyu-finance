@@ -23,31 +23,32 @@ function file(name,sheets){
 }
 const roster=(name,id)=>[['员工姓名','工号','入职日期'],[name,id,'2025-01-01']];
 
-const grid=(rows)=>[['姓名','本月个人缴纳（元）','个人补缴金额'],...rows];
+const grid=(rows)=>[['姓名','个人缴纳','个人补缴'],...rows];
+const socialGrid=rows=>[['姓名','养老','失业','基本医疗','公司总计','养老','失业','基本医疗','个人总计','社保当月实缴数'],...rows.map(([name,total,extra])=>[name,999,999,999,600,888,888,888,total+(extra||0),9999])];
 async function setup(){const a=app();await a.importFiles([file('花名册.xlsx',[['人员', [['姓名','工号','入职日期'],['甲','001','2025-01-01'],['乙','002','2025-01-01']]]])],'roster');a.run("state.payrollStage='net'");await a.importFiles([file('应发.xlsx',[['应发工资',[['姓名','应发工资'],['甲',1000],['乙',2000]]]])],'grossUpload');return a;}
 test('one benefits module recognizes containing worksheet names and joins amounts by name',async()=>{
- const a=await setup();await a.importFiles([file('资料.xlsx',[['说明',[['说明']]],['2026年9月社保个人明细导出',grid([['乙',200,20],['甲',100,10]])],['公司公积金个人明细9月',grid([['甲',80,8],['乙',160,null]])]])],'netBenefits');
+ const a=await setup();await a.importFiles([file('资料.xlsx',[['说明',[['说明']]],['2026年9月社保个人明细导出',socialGrid([['乙',200,20],['甲',100,10]])],['公司公积金个人明细9月',grid([['甲',80,8],['乙',160,null]])]])],'netBenefits');
  assert.equal(a.run('employees.find(e=>e.name===\'甲\').social'),110);assert.equal(a.run('employees.find(e=>e.name===\'甲\').fund'),88);assert.equal(a.run('employees.find(e=>e.name===\'甲\').net'),802);
  assert.equal(a.run('employees.find(e=>e.name===\'乙\').net'),1620);assert.equal(a.run('benefitStatus().files'),1);assert.equal(a.run('importSession().items.length'),0);
  const html=a.run('PayrollWorkbenchPages.upload()');assert.match(html,/data-upload="netBenefits"/);assert.doesNotMatch(html,/data-upload="netSocial"|data-upload="netFund"/);
  assert.equal(a.run("sourcePreviewFiles('netBenefits').length"),1);
- const ws=a.run('detailSheet(false)'),descriptors=a.run('exportDescriptors(false)');const social=descriptors.findIndex(x=>x[1]==='social');assert.equal(ws[XLSX.utils.encode_col(social)+'3'].v,110);assert.match(ws[XLSX.utils.encode_col(social)+'3'].f,/SUM\(100,10\)/);
+ const ws=a.run('detailSheet(false)'),descriptors=a.run('exportDescriptors(false)');const social=descriptors.findIndex(x=>x[1]==='social');assert.equal(ws[XLSX.utils.encode_col(social)+'3'].v,110);assert.match(ws[XLSX.utils.encode_col(social)+'3'].f,/SUM\(110\)/);
 });
-test('bulk import identifies personal worksheets without explicit module',async()=>{const a=await setup();await a.importFiles([file('文件.xlsx',[['社保个人明细2026',grid([['甲',10,1]])],['9月公积金个人明细',grid([['甲',20,2]])]])]);assert.equal(a.run('employees[0].social'),11);assert.equal(a.run('employees[0].fund'),22);});
+test('bulk import identifies personal worksheets without explicit module',async()=>{const a=await setup();await a.importFiles([file('文件.xlsx',[['社保个人明细2026',socialGrid([['甲',10,1]])],['9月公积金个人明细',grid([['甲',20,2]])]])]);assert.equal(a.run('employees[0].social'),11);assert.equal(a.run('employees[0].fund'),22);});
 test('replacement is atomic and combined deletion removes both deductions',async()=>{
- const a=await setup();const good=file('原始.xlsx',[['社保个人明细',grid([['甲',100,10]])],['公积金个人明细',grid([['甲',80,8]])]]);await a.importFiles([good],'netBenefits');
- await a.importFiles([file('坏.xlsx',[['社保个人明细',grid([['甲',999,1]])],['公积金个人明细',grid([['甲','错误',1]])]])],'netBenefits','replace');assert.equal(a.run('employees[0].social'),110);assert.equal(a.run('employees[0].fund'),88);
- await a.importFiles([file('新.xlsx',[['社保个人明细',grid([['甲',30,3]])],['公积金个人明细',grid([['甲',40,4]])]])],'netBenefits','replace');assert.equal(a.run('employees[0].social'),33);assert.equal(a.run('employees[0].fund'),44);assert.equal(a.run('benefitStatus().filename'),'新.xlsx');assert.equal(a.run("removeSource('netBenefits')"),true);assert.equal(a.run('employees[0].social'),0);assert.equal(a.run('employees[0].fund'),0);
+ const a=await setup();const good=file('原始.xlsx',[['社保个人明细',socialGrid([['甲',100,10]])],['公积金个人明细',grid([['甲',80,8]])]]);await a.importFiles([good],'netBenefits');
+ await a.importFiles([file('坏.xlsx',[['社保个人明细',socialGrid([['甲',999,1]])],['公积金个人明细',grid([['甲','错误',1]])]])],'netBenefits','replace');assert.equal(a.run('employees[0].social'),110);assert.equal(a.run('employees[0].fund'),88);
+ await a.importFiles([file('新.xlsx',[['社保个人明细',socialGrid([['甲',30,3]])],['公积金个人明细',grid([['甲',40,4]])]])],'netBenefits','replace');assert.equal(a.run('employees[0].social'),33);assert.equal(a.run('employees[0].fund'),44);assert.equal(a.run('benefitStatus().filename'),'新.xlsx');assert.equal(a.run("removeSource('netBenefits')"),true);assert.equal(a.run('employees[0].social'),0);assert.equal(a.run('employees[0].fund'),0);
 });
 test('unrecognized sheets and ambiguous amount headers fail without modifying sources',async()=>{
  const a=await setup();for(const sheets of [[['社保汇总',grid([['甲',1,2]])]],[['社保个人明细',[['姓名','个人缴纳','补发个人缴纳','个人补缴'],['甲',1,2,3]]]]]){await a.importFiles([file('错误.xlsx',sheets)],'netBenefits');assert.equal(a.run('sourceRows.netSocial'),undefined);assert.ok(a.run('importSession().items.length')>0);}
 });
 
-test('reuploading a combined filename removes worksheets no longer in that file',async()=>{const a=await setup();await a.importFiles([file('资料.xlsx',[['社保个人明细',grid([['甲',10,1]])],['公积金个人明细',grid([['甲',20,2]])]])],'netBenefits');await a.importFiles([file('资料.xlsx',[['社保个人明细',grid([['甲',30,3]])]])],'netBenefits');assert.equal(a.run('employees[0].social'),33);assert.equal(a.run('employees[0].fund'),0);assert.equal(a.run('benefitStatus().complete'),false);});
+test('reuploading a combined filename removes worksheets no longer in that file',async()=>{const a=await setup();await a.importFiles([file('资料.xlsx',[['社保个人明细',socialGrid([['甲',10,1]])],['公积金个人明细',grid([['甲',20,2]])]])],'netBenefits');await a.importFiles([file('资料.xlsx',[['社保个人明细',socialGrid([['甲',30,3]])]])],'netBenefits');assert.equal(a.run('employees[0].social'),33);assert.equal(a.run('employees[0].fund'),0);assert.equal(a.run('benefitStatus().complete'),false);});
 
 test('combined benefits upload explicitly names each missing worksheet',async()=>{
  const a=await setup();assert.match(a.run('PayrollWorkbenchPages.upload()'),/缺少：社保个人明细、公积金个人明细/);
- await a.importFiles([file('社保.xlsx',[['社保个人明细',grid([['甲',10,1]])]])],'netBenefits');assert.match(a.run('PayrollWorkbenchPages.upload()'),/缺少：公积金个人明细/);
+ await a.importFiles([file('社保.xlsx',[['社保个人明细',socialGrid([['甲',10,1]])]])],'netBenefits');assert.match(a.run('PayrollWorkbenchPages.upload()'),/缺少：公积金个人明细/);
  a.run("removeSource('netBenefits')");await a.importFiles([file('公积金.xlsx',[['公积金个人明细',grid([['甲',20,2]])]])],'netBenefits');assert.match(a.run('PayrollWorkbenchPages.upload()'),/缺少：社保个人明细/);
 });
 test('tax refund or supplement column takes precedence and joins by employee name',async()=>{
@@ -60,4 +61,14 @@ test('tax refund or supplement column takes precedence and joins by employee nam
 test('tax supplement headers work for automatic workbook detection and reject invalid amounts',async()=>{
  const a=await setup();await a.importFiles([file('数据.xlsx',[['明细',[['姓名','应补（退）税额'],['甲',75]]]])]);assert.equal(a.run('employees[0].tax'),75);
  for(const grid of [[['姓名','应补（退）税额'],['甲','错误']],[['姓名','应补（退）税额','本月应补（退）税额'],['甲',1,2]]]){await a.importFiles([file('坏.xlsx',[['明细',grid]])],'tax');assert.equal(a.run('employees[0].tax'),75);assert.ok(a.run('importSession().items.length')>0);}
+});
+
+test('required benefit headers remain unique and company contributions are preserved',async()=>{
+ const a=await setup();await a.importFiles([file('正确.xlsx',[['社保个人明细',socialGrid([['甲',100,10]])],['公积金个人明细',[['姓名','公司缴纳','个人缴纳','公司补缴','个人补缴','公积金当月实缴数'],['甲',300,80,700,8,9999]]]])],'netBenefits');
+ assert.equal(a.run('employees[0].social'),110);assert.equal(a.run('employees[0].fund'),88);
+ assert.equal(a.run('sourceRows.netSocial[0].公司总计'),600);assert.equal(a.run('sourceRows.netFund[0].公司缴纳'),300);
+ for(const [sheet,headers] of [['社保个人明细',['姓名','个人总计','个人总计']],['公积金个人明细',['姓名','个人缴纳','个人补缴','个人补缴']]]){
+  await a.importFiles([file('重复.xlsx',[[sheet,[headers,['甲',1,2,3]]]])],'netBenefits');
+  assert.equal(a.run('employees[0].social'),110);assert.equal(a.run('employees[0].fund'),88);assert.ok(a.run('importSession().items.length')>0);
+ }
 });
