@@ -343,11 +343,26 @@ globalThis.PayrollEngine = (() => {
     // Uploading the same file again replaces its rows rather than charging twice.
     return [...(existing||[]).filter(r=>r._deductionSource?.filename!==filename),...incoming.map(r=>({...r,_deductionSource:{...r._deductionSource,filename}}))];
   }
+  // Scoped to one calculation: reuploads and in-place edits cannot reuse stale indexes.
+  let calculationIndexes = null;
+  function namedRows(rows, name) {
+    if (!calculationIndexes) return rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name);
+    let index=calculationIndexes.get(rows);
+    if (!index) {
+      index=new Map();
+      for (const row of rows) {
+        const key=nameKey(canonicalRow(row)['姓名']);
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push(row);
+      }
+      calculationIndexes.set(rows,index);
+    }
+    return index.get(name)||[];
+  }
   function deductionAmount(rows,name,aliases,label,issues) {
     if(!rows)return 0;
     const hasColumn=row=>Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a)));
-    if(!rows.some(hasColumn))return 0;
-    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name && hasColumn(row));
+    const matches=namedRows(rows,name).filter(hasColumn);
     if(!matches.length)return 0;
     let total=0;
     for(const row of matches){const col=Object.keys(row).find(h=>aliases.some(a=>key(h)===key(a)));const v=numeric(row[col]);if(v===null||!Number.isFinite(v)){issues.push(`${label}金额缺失或无效，按 0 计算`);continue;}total+=v;}
@@ -457,8 +472,8 @@ globalThis.PayrollEngine = (() => {
   }
   function amount(rows,name,aliases,label,issues) {
     if (!rows) {issues.push(`${label}未上传，按 0 计算`);return 0;}
-    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name && Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a))));
-    if (!matches.length) {issues.push(`${label}${rows.some(row=>nameKey(canonicalRow(row)['姓名'])===name)?'缺少金额列':'未找到匹配姓名'}，按 0 计算`);return 0;}
+    const matches=namedRows(rows,name).filter(row=>Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a))));
+    if (!matches.length) {issues.push(`${label}${namedRows(rows,name).length>0?'缺少金额列':'未找到匹配姓名'}，按 0 计算`);return 0;}
     if(matches.length>1) issues.push(`${label}姓名重复，沿用首条金额`);
     const row=matches[0],column=aliases.map(alias=>Object.keys(row).find(header=>key(header)===key(alias))).find(header=>header!==undefined);
     const value=column===undefined?null:numeric(row[column]);
@@ -467,7 +482,7 @@ globalThis.PayrollEngine = (() => {
   }
   function optionalAmount(rows,name,aliases,label,issues) {
     if (!rows) return 0;
-    const matches=rows.filter(row=>nameKey(canonicalRow(row)['姓名'])===name && Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a))));
+    const matches=namedRows(rows,name).filter(row=>Object.keys(row).some(h=>aliases.some(a=>key(h)===key(a))));
     if (!matches.length) return 0;
     if(matches.length>1) issues.push(`${label}姓名重复，沿用首条金额`);
     const row=matches[0],column=aliases.map(alias=>Object.keys(row).find(header=>key(header)===key(alias))).find(header=>header!==undefined);
@@ -477,7 +492,9 @@ globalThis.PayrollEngine = (() => {
     return round(value);
   }
   function calculateNet(base,sources) {
-    return base.map(employee=>{
+    const previousIndexes=calculationIndexes;
+    calculationIndexes=new Map();
+    try {return base.map(employee=>{
       const e={...employee,deductionIssues:[]},issues=e.deductionIssues,name=nameKey(e.name);
       const get=(key,aliases,label)=>amount(sources[key],name,aliases,label,issues);
       e.companySocial=get('netSocial',['公司总计','公司缴纳社保','公司总计（社保）'],'公司缴纳社保');
@@ -490,7 +507,7 @@ globalThis.PayrollEngine = (() => {
       e.mealDeduct=deductionAmount(sources.afterTax,name,['餐费代扣','餐费合计'],'餐费代扣',issues);
       e.otherDeduct=deductionAmount(sources.afterTax,name,['其它代扣','其他代扣'],'其它代扣',issues);
       e.otherReduction=e.isIntern?0:round(Number(e.otherReduction)||0);
-      e.remark=String(sources.afterTax?.map(canonicalRow).find(row=>nameKey(row['姓名'])===name)?.['备注'] ?? '');
+      e.remark=String((sources.afterTax && namedRows(sources.afterTax,name)[0] ? canonicalRow(namedRows(sources.afterTax,name)[0])['备注'] : '') ?? '');
       e.gross=Number(e.gross)||0;
       e.afterTaxTotal=round(e.utility+e.mealDeduct+e.otherDeduct);
       e.net=e.isIntern
@@ -498,7 +515,7 @@ globalThis.PayrollEngine = (() => {
         : round(e.gross-e.social-e.fund-e.tax-e.afterTaxTotal);
       e.companyCost=round(e.gross+e.companySocial+e.companyFund);
       return e;
-    });
+    });} finally {calculationIndexes=previousIndexes;}
   }
   return {paidLeaveFromRow,spreadsheetAccept,isSpreadsheetFile,readSpreadsheet,isRosterSheet,otherAdditionRowsFromGrid,deductionRowsFromGrid,mergeDeductionRows,deductionAmount,fields,netFields,rosterFields,key,blank,round,numeric,canonicalHeader,canonicalRow,rosterFieldMap,normalizeRosterRow,rosterRowInMonth,rosterSectionHeader,rosterIdentityIssues,rowsFromGrid,grossRecord,compare,uploadedEmployees,calculateNet,dateValue};
 })();

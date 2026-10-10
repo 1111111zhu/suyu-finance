@@ -365,7 +365,7 @@
     html.embedded .main { width: 100%; margin-left: 0 !important; }
   </style>
   <script src="./xlsx.full.min.js"></script>
-  <script src="./payroll-engine.js?v=20261009-upload-delete-v1"></script>
+  <script src="./payroll-engine.js?v=20261010-server-compute-v1"></script>
   <script src="./payroll-email-engine.js"></script>
   <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./workbench-wecom-directory.css">
@@ -648,20 +648,40 @@
     }
     function setInternDailyRate(name, value) { const key=canonicalKey(name); if (!validNonNegativeNumber(value)) delete internDailyRates()[key]; else internDailyRates()[key]=Number(value); recalculateEmployees(); saveBatchData(); }
     function applyBulkInternRate(names, value) { if (!validNonNegativeNumber(value)) return false; names.forEach(name=>internDailyRates()[canonicalKey(name)]=Number(value)); recalculateEmployees(); saveBatchData(); return true; }
+    let calculationRowCache=null, calculationHeaderCache=null;
+    const rosterLabels=PayrollEngine.rosterFields.map(([field,label])=>[field,canonicalKey(label)]);
     function rowValue(row, aliases) {
-      const keys = Object.keys(row || {});
-      const rosterField=PayrollEngine.rosterFields.find(([,label])=>aliases.some(alias=>canonicalKey(alias)===canonicalKey(label)))?.[0];
+      let cached=calculationRowCache && row && calculationRowCache.get(row);
+      if(!cached) {
+        const keys=Object.keys(row || {}), schema=JSON.stringify(keys);
+        let header=calculationHeaderCache?.get(schema);
+        if(!header){header={keys,mapping:PayrollEngine.rosterFieldMap(keys),aliases:new Map(),columns:new Map(),canonicalEntries:[]};
+          for(const key of keys){const normalized=canonicalKey(PayrollEngine.canonicalHeader(key));header.canonicalEntries.push([key,normalized]);if(!header.columns.has(normalized))header.columns.set(normalized,key);}
+          calculationHeaderCache?.set(schema,header);}
+        cached={keys,header,values:new Map()};
+        if(calculationRowCache && row)calculationRowCache.set(row,cached);
+      }
+      const wanted=aliases.map(canonicalKey), signature=JSON.stringify(wanted);
+      if(cached.values.has(signature))return cached.values.get(signature);
+      const rosterField=rosterLabels.find(([,label])=>wanted.includes(label))?.[0];
+      let value;
       if(rosterField) {
-        const mapping=PayrollEngine.rosterFieldMap(keys),header=mapping.map[rosterField];
+        cached.mapping ||= cached.header.mapping;
+        const header=cached.mapping.map[rosterField];
         if(header) {
-          const normalized=PayrollEngine.normalizeRosterRow(row,mapping);
-          return Object.hasOwn(normalized.values,rosterField) ? normalized.values[rosterField] : row[header];
+          cached.normalized ||= PayrollEngine.normalizeRosterRow(row,cached.mapping);
+          value=Object.hasOwn(cached.normalized.values,rosterField) ? cached.normalized.values[rosterField] : row[header];
+          cached.values.set(signature,value);return value;
         }
       }
-      const wanted = aliases.map(canonicalKey);
-      const canonicalWanted=aliases.map(alias=>canonicalKey(PayrollEngine.canonicalHeader(alias)));
-      const match=keys.find(key=>wanted.includes(canonicalKey(key))) ?? keys.find(key=>canonicalWanted.includes(canonicalKey(PayrollEngine.canonicalHeader(key))));
-      return match === undefined ? null : row[match];
+      if(!cached.header.aliases.has(signature)) {
+        const direct=cached.keys.find(key=>wanted.includes(canonicalKey(key)));
+        const canonicalWanted=new Set(aliases.map(alias=>canonicalKey(PayrollEngine.canonicalHeader(alias))));
+        const match=direct ?? cached.header.canonicalEntries.find(([,normalized])=>canonicalWanted.has(normalized))?.[0];
+        cached.header.aliases.set(signature,match);
+      }
+      const match=cached.header.aliases.get(signature);
+      value=match===undefined?null:row[match];cached.values.set(signature,value);return value;
     }
     function parseNumber(value) {
       if (value === null || value === undefined || value === '') return 0;
@@ -1044,12 +1064,18 @@
     function showToast(message, duration=2400) { toastEl.textContent = message; toastEl.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toastEl.classList.remove('show'), duration); }
     function currentBatch() { return state.batches.find(b => b.active) || state.batches[0]; }
     function recalculateEmployees() {
+      if (typeof document !== 'undefined' && globalThis.PayrollCalculation) {
+        state.calculated=false; PayrollCalculation.schedule(); return;
+      }
+      const previousCache=calculationRowCache, previousExportIndex=rosterExportIndex,previousHeaderCache=calculationHeaderCache;calculationRowCache=new WeakMap();calculationHeaderCache=new Map();rosterExportIndex=null;
+      try {
       generatedEmployees=sortEmployeesInternLast(state.liveImport ? importedEmployees() : state.sourceStatus.roster?.uploaded ? profiles.map(p=>calcSalary(p)) : []);
       generatedEmployees=generatedEmployees.map(e=>({...e,gross:PayrollEngine.round(e.gross),net:PayrollEngine.round(e.gross),social:PayrollEngine.round(e.social),fund:PayrollEngine.round(e.fund)}));
-      state.comparison=PayrollEngine.compare(generatedEmployees.map(employee=>exportRecord(employee,true)),comparisonRows(sourceRows.grossUpload));
+      state.comparison=sourceRows.grossUpload ? PayrollEngine.compare(generatedEmployees.map(employee=>exportRecord(employee,true)),comparisonRows(sourceRows.grossUpload)) : PayrollEngine.compare([],null);
       state.grossSource=sourceRows.grossUpload?'uploaded':generatedEmployees.length?'generated':'none';
       employees=state.payrollStage==='net' ? sortEmployeesInternLast(PayrollEngine.calculateNet(sourceRows.grossUpload?PayrollEngine.uploadedEmployees(sourceRows.grossUpload):generatedEmployees,sourceRows)) : generatedEmployees;
       currentBatch().employees=employees.length;
+      } finally {calculationRowCache=previousCache;calculationHeaderCache=previousHeaderCache;rosterExportIndex=previousExportIndex;}
     }
     function saveBatchData() {
       const rates=structuredClone(currentBatch().data?.internDailyRates || {});
@@ -1069,6 +1095,7 @@
     // Receive only the reviewed active roster from the sole home workbench.
     const rosterTransferIds=new Set();
     function receivePreparedRoster(payload, id) {
+      if(state.calculating)throw new Error('工资正在计算，请先等待或取消');
       if(rosterTransferIds.has(id)) return employees.length;
       if(!payload || !/^\d{4}-(0[1-9]|1[0-2])$/.test(payload.month || '') || !Array.isArray(payload.rows) || !payload.rows.length || payload.rows.length>20000)
         throw new Error('工资人员或计薪月份无效，请回到人员归集核对');
@@ -1162,7 +1189,7 @@
     }
     function emailRows() {
       const source=state.payrollStage==='net' ? employees : generatedEmployees;
-      return source.map(employee=>exportRecord(employee));
+      return withRosterExportIndex(()=>source.map(employee=>exportRecord(employee)));
     }
     function ensureEmailDraft(refresh=false) {
       const rows=emailRows(), sourceStage=state.payrollStage;
@@ -1481,7 +1508,8 @@
     function closeModal(){ document.getElementById('batchModal').classList.add('hidden'); }
     function download(filename, content, type='text/csv;charset=utf-8') { const blob=new Blob(['\ufeff'+content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
     function payrollExportReady() {
-      if (state.liveImport) recalculateEmployees();
+      if(globalThis.PayrollCalculation && (state.calculating || !state.calculated)) {showToast('请等待服务器计算完成后再导出');return false;}
+      if (state.liveImport && !globalThis.PayrollCalculation) recalculateEmployees();
       if (!employees.length) { showToast('没有可导出的员工，请先上传花名册'); return false; }
       return true;
     }
@@ -1495,26 +1523,38 @@
       return grossOnly?grossFields.filter(([,field])=>!['social','fund'].includes(field)):[...grossFields,...PayrollEngine.netFields];
     }
     function exportHeaders(grossOnly=false) { return exportDescriptors(grossOnly).map(field=>field[0]); }
+    let rosterExportIndex=null;
+    function withRosterExportIndex(action) {
+      const previous=rosterExportIndex;rosterExportIndex={pending:true};
+      try {return action();} finally {rosterExportIndex=previous;}
+    }
+    function buildRosterExportIndex() {
+      const names=new Map(),origins=new Map(),generated=new Map(),headers=new Map();
+      const add=(map,key,value)=>{if(!map.has(key))map.set(key,[]);map.get(key).push(value);};
+      for(const row of sourceRows.roster || []) {
+        const signature=JSON.stringify(Object.keys(row));
+        if(!headers.has(signature))headers.set(signature,PayrollEngine.rosterFieldMap(Object.keys(row)).map);
+        const map=headers.get(signature), entry={row,map};
+        add(names,canonicalKey(row[map.name]),entry);
+        if(row._rosterSource)add(origins,JSON.stringify([row._rosterSource.sheetName,row._rosterSource.rowNumber]),entry);
+      }
+      for(const employee of generatedEmployees)add(generated,canonicalKey(employee.name),employee);
+      return {names,origins,generated};
+    }
     function rosterExportDate(employee,field) {
-      const rows=sourceRows.roster || [];
+      const index=rosterExportIndex && !rosterExportIndex.pending ? rosterExportIndex : buildRosterExportIndex();
+      if(calculationRowCache || rosterExportIndex)rosterExportIndex=index;
       const realNumber=employee.employeeNumber && employee.employeeNumber!==employee.id;
       const samePerson=values=>canonicalKey(values.name)===canonicalKey(employee.name)
         && (!realNumber || canonicalKey(values.employeeNumber)===canonicalKey(employee.employeeNumber))
         && (!employee.company || !values.company || canonicalKey(values.company)===canonicalKey(employee.company));
-      const generated=generatedEmployees.filter(samePerson);
+      const generated=(index.generated.get(canonicalKey(employee.name))||[]).filter(samePerson);
       const source=employee.rosterSource || (generated.length===1?generated[0].rosterSource:null);
-      const sourceMatches=source?rows.filter(row=>{
-        const origin=row._rosterSource;
-        return origin && origin.sheetName===source.sheetName && origin.rowNumber===source.rowNumber
-          && (!source.filename || origin.filename===source.filename);
-      }):[];
-      const candidates=sourceMatches.length===1?sourceMatches:rows;
-      const matches=candidates.flatMap(row=>{
-        const map=PayrollEngine.rosterFieldMap(Object.keys(row)).map;
-        const values={name:row[map.name],employeeNumber:row[map.employeeNumber],company:row[map.company]};
-        return samePerson(values)?[{row,map}]:[];
-      });
-      if(matches.length!==1) return '';
+      const sourceMatches=source?(index.origins.get(JSON.stringify([source.sheetName,source.rowNumber]))||[])
+        .filter(({row})=>!source.filename || row._rosterSource.filename===source.filename):[];
+      const candidates=sourceMatches.length===1?sourceMatches:(index.names.get(canonicalKey(employee.name))||[]);
+      const matches=candidates.filter(({row,map})=>samePerson({name:row[map.name],employeeNumber:row[map.employeeNumber],company:row[map.company]}));
+      if(matches.length!==1)return '';
       const {row,map}=matches[0],value=map[field]?row[map[field]]:null;
       return PayrollEngine.blank(value)?'':value;
     }
@@ -1642,7 +1682,8 @@
       Object.entries(sheet).forEach(([key,cell])=>{if(!key.startsWith('!') && cell?.t==='n') cell.z='0.00';});
       return sheet;
     }
-    function detailSheet(grossOnly=false) {
+    function detailSheet(grossOnly=false) {return withRosterExportIndex(()=>detailSheetRows(grossOnly));}
+    function detailSheetRows(grossOnly=false) {
       const list=grossOnly?generatedEmployees:employees;
       const descriptors=exportDescriptors(grossOnly);
       const headers=descriptors.map(field=>field[0]),groups=new Array(headers.length).fill('');
@@ -1730,10 +1771,11 @@
     // Mount the workbench after the original payroll module is ready.
   </script>
   <script src="./source-preview.js?v=20261009-upload-delete-v1"></script>
-  <script src="./workbench-core.js?v=20261009-upload-delete-v1"></script>
+  <script src="./workbench-core.js?v=20261010-server-compute-v1"></script>
   <script src="./workbench-pages.js?v=20261009-upload-delete-v1"></script>
   <script src="./personnel-directory.js?v=20261009-upload-delete-v1"></script>
-  <script src="./workbench-ui.js?v=20261009-upload-delete-v1"></script>
+  <script src="./workbench-ui.js?v=20261010-server-compute-v1"></script>
+  <script src="./workbench-compute.js?v=20261010-server-compute-v1"></script>
   <script src="./workbench-wecom-directory.js"></script>
 </body>
 </html>
