@@ -61,10 +61,16 @@ globalThis.PayrollEngine = (() => {
     const result=Number(raw.replace(/%$/,''))/(raw.endsWith('%')?100:1);
     return Number.isFinite(result)?result:NaN;
   }
+  const headerCache=new Map();
   function canonicalHeader(header) {
-    const token=key(header),withoutUnit=token.replace(/(?:\((?:元|天|分|%)\)|(?:元|天))$/,'');
+    const token=key(header);
+    if(headerCache.has(token))return headerCache.get(token);
+    const withoutUnit=token.replace(/(?:\((?:元|天|分|%)\)|(?:元|天))$/,'');
     const found=[...fields,...netFields].find(([label,,type,aliases=[]])=>[label,...aliases].some(alias=>key(alias)===token || ['money','number'].includes(type)&&key(alias)===withoutUnit));
-    return found?found[0]:token;
+    const result=found?found[0]:token;
+    if(headerCache.size>=4096)headerCache.clear();
+    headerCache.set(token,result);
+    return result;
   }
   function rosterIssue(field,reason,headers,message) { return {field,reason,headers,message}; }
   function rosterFieldMap(headers) {
