@@ -1,5 +1,5 @@
 /* Recognition and preview formatting run outside the UI thread. */
-const payrollImportWorkerURL=new URL('./import-worker.js?v=20261010-tax-refund-v1',document.currentScript.src);
+const payrollImportWorkerURL=new URL('./import-worker.js?v=20261010-import-perf-v1',document.currentScript.src);
 parseXlsxFile = function(file, key='') {
   return new Promise((resolve,reject)=>{
     let worker, timer;
