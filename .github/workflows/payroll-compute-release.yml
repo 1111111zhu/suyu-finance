@@ -27,7 +27,7 @@ jobs:
       - run: npm run test:payroll-compute
       - run: npx eslint server/payroll/calculation-*.mjs app/api/payroll/calculations public/salary/workbench-compute.js 自动化测试/payroll-computation-api.test.mjs
       - run: bash -n 运维脚本/deploy-payroll-compute.sh
-      - run: npm run build
+      - run: RD_LOCAL_PREVIEW=1 npm run build
   deploy:
     if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
     needs: verify

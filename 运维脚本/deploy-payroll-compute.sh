@@ -61,7 +61,8 @@ page.write_text(s)
 p=root/'package.json';package=json.loads(p.read_text());package['scripts']['prebuild']='node 自动化脚本/build-payroll-worker-model.mjs';p.write_text(json.dumps(package,ensure_ascii=False,indent=2)+'\n')
 PY
 node --test 自动化测试/payroll-computation.test.mjs 自动化测试/payroll-computation-api.test.mjs
-NODE_OPTIONS=--max-old-space-size=1536 npm run build > "$backup/build.log" 2>&1
+RD_LOCAL_PREVIEW=1 NODE_OPTIONS=--max-old-space-size=1536 npm run build > "$backup/build.log" 2>&1
+test -s dist/server/index.js
 systemctl restart suyu-finance
 for attempt in $(seq 1 30); do
  if curl --fail --silent http://127.0.0.1:3220/ >/dev/null && [[ $(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:3220/api/payroll/calculations/00000000-0000-0000-0000-000000000000) == 401 ]]; then
