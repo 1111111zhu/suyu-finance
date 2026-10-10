@@ -5,7 +5,7 @@
     {
       "path": "public/salary/calculation-model.js",
       "before": "1170d2877f8b6fdf1c8549f38be0e92a9cffa3d4990d33825e4968b0ece21cc5",
-      "after": "4fde6cb80bc48d84122ba212ac32368bd9b3acc7db663dc4815cebce77b386e4"
+      "after": "0d6d0c64c9f96e38c1b547993caed170dea1e6fa9151136aef527c462ac037f3"
     },
     {
       "path": "public/salary/export-worker.js",
@@ -20,7 +20,7 @@
     {
       "path": "public/salary/index.html",
       "before": "92955cc6f3ef058af405eebabc397e4de2727ab62ee5fa7326da8cdc504aa78f",
-      "after": "50e21f9433c182338695bb1b0dde41094ef3af1bd1bc9853683d7a18af9be02e"
+      "after": "8fe2e3d6ba167800d0df59e7227b4d24fb30059ae1680a1975bfbcd607e729fd"
     },
     {
       "path": "public/salary/payroll-engine.js",

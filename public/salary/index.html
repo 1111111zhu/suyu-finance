@@ -1074,6 +1074,7 @@
         }
         // Never apply an asynchronous import to a different payroll batch.
         if (currentBatch()!==batch || state.payrollStage!==stage) {session.summary='已取消：解析期间切换了工资批次，请重新选择文件';return;}
+        if(state.calculating){session.summary='工资正在计算，原有资料已保留，请计算完成后重新上传';return;}
         if(replacing && explicitKey==='netBenefits') {
           const failures=parsed.filter(item=>item.error||!['netSocial','netFund'].includes(item.key)||!item.rows?.length);
           if(failures.length||!parsed.length){session.items.push(...failures.map(item=>({...item,error:`替换未执行，原有资料已保留：${item.error||item.reason||'没有个人明细'}`})));session.summary='替换失败，原有资料已保留';return;}
@@ -1091,7 +1092,7 @@
           commitSource(explicitKey,{filename:unique.map(item=>item.filename).join('、'),rows:unique.flatMap(item=>item.rows),previews:unique.map(item=>item.preview),replace:true});
           session.summary=`已替换${sourceSheets.find(sheet=>sheet.key===explicitKey).name}：${unique.length} 个文件，${sourceRows[explicitKey].length} 行`;return;
         }
-        if(explicitKey==='netBenefits')for(const filename of new Set(parsed.filter(item=>!item.error&&['netSocial','netFund'].includes(item.key)).map(item=>item.filename))){
+        for(const filename of new Set(parsed.filter(item=>!item.error&&['netSocial','netFund'].includes(item.key)&&(explicitKey==='netBenefits'||item.rows.some(row=>row._benefitSource))).map(item=>item.filename))){
           for(const kind of ['netSocial','netFund'])if(!parsed.some(item=>item.filename===filename&&item.key===kind)&&(sourceRows[kind]||[]).some(row=>row._importSource?.filename===filename))commitSource(kind,{filename,rows:[]},true);
         }
         let imported=0;
