@@ -42,6 +42,8 @@ export async function grantExistingApiRole(pool,{role}) {
   finally{client.release();}
 }
 async function grantApiPrivileges(client,role) {
+  await client.query(`GRANT SELECT,INSERT ON payroll.workbook_masters,payroll.workbook_versions,payroll.workbook_originals TO "${role}"`);
+  await client.query(`GRANT UPDATE(revision,updated_at) ON payroll.workbook_masters TO "${role}"`);
   await client.query(`GRANT SELECT,INSERT ON payroll.workspaces,payroll.workspace_versions TO "${role}"`);
   await client.query(`GRANT UPDATE(name,month,revision,updated_at) ON payroll.workspaces TO "${role}"`);
   await client.query(`GRANT SELECT,INSERT,DELETE ON payroll.auth_sessions,payroll.auth_login_limits TO "${role}"`);
