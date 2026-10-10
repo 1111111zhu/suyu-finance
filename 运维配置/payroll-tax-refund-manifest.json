@@ -41,6 +41,11 @@
       "path": "public/salary/workbench-pages.js",
       "before": "a49824b26ffb7cafec71b1f1e3b8619c86746765136dcc6912b3d6529302ba59",
       "after": "610028b182dd6914c37fd4f59604e171c1001a1aafb2ffa251aab48da50eda8a"
+    },
+    {
+      "path": "database/payroll/fields.mjs",
+      "before": "e657e12de0348612f1074e58e57be342aeebc5c16660f8984f0392f0739ab6b0",
+      "after": "70aff7061cd00df5ad0e1cbfd0d0c2e7230cd8e870224df310f137cd0efd314e"
     }
   ]
 }

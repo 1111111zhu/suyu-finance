@@ -68,7 +68,10 @@ from pathlib import Path
 import hashlib,json,sys
 root,patch=map(Path,sys.argv[1:])
 for item in json.loads((patch/'运维配置/payroll-tax-refund-manifest.json').read_text())['files']:
- for p in [root/item['path'],root/'dist/client/salary'/Path(item['path']).name]:
+ paths=[root/item['path']]
+ if item['path'].startswith('public/salary/'):
+  paths.append(root/'dist/client/salary'/Path(item['path']).name)
+ for p in paths:
   if hashlib.sha256(p.read_bytes()).hexdigest()!=item['after']:raise SystemExit('Live hash differs: '+str(p))
 PY
   trap - ERR
