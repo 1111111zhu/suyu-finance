@@ -2,7 +2,7 @@
   "files": [
     {
       "path": "app/api/payroll/workbooks/[...path]/route.ts",
-      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "before": null,
       "after": "1e8e53201ab1663f2c14aca7c2f28d83b6c174c49fc939d2f9a9cc6522087061"
     },
     {
@@ -84,6 +84,11 @@
       "path": "server/payroll/workbooks/thread.mjs",
       "before": null,
       "after": "f81d7fc3d744d70ec157865af91cff629e8b6db22309c94e11b61792d9730028"
+    },
+    {
+      "path": "自动化脚本/build-payroll-editor.mjs",
+      "before": null,
+      "after": "057f043186c3a90b09bf318b80e97b3e73f510ef1404c772549e0ae450807e5c"
     }
   ]
 }
