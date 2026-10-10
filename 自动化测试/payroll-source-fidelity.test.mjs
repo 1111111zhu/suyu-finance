@@ -90,6 +90,30 @@ test('non-numeric source markers stay visible without producing Excel VALUE erro
  const out=exported(a);assert.equal(cell(out,'绩效基数',3).v,'—');assert.equal(cell(out,'病假天数',3).v,'—');assert.match(cell(out,'绩效工资',3).f,/N\(/);assert.match(cell(out,'病假补贴',3).f,/N\(/);assert.match(cell(out,'应发工资',3).f,/N\(/);
 });
 const attendanceFixture=process.env.PAYROLL_ATTENDANCE_FIXTURE;
+test('provided attendance summary imports paired day columns',{skip:!attendanceFixture},()=>{
+ const a=app(),book=XLSX.read(fs.readFileSync(attendanceFixture));
+ const grid=XLSX.utils.sheet_to_json(book.Sheets['2026年8月考勤表'],{header:1,defval:null});
+ a.run(`globalThis.summaryGrid=${JSON.stringify(grid)};globalThis.summaryRows=normalizeSourceFields(PayrollEngine.rowsFromGrid(summaryGrid),'attendance','考勤.xlsx','2026年8月考勤表').filter(r=>r.姓名);`);
+ assert.equal(a.run('summaryRows.length'),grid.slice(1).filter(r=>r[1] && !/^(合计|总计|汇总)$/.test(r[1])).length);
+ for(const [field,column] of [['年假天数',26],['调休假天数',24],['弹性假天数',28],['病假天数',30],['事假天数',22]]) {
+  const actual=JSON.parse(a.run(`JSON.stringify(summaryRows.map(r=>r[${JSON.stringify(field)}]))`));
+  const expected=grid.slice(1).filter(r=>r[1] && !/^(合计|总计|汇总)$/.test(r[1])).map(r=>r[column]??null);
+  assert.deepEqual(actual,expected,field);
+ }
+});
+test('all leave categories use day columns and never count paired hours',async()=>{
+ const a=app();
+ const categories=['年假','调休','弹性假','产检假','产假','陪产假','婚假','丧假','哺乳假','病假','事假','旷工'];
+ const headers=['姓名',...categories.flatMap(c=>[c+'（H）',c+'（天）'])];
+ const values=['甲',...categories.flatMap(()=>[80,0.5])];
+ const rows=await a.parse(file('考勤.xlsx',[['考勤',[headers,values]]]),'attendance');
+ a.run(`globalThis.dayRows=${JSON.stringify(rows)};`);
+ for(const category of categories) assert.equal(a.run(`PayrollEngine.paidLeaveFromRow(dayRows[0]).breakdown[${JSON.stringify(category)}]`),0.5,category);
+ assert.equal(a.run('PayrollEngine.paidLeaveFromRow(dayRows[0]).days'),4.5);
+ assert.equal(a.run(`PayrollEngine.paidLeaveFromRow({'年假(H)':80,'年假(天)':null,备注:'年假8小时'}).breakdown.年假`),0);
+ assert.equal(a.run(`PayrollEngine.paidLeaveFromRow({'年假(H)':80,备注:'年假8小时'}).breakdown.年假`),0);
+ assert.equal(a.run(`PayrollEngine.paidLeaveFromRow({备注:'年假0.5天，0.25天，8小时'}).breakdown.年假`),0.75);
+});
 test('provided local attendance workbook agrees with every source-backed exported field',{skip:!attendanceFixture},async()=>{
  const a=app(), bytes=fs.readFileSync(attendanceFixture),rows=await a.parse({name:'考勤.xlsx',arrayBuffer:async()=>bytes},'attendance');
  const names=[...new Set(rows.map(row=>row.姓名))].filter(Boolean);

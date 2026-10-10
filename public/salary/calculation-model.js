@@ -19,7 +19,7 @@ const icon = {
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
       {key:'other',name:'其他加 / 减',icon:'其',desc:'按姓名匹配；读取表头含“其他加”的金额列，津贴和减项需标明项目'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
-      {key:'tax',name:'个税表',icon:'税',desc:'按姓名匹配，读取应退（补）税额',stage:'net'},
+      {key:'tax',name:'个税表',icon:'税',desc:'按姓名匹配，读取应补（退）税额',stage:'net'},
       {key:'netBenefits',name:'社保公积金',icon:'保',desc:'按姓名读取社保个人明细、公积金个人明细子表；个人缴纳＋个人补缴',stage:'net'},
       {key:'netSocial',name:'社保个人明细',icon:'保',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
       {key:'netFund',name:'公积金个人明细',icon:'积',desc:'个人缴纳＋个人补缴',stage:'net',hidden:true},
@@ -317,7 +317,19 @@ const icon = {
         const benefitKey=benefitSheetKey(sheetName);
         if(explicitKey==='netBenefits' && !benefitKey){skipped.push(sheetName);continue;}
         if(rosterBook && /年假台账|使用说明|说明|年度台账/.test(sheetName)) {skipped.push(sheetName);continue;}
-        const grid=window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:null,raw:true});
+        const sheet=workbook.Sheets[sheetName];
+        // Excel often retains a large used range after rows are cleared. Read
+        // every populated cell while excluding the empty formatted tail.
+        let lastRow=-1,lastColumn=-1;
+        for(const address of Object.keys(sheet)) {
+          if(address.startsWith('!'))continue;
+          const cell=sheet[address];
+          if(cell.v===undefined && !cell.f)continue;
+          const position=window.XLSX.utils.decode_cell(address);
+          lastRow=Math.max(lastRow,position.r);lastColumn=Math.max(lastColumn,position.c);
+        }
+        const grid=lastRow<0?[]:window.XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:true,
+          range:{s:{r:0,c:0},e:{r:lastRow,c:lastColumn}}});
         const performanceHeaderIndex=grid.findIndex(row=>row.some(v=>PayrollEngine.canonicalHeader(v)==='姓名') && row.some(v=>['绩效系数','绩效分数'].includes(PayrollEngine.canonicalHeader(v))));
         const headerIndex=performanceHeaderIndex>=0 && (explicitKey==='performance' || /绩效|系数/.test(file.name+sheetName)) ? performanceHeaderIndex : grid.findIndex(row=>row.some(v=>PayrollEngine.canonicalHeader(v)==='姓名'));
         // Explanation/cover sheets have no employee rows. Expense layouts have their own name column.
@@ -454,7 +466,7 @@ const icon = {
       netBenefits: {names:[],fields:[]},
       netSocial: {names:[],fields:[]},
       netFund: {names:[],fields:[]},
-      tax: {names:['税'], fields:['应退（补）税额','税','个税','个人所得税','税额']}
+      tax: {names:['税'], fields:['应补（退）税额','税','个税','个人所得税','税额']}
     };
     const importSessions = new WeakMap();
     function importSession() {
@@ -478,7 +490,7 @@ const icon = {
       other:[['其他津贴'],['其他加','其他加项'],['其他减','其他减项']],
       netSocial:[['个人总计','个人社保'],['公司总计','公司缴纳社保']],
       netFund:[['个人缴纳','个人公积金'],['公司缴纳','公司缴纳公积金']],
-      grossUpload:[['应发工资','应发','应发金额','应发合计','本月应发']],tax:[['税','应退（补）税额','个税','个人所得税','税额']],
+      grossUpload:[['应发工资','应发','应发金额','应发合计','本月应发']],tax:[['税','应补（退）税额','个税','个人所得税','税额']],
       afterTax:[['水电代扣','水电费合计'],['餐费代扣','餐费合计'],['其它代扣','其他代扣']]
     };
     function fieldLabelMatches(text,alias) {
@@ -499,11 +511,11 @@ const icon = {
     function displayStageSheets(){return stageSheets().filter(s=>!s.hidden);}
     function normalizeSourceFields(rows,key,filename,sheetName) {
       if(key==='tax'){
-        const columns=Object.keys(rows[0]||{}).filter(h=>canonicalKey(h).includes('应退(补)税额'));
-        if(columns.length>1)throw new Error(`${sheetName}：应退（补）税额需要唯一的对应列，请核对表头`);
+        const columns=Object.keys(rows[0]||{}).filter(h=>/^(?:本月|当月)?应补\(退\)税额(?:\(元\)|元)?$/.test(canonicalKey(h)));
+        if(columns.length>1)throw new Error(`${sheetName}：应补（退）税额需要唯一的对应列，请核对表头`);
         if(columns.length)return rows.map(row=>{
           const value=PayrollEngine.numeric(row[columns[0]]);
-          if(value===null||!Number.isFinite(value))throw new Error(`${sheetName}：${row.姓名||''}的应退（补）税额缺失或无效`);
+          if(value===null||!Number.isFinite(value))throw new Error(`${sheetName}：${row.姓名||''}的应补（退）税额缺失或无效`);
           return {...row,税:value,_taxSource:{filename,sheetName,column:columns[0]}};
         });
       }
@@ -532,7 +544,7 @@ const icon = {
       }
       const groups=(sourceFieldGroups[key]||[]).map(group=>[...new Set([...group,...(PayrollEngine.fields.find(([label])=>label===group[0])?.[3]||[])])]),headers=Object.keys(rows[0]||{}).filter(h=>!h.startsWith('_'));
       const mappings=[];
-      const groupMatches=(text,group)=>{if(key==='grossUpload' && /应发薪|天数/.test(text))return false;if(key==='attendance' && /天数$/.test(group[0]) && /补贴|津贴|工资|金额|扣款|小时|分钟/.test(text))return false;const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
+      const groupMatches=(text,group)=>{if(key==='grossUpload' && /应发薪|天数/.test(text))return false;if(key==='attendance' && /天数$/.test(group[0]) && /补贴|津贴|工资|金额|扣款|小时|分钟|\([hH]\)/.test(canonicalKey(text)))return false;const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
       for(const group of groups) {
         if(key==='other' && group[0]==='其他加') {
           const previousColumn=rows[0]?._otherAddSource?.column;
@@ -541,7 +553,7 @@ const icon = {
           if(columns.length)mappings.push(['其他加',columns[0]]);
           continue;
         }
-        const exact=headers.filter(h=>group.some(alias=>canonicalKey(h)===canonicalKey(alias) || PayrollEngine.canonicalHeader(h)===group[0]));
+        const exact=headers.filter(h=>!(key==='attendance' && /天数$/.test(group[0]) && /\((?:h|小时)\)/i.test(canonicalKey(h))) && group.some(alias=>canonicalKey(h)===canonicalKey(alias) || PayrollEngine.canonicalHeader(h)===group[0]));
         const labeled=headers.filter(h=>groupMatches(h,group));
         const candidates=exact.length?exact:labeled;
         if(candidates.length>1)throw new Error(`${sheetName}：${group[0]}需要唯一的对应列，请核对表头`);
@@ -807,7 +819,7 @@ const icon = {
                 <tr><td><span class="rule-tag">实习生（优先）</span><br>花名册“是否实习生/是否实习/实习”标识为：是、实习生、1、TRUE 或 Y。</td><td><strong>有基本工资时取基本工资；未填基本工资时，日薪 × 考勤表实际出勤天数</strong>。仅在没有基本工资时，日薪或实际出勤天数无效按 0 计算，并记录异常。</td><td>不使用病假、事假、旷工、年假、调休等假勤字段；固定为 <strong>0 天</strong>。</td><td>固定为 <strong>0</strong>。</td><td>绩效、补贴、其他减均不参与；二阶段<strong>不扣个人社保、公积金</strong>，但照常扣<strong>个税和税后代扣</strong>：实发工资＝应发工资－个税－税后代扣合计。</td></tr>
                 <tr><td><span class="rule-tag">转正当月</span><br>普通员工的转正日期落在当前计薪月份。此规则只改变工资小计，假勤仍按其“在职 / 离职 / 入职等”状态处理。</td><td><strong>转正前月薪 ÷ 当月应出勤天数 × 转正前应出勤天数<br>＋ 转正后月薪 ÷ 当月应出勤天数 × 转正后应出勤天数</strong>。也可按基本工资、岗位工资、绩效基数三项分别分段折算。</td><td>沿用下方对应状态的规则。</td><td>沿用下方对应状态的规则，分母仍为 <strong>21.75</strong>。</td><td>转正前、后应出勤天数合计必须等于“当月应出勤天数”。未填写分段天数时，系统以月初至转正日前一天的周一至周五推算转正前天数，并计入填写的周末调休出勤日。<strong>转正分段的分母不用 21.75。</strong></td></tr>
                 <tr><td><span class="rule-tag">在职</span><br>未发生当月入职、离职、转正且非实习生时标为正职；按常规月薪计算。</td><td><strong>基本工资 ＋ 岗位工资 ＋ 绩效基数 × 绩效分数</strong>，再叠加对应津贴、补贴和其他加减。</td><td>当月应出勤天数＝实际出勤天数：<strong>0 天</strong>。<br>不相等：<strong>病假 ＋ 事假 ＋ 旷工</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>年假、弹性假、调休假不进入假勤扣薪天数；仅病假、事假、旷工会产生该扣薪天数。</td></tr>
-                <tr><td><span class="rule-tag">离职</span><br>劳动合同止或离职日期落在计薪月；离职工作表只纳入当月离职人员。</td><td>按普通员工工资项目计算；本行只说明离职状态的假勤处理。</td><td>实际出勤天数＝当月应出勤天数：<strong>0 天</strong>。<br>否则：<strong>21.75 −（实际出勤天数＋带薪休假天数）</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>带薪休假包括年假、调休、弹性假、产检假、产假、陪产假、婚假、丧假、哺乳假；不包括病假、事假、旷工。天数列优先，小时列和备注补缺；原数值直接相加，不折算且不重复累计。</td></tr>
+                <tr><td><span class="rule-tag">离职</span><br>劳动合同止或离职日期落在计薪月；离职工作表只纳入当月离职人员。</td><td>按普通员工工资项目计算；本行只说明离职状态的假勤处理。</td><td>实际出勤天数＝当月应出勤天数：<strong>0 天</strong>。<br>否则：<strong>21.75 −（实际出勤天数＋带薪休假天数）</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>带薪休假包括年假、调休、弹性假、产检假、产假、陪产假、婚假、丧假、哺乳假；不包括病假、事假、旷工。统一使用天数列直接加减；小时列不参与计算，天数列空白按 0；仅无天数列时读取备注中明确标为天的数值。</td></tr>
                 <tr><td><span class="rule-tag">入职</span><br>入职日期落在计薪月；同月离职时假勤采用离职规则。</td><td>按普通员工工资项目计算。</td><td>实际出勤天数＝当月应出勤天数：<strong>0 天</strong>。<br>否则：<strong>21.75 −（实际出勤天数＋带薪休假天数）</strong>。</td><td><strong>工资小计 ÷ 21.75 × 假勤扣薪天数</strong>。</td><td>入职日期为计薪月 <strong>15 日（含）以后</strong>，绩效分数自动按 0 计算；入职日在 15 日前则按源表绩效分数计算。</td></tr>
               </tbody>
             </table>
@@ -1023,7 +1035,7 @@ const icon = {
     function renderMapping() {
       const names=stageSheets().map(sheet=>sheet.name);
       const rows=state.payrollStage==='net' ? [['应发工资','应发工资表 / 第一阶段生成结果','应发工资'],['个人社保','社保公积金 · 社保个人明细','个人缴纳＋个人补缴'],['公司缴纳社保','社保表','公司总计 / 公司缴纳社保'],['个人公积金','社保公积金 · 公积金个人明细','个人缴纳＋个人补缴'],['公司缴纳公积金','公积金表','公司缴纳 / 公司缴纳公积金'],['水电代扣','税后代扣表','水电代扣'],['餐费代扣','税后代扣表','餐费代扣'],['其它代扣','税后代扣表','其它代扣'],['备注','税后代扣表','备注']] : mappingRows.filter(row=>names.includes(row[1]) && row[0]!=='其他代扣');
-      return `${renderUpload()}${state.payrollStage==='gross'?renderInternRates():''}<details class="card section-body" style="margin-top:20px"><summary>查看字段映射</summary><div class="table-wrap"><table class="map-table"><thead><tr><th>目标字段</th><th>来源表</th><th>源字段</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('')}${state.payrollStage==='gross'?'<tr><td>是否实习</td><td>花名册</td><td>是否实习生 / 是否实习 / 实习标识 / 员工类型</td></tr>':''}${state.payrollStage==='net'?'<tr><td>个税</td><td>个税</td><td>应退（补）税额</td></tr>':''}</tbody></table></div></details>`;
+      return `${renderUpload()}${state.payrollStage==='gross'?renderInternRates():''}<details class="card section-body" style="margin-top:20px"><summary>查看字段映射</summary><div class="table-wrap"><table class="map-table"><thead><tr><th>目标字段</th><th>来源表</th><th>源字段</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('')}${state.payrollStage==='gross'?'<tr><td>是否实习</td><td>花名册</td><td>是否实习生 / 是否实习 / 实习标识 / 员工类型</td></tr>':''}${state.payrollStage==='net'?'<tr><td>个税</td><td>个税</td><td>应补（退）税额</td></tr>':''}</tbody></table></div></details>`;
     }
     function renderResults() { return state.payrollStage==='net'?renderNetResults():renderGrossResults(); }
     function renderSlip() { return state.payrollStage==='net'?renderNetSlip():renderGrossResults(); }

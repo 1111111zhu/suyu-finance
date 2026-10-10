@@ -23,7 +23,7 @@ globalThis.PayrollEngine = (() => {
   ];
   const netFields = [
     ['其它代扣','otherDeduct','money',['其他代扣']],['水电代扣','utility','money',['员工宿舍水电费代扣','水电费代扣','水电费合计']],
-    ['餐费代扣','mealDeduct','money',['餐费合计']],['个税','tax','money',['应退（补）税额','税','个人所得税','税额']],
+    ['餐费代扣','mealDeduct','money',['餐费合计']],['个税','tax','money',['应补（退）税额','税','个人所得税','税额']],
     ['税后代扣合计','afterTaxTotal','money'],['实发工资','net','money'],
     ['公司缴纳社保','companySocial','money',['公司总计','公司总计（社保）']],
     ['公司缴纳公积金','companyFund','money',['公司缴纳','公司缴纳（公积金）']],['公司总成本','companyCost','money'],['备注','remark','text']
@@ -62,7 +62,7 @@ globalThis.PayrollEngine = (() => {
     return Number.isFinite(result)?result:NaN;
   }
   function canonicalHeader(header) {
-    const token=key(header),withoutUnit=token.replace(/(?:\((?:元|天|分|%)\)|(?:元|天))$/,'').replace(/^(年假|弹性假|调休假?|病假|事假|旷工)\((?:h|小时)\)$/i,'$1');
+    const token=key(header),withoutUnit=token.replace(/(?:\((?:元|天|分|%)\)|(?:元|天))$/,'');
     const found=[...fields,...netFields].find(([label,,type,aliases=[]])=>[label,...aliases].some(alias=>key(alias)===token || ['money','number'].includes(type)&&key(alias)===withoutUnit));
     return found?found[0]:token;
   }
@@ -218,13 +218,17 @@ globalThis.PayrollEngine = (() => {
     // applies historical timezone offsets and can move midnight to yesterday.
     const book=library.read(data,{...options,type,cellDates:false,cellNF:true});
     const date1904=book.Workbook?.WBProps?.date1904===true;
+    const calendarFormats=new Map();
     for(const sheetName of book.SheetNames) {
       for(const [address,cell] of Object.entries(book.Sheets[sheetName] || {})) {
-        if(address.startsWith('!') || cell?.t!=='n' || !library.SSF?.is_date(cell.z || '')) continue;
-        // Leave time-only cells numeric. Decode calendar dates from the original
-        // serial and workbook epoch, without a JavaScript Date conversion.
-        const format=String(cell.z || '').replace(/"[^"]*"|\[[^\]]*\]|\\./g,'');
-        if(!/[yd]/i.test(format)) continue;
+        if(address.startsWith('!') || cell?.t!=='n') continue;
+        const formatKey=cell.z || '';
+        if(!calendarFormats.has(formatKey)) {
+          const format=String(formatKey).replace(/"[^"]*"|\[[^\]]*\]|\\./g,'');
+          calendarFormats.set(formatKey,Boolean(library.SSF?.is_date(formatKey) && /[yd]/i.test(format)));
+        }
+        // Cache format classification, preserving calendar serials and time-only values.
+        if(!calendarFormats.get(formatKey))continue;
         const date=library.SSF.parse_date_code(cell.v,{date1904});
         if(!date) continue;
         const day=`${String(date.y).padStart(4,'0')}-${String(date.m).padStart(2,'0')}-${String(date.d).padStart(2,'0')}`;
@@ -266,18 +270,19 @@ globalThis.PayrollEngine = (() => {
         return normalized === category || normalized.startsWith(category+'(') || normalized === category+'天数';
       });
       const days = columns.find(([label,value]) => !/\((?:H|小时)\)/i.test(normalize(label)) && valid(value));
-      const hours = columns.find(([label,value]) => /\((?:H|小时)\)/i.test(normalize(label)) && valid(value));
-      let count = days ? Number(days[1]) : hours ? Number(hours[1]) : null;
+      // Leave arithmetic uses days only; an existing blank day column means zero.
+      const dayColumn = columns.find(([label]) => !/\((?:H|小时)\)/i.test(normalize(label)));
+      let count = days ? Number(days[1]) : dayColumn ? 0 : null;
       if (count === null) {
         const alias = category === '调休' ? '调休(?:假)?' : category === '婚假' ? '(?:婚假|婚嫁)' : category;
-        const pattern = new RegExp('(?<![\u4e00-\u9fff])'+alias+'\\s*([0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)\\s*(天|小时|[hH])', 'g');
+        const pattern = new RegExp('(?<![\u4e00-\u9fff])'+alias+'\\s*([0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)\\s*(天)', 'g');
         count = 0;
         for (const match of remark.matchAll(pattern)) {
           count += Number(match[1]);
           // A remark may continue the same leave category: 年假0.5天，0.25天。
           const tail = remark.slice(match.index+match[0].length);
-          const continuation = tail.match(/^(?:\s*[，,、]\s*(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(?:天|小时|[hH]))+/);
-          if (continuation) for (const extra of continuation[0].matchAll(/([0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(天|小时|[hH])/g)) count += Number(extra[1]);
+          const continuation = tail.match(/^(?:\s*[，,、]\s*(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(?:天))+/);
+          if (continuation) for (const extra of continuation[0].matchAll(/([0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(天)/g)) count += Number(extra[1]);
         }
       }
       breakdown[category] = count;
@@ -500,7 +505,7 @@ globalThis.PayrollEngine = (() => {
       e.social=e.isIntern?0:get('netSocial',['个人社保','个人总计'],'个人社保');
       e.fund=e.isIntern?0:get('netFund',['个人公积金','个人缴纳'],'个人公积金');
       // 实习生不承担个人社保、公积金；个税和税后代扣仍按上传资料扣除。
-      e.tax=get('tax',['应退（补）税额','税','个税','个人所得税','税额'],'个税');
+      e.tax=get('tax',['应补（退）税额','税','个税','个人所得税','税额'],'个税');
       e.utility=deductionAmount(sources.afterTax,name,['水电代扣','水电费代扣','水电费合计'],'水电代扣',issues);
       e.mealDeduct=deductionAmount(sources.afterTax,name,['餐费代扣','餐费合计'],'餐费代扣',issues);
       e.otherDeduct=deductionAmount(sources.afterTax,name,['其它代扣','其他代扣'],'其它代扣',issues);
