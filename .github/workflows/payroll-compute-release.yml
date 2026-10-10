@@ -27,9 +27,9 @@ jobs:
       - run: npm run test:payroll-compute
       - run: npx eslint server/payroll/calculation-*.mjs app/api/payroll/calculations public/salary/workbench-compute.js 自动化测试/payroll-computation-api.test.mjs
       - run: bash -n 运维脚本/deploy-payroll-compute.sh
-      - run: npm run build
+      - run: RD_LOCAL_PREVIEW=1 npm run build
   deploy:
-    if: github.event_name == 'push' || inputs.deploy == true
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -45,7 +45,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          [[ "$SERVER_HOST" == 101.35.98.180 ]] || { echo 'Production secrets point to a different server. No files were uploaded or changed.' >&2; exit 1; }
+          [[ "$SERVER_HOST" == 123.207.188.183 ]] || { echo 'Production secrets point to a different server. No files were uploaded or changed.' >&2; exit 1; }
           [[ "$SERVER_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ && -n "$SERVER_SSH_KEY" && -n "$SSH_KNOWN_HOSTS" ]] || { echo 'Production SSH configuration is incomplete.' >&2; exit 1; }
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/finance_deploy

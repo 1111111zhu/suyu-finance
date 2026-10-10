@@ -158,7 +158,18 @@ globalThis.PayrollEmailEngine = (() => {
     SECTION_ORDER.forEach(([key, label]) => {
       const value = text(draft.sections?.[key]);
       if (!value) return;
-      lines.push(label, value, '');
+      if (key === 'attendanceDeduct') lines.push('本月假勤情况：', '扣薪假勤', '姓名\t假勤扣薪天数\t假勤扣款\t假期类型', value, '');
+      else if (key === 'attendanceNoDeduct') {
+        if (!text(draft.sections?.attendanceDeduct)) lines.push('本月假勤情况：');
+        lines.push('无扣薪假勤');
+        const rows = value.split('\n').map(line => line.split('\t'));
+        ['年假', '调休假', '弹性假'].forEach(type => {
+          const group = rows.filter(row => row.length === 3 && row[1] === type);
+          if (group.length) lines.push(`姓名\t${type}`, ...group.map(row => `${row[0]}\t${row[2]}`));
+        });
+        lines.push(...rows.filter(row => row.length !== 3 || !['年假', '调休假', '弹性假'].includes(row[1])).map(row => row.join('\t')), '');
+      } else if (key === 'overtime') lines.push(`${label}：`, '姓名\t调休假系统余额\t加班费', value, '');
+      else lines.push(label, value, '');
     });
     const summary = draft.summary || {};
     if (draft.manualSummary) lines.push(text(draft.manualSummary), '');
@@ -166,6 +177,23 @@ globalThis.PayrollEmailEngine = (() => {
     else lines.push('本月合计发薪成本待核对，平均人员成本待核对。');
     (summary.departments || []).forEach(item => lines.push(`${item.dept}人员总成本${money(item.total)}元，平均${money(item.average)}元`));
     return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  // Convert tabular lines into shared columns; headers and values use identical alignment.
+  function renderHtml(body) {
+    const escape = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+    const lines = String(body).split('\n'), parts = [];
+    for (let i = 0; i < lines.length;) {
+      if (!lines[i].includes('\t')) { parts.push(`<div>${escape(lines[i]) || '<br>'}</div>`); i++; continue; }
+      const rows = [];
+      while (i < lines.length && lines[i].includes('\t')) rows.push(lines[i++].split('\t'));
+      const columns = Math.max(...rows.map(row => row.length));
+      parts.push('<table style="border-collapse:collapse;table-layout:fixed;width:100%;max-width:640px;margin:6px 0 14px"><tbody>' + rows.map(row => {
+        const header = row[0].trim() === '姓名';
+        return '<tr>' + Array.from({length:columns}, (_, j) => `<${header?'th':'td'} style="text-align:left;vertical-align:top;padding:5px 12px 5px 0;width:${100/columns}%;font-weight:${header?'600':'400'}">${escape(row[j] || '')}</${header?'th':'td'}>`).join('') + '</tr>';
+      }).join('') + '</tbody></table>');
+    }
+    return `<div style="font-family:Arial,\'Microsoft YaHei\',sans-serif;font-size:14px;line-height:1.7">${parts.join('')}</div>`;
   }
 
   function validate(draft) {
@@ -180,5 +208,5 @@ globalThis.PayrollEmailEngine = (() => {
     return {status: errors.length ? 'blocked' : warnings.length && !draft.acknowledgedWarnings ? 'warning' : 'passed', errors, warnings};
   }
 
-  return {DEFAULT_RECIPIENT, DEFAULT_RECIPIENT_NAME, MAILBOX_URL, SECTION_ORDER, defaultDraft, extract, render, validate, money, number, monthLabel};
+  return {DEFAULT_RECIPIENT, DEFAULT_RECIPIENT_NAME, MAILBOX_URL, SECTION_ORDER, defaultDraft, extract, render, renderHtml, validate, money, number, monthLabel};
 })();

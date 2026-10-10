@@ -4,13 +4,13 @@
   "files": [
     {
       "path": "public/salary/index.html",
-      "before": "e9e08398199620f8ab8fc0e3342e1f4bddc5d28ab72f320758809c820c9d5f77",
-      "after": "400f7b2a7a337746f7214b814f64f7ba3fb9b7383353e4af32bf537226013181"
+      "before": "a9e92660f6e28cc185213bc45251a2bd7d7ee27dbba8af80293da3da6b900349",
+      "after": "de2b4b6075242f49888cb19100dc81a1b45ff92081535b8037150ca65a423333"
     },
     {
       "path": "public/salary/payroll-engine.js",
-      "before": "cb2887da282f62d22e8cae3082f4bb51a9866837e29e46f2b169d5a2a2446899",
-      "after": "dafcd77d9f2b09fe02f8a5bfa660d80502c11af4d16bb1f546dc4f22e8b0198e"
+      "before": "9c915ee24b7cda04d4eb813d06011a0ed42c9cda7ecd23856ca5771ea1a937bc",
+      "after": "408351521da9b8b34903bc946cf3f94bff4088f5e4136031e92bc06c74e39352"
     },
     {
       "path": "public/salary/workbench-core.js",
@@ -25,7 +25,7 @@
     {
       "path": "public/salary/calculation-model.js",
       "before": null,
-      "after": "fc626b0ff673e8aad605b6a2ad99b9302bb1a6b50ff718f2d320818469a47434"
+      "after": "6faf80964e6f5a85e5b6da5f8f9fefab8af25dd35a9b073326b4a41efd895b12"
     },
     {
       "path": "public/salary/workbench-compute.js",
@@ -77,5 +77,7 @@
       "before": null,
       "after": "b371684595c01bf42ecdab26762b06cf09ec430e512a34356fbc535ba7588681"
     }
-  ]
+  ],
+  "productionHost": "123.207.188.183",
+  "productionSourceRelease": "ab166b3a57e291b0db8d2a1b9deb61a7b08543ae"
 }
