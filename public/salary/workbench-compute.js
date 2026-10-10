@@ -44,15 +44,8 @@ globalThis.PayrollCalculation = (() => {
     }
   }
   function cancel() {clearTimeout(scheduled);if(active){active.cancelled=true;clearTimeout(active.wait);active.wake?.();}}
-  function schedule() {
-    clearTimeout(scheduled);
-    scheduled=setTimeout(()=>{
-      if(state.calculating)return;
-      if(importSession().busy){schedule();return;}
-      if(state.payrollStage==='gross'?hasPayrollRoster():Boolean(sourceRows.grossUpload?.length || sourceRows.roster?.length))
-        void calculateStage({automatic:true});
-    },200);
-  }
+  // Data changes and navigation mark results stale; calculation requires the explicit button.
+  function schedule() {clearTimeout(scheduled);}
   function rememberNet() {
     netResults.set(currentBatch(),{employees,month:currentMonth,workdays:currentWorkdays,
       revision:PayrollWorkbench.data().revision,rows:Object.entries(sourceRows)});
@@ -68,6 +61,7 @@ globalThis.PayrollCalculation = (() => {
 })();
 
 calculateStage = async function ({automatic=false}={}) {
+  if (automatic) return;
   if (state.calculating) return;
   if (importSession().busy) {showToast('文件正在解析，请稍候');return;}
   if (!(stageReady() || state.payrollStage==='net'&&hasPayrollRoster())) {showToast(state.payrollStage === 'net' ? '请先生成或上传应发工资表' : '请先上传花名册以确定员工范围');return;}
