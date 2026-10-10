@@ -18,7 +18,7 @@ globalThis.PayrollWorkbenchUI=(()=>{
   function grossUploadDone(){const required=['roster','salary','performance','attendance','other'];return !!state.liveImport&&required.every(key=>state.sourceStatus[key]?.uploaded&&sourceRows[key]?.length);}
   function grossResultDone(){return grossUploadDone()&&generatedEmployees.length>0&&currentBatch().status==='已计算';}
   function netUploadDone(){const required=['tax','netSocial','netFund'];return grossResultDone()&&!!state.liveImport&&required.every(key=>state.sourceStatus[key]?.uploaded&&sourceRows[key]?.length);}
-  function netResultDone(){const list=PayrollEngine.calculateNet(sourceRows.grossUpload?PayrollEngine.uploadedEmployees(sourceRows.grossUpload):generatedEmployees,sourceRows),old=state.payrollStage;state.payrollStage='net';const done=netUploadDone()&&list.length>0&&list.every(e=>W.isReviewed(e));state.payrollStage=old;return done;}
+  function netResultDone(){if(!netUploadDone())return false;const list=state.payrollStage==='net'&&state.calculated?employees:globalThis.PayrollCalculation?.netEmployees()||[],old=state.payrollStage;state.payrollStage='net';try{return list.length>0&&list.every(e=>W.isReviewed(e));}finally{state.payrollStage=old;}}
   function stages(){
     const working=['upload','mapping'].includes(state.view),inPayroll=monthlyViews.includes(state.view);
     const currentIndex=!inPayroll?0:state.payrollStage==='gross'?(working?0:1):(working?2:3);
@@ -146,7 +146,7 @@ globalThis.PayrollWorkbenchUI=(()=>{
     if(cmd==='export'){if(!leave())return;if(state.payrollStage==='gross')downloadGross();else downloadCsv();}
     if(cmd==='export-person'){if(!leave())return;downloadSlip();}
     if(cmd==='print-person'){if(!leave())return;if(payrollExportReady())window.print();}
-    if(cmd==='calculate'){calculateStage();}
+    if(cmd==='calculate'){await calculateStage();}
     if(cmd==='new'){if(!leave())return;openModal();}
     if(cmd==='batch'){if(!leave())return;saveBatchData();const batch=state.batches[Number(b.dataset.index)];if(!batch)return;document.getElementById('content').innerHTML=`<div class="wb-page-head"><div><h1>${esc(batch.name)}</h1></div>${action('返回历史批次','batch-back','','btn')}</div><iframe title="月度人员明细" src="/salary-directory?embed=1&month=${encodeURIComponent(batch.month)}&detail=1" style="width:100%;height:75vh;border:0"></iframe>`;}
     if(cmd==='batch-delete'){if(!leave())return;const batch=state.batches[Number(b.dataset.index)];if(!batch)return;if(!window.confirm(`删除“${batch.name}”？本机批次将移至回收记录，服务器副本保留。`))return;await W.deleteBatch(batch);mount('batches',false);showToast('批次已删除，可恢复最近一次删除');}

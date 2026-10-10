@@ -1,0 +1,81 @@
+{
+  "baseCommit": "a6cd1fbe4bb24d8e3169f0fc436df14efed1482a",
+  "version": "20261010-server-compute-v1",
+  "files": [
+    {
+      "path": "public/salary/index.html",
+      "before": "e9e08398199620f8ab8fc0e3342e1f4bddc5d28ab72f320758809c820c9d5f77",
+      "after": "400f7b2a7a337746f7214b814f64f7ba3fb9b7383353e4af32bf537226013181"
+    },
+    {
+      "path": "public/salary/payroll-engine.js",
+      "before": "cb2887da282f62d22e8cae3082f4bb51a9866837e29e46f2b169d5a2a2446899",
+      "after": "dafcd77d9f2b09fe02f8a5bfa660d80502c11af4d16bb1f546dc4f22e8b0198e"
+    },
+    {
+      "path": "public/salary/workbench-core.js",
+      "before": "01eccaab8d262635283f33dacc8fd146f87e2be987f02325b53c7d78b35df216",
+      "after": "3aebd79a054f7535df3a68dac7444f503d5df6e8aca009e303f9dd38aebd58df"
+    },
+    {
+      "path": "public/salary/workbench-ui.js",
+      "before": "2d2d41429fe690e0f1d299e1412eba79b68ec84e5365ed45c70e24544850c9a7",
+      "after": "c320d03028648db7e76b0fb2a7f90a0be8ca931480a4ece041ae73a237d7b89f"
+    },
+    {
+      "path": "public/salary/calculation-model.js",
+      "before": null,
+      "after": "fc626b0ff673e8aad605b6a2ad99b9302bb1a6b50ff718f2d320818469a47434"
+    },
+    {
+      "path": "public/salary/workbench-compute.js",
+      "before": null,
+      "after": "616ce270eb97d33fd8fdde0fae5cb08cba5c3a07eb4654e2689260cd552224cf"
+    },
+    {
+      "path": "server/payroll/calculation-thread.mjs",
+      "before": null,
+      "after": "b213eb0fd1e36c5a4104d517234671be4a958d41d8fd51c0b61874b919a11b7e"
+    },
+    {
+      "path": "server/payroll/calculation-jobs.mjs",
+      "before": null,
+      "after": "cf9493d5a65216d4991d1985e4bd9541f53361207bccba2d761ea52d505c208d"
+    },
+    {
+      "path": "server/payroll/calculation-response.mjs",
+      "before": null,
+      "after": "6826fe144c07e73246e5927a1a0af1b233ad2a55c0519eeb70081df217af4be1"
+    },
+    {
+      "path": "app/api/payroll/calculations/route.ts",
+      "before": null,
+      "after": "d48e2cbd1f23b09f6a18dd219b347b12ec98111855e1d4a815eb6bec2bea8c6e"
+    },
+    {
+      "path": "app/api/payroll/calculations/[id]/route.ts",
+      "before": null,
+      "after": "39ab46194c296472d7385eb15b894ef72339c4275df236200e39e53346a92cde"
+    },
+    {
+      "path": "自动化脚本/build-payroll-worker-model.mjs",
+      "before": null,
+      "after": "7da52a413f4b21502830412688a3ed17b8a7a157e9a47afa99192a87f41604d4"
+    },
+    {
+      "path": "自动化测试/payroll-computation.test.mjs",
+      "before": null,
+      "after": "ad4a5b8f83beeedebdd471c40c8934c1e6ffa4492a75be7887f698078382779b"
+    },
+    {
+      "path": "自动化测试/payroll-computation-api.test.mjs",
+      "before": null,
+      "after": "22d56902684a88d258660674cb0da2b7539535da0f76d7265de9d0bd588cfb80"
+    },
+    {
+      "path": "自动化测试/helpers/payroll-calculation-thread.mjs",
+      "before": null,
+      "after": "b371684595c01bf42ecdab26762b06cf09ec430e512a34356fbc535ba7588681"
+    }
+  ]
+}

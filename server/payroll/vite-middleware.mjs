@@ -1,3 +1,5 @@
+import {Readable} from 'node:stream';
+import {calculationResponse,isCalculationPath} from './calculation-response.mjs';
 import {payrollActor} from '../access/payroll-tag-actor.mjs';
 import {requireAccess} from '../access/session.mjs';
 import { readFileSync, statSync } from 'node:fs';
@@ -124,6 +126,14 @@ export function payrollViteMiddleware() {
       const localPersonnelRoute = createLocalPersonnelRoute(personnelService);
       server.middlewares.use((req, res, next) => {
         if (!/^\/api\/payroll(?:\/|\?|$)/.test(req.url || '')) return next();
+        if(isCalculationPath(new URL(req.url,'http://127.0.0.1:3220').pathname)) {
+          const request=new Request('http://127.0.0.1:3220'+req.url,{headers:req.headers,method:req.method,
+            ...['GET','HEAD'].includes(req.method)?{}:{body:Readable.toWeb(req),duplex:'half'}});
+          void calculationResponse(request).then(async response=>{
+            res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
+          }).catch(()=>respond(res,503,{error:'工资计算服务暂不可用'}));
+          return;
+        }
         void requireAccess(new Request('http://127.0.0.1:3220'+req.url,{headers:req.headers,method:req.method}),'payroll').then(()=>localPersonnelRoute(req, res)).then(handled => {
           if (handled) return;
           if (!handler) return unavailable(res, '工资数据库尚未配置，请设置 PAYROLL_DATABASE_URL');

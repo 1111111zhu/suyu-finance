@@ -120,11 +120,18 @@ globalThis.PayrollWorkbench = (() => {
     if(days&&v>31) throw new Error('天数不能超过 31 天');
     return days||field==='score'?v:round(v);
   }
+  function previewEmployee(e) {
+    const profile=rawProfiles.get(key(e));
+    if(state.payrollStage==='gross' && profile)return calculatedGross(profile,currentMonth,currentWorkdays);
+    if(state.payrollStage==='net')return PayrollEngine.calculateNet([e],sourceRows)[0];
+    return e;
+  }
   function previewChange(e,field,input) {
     preview={key:key(e),scope:scope(),field,value:validate(e,field,input)};
+    if(globalThis.PayrollCalculation)return previewEmployee(e);
     original.recalc();return selected();
   }
-  function clearPreview() {preview=null;original.recalc();}
+  function clearPreview() {preview=null;if(!globalThis.PayrollCalculation)original.recalc();}
   function saveChange(e,field,input,reason) {
     const v=validate(e,field,input,reason), k=key(e), s=scope(), before=value(e,field), d=data();
     const prior=d[s][k]?.[field];
@@ -152,7 +159,7 @@ globalThis.PayrollWorkbench = (() => {
     const d=data(), k=key(e), s=scope(), o=d[s][k]||{};
     if(!Object.hasOwn(o,field)) return;
     const previous=o[field];delete o[field];preview=null;original.recalc();
-    d.history.push({id:Date.now()+'-'+d.history.length,key:k,name:e.name,scope:s,field,before:previous,value:value(selected(),field),previous,reason:'恢复自动计算 / 来源值',at:new Date().toISOString(),reset:true});
+    d.history.push({id:Date.now()+'-'+d.history.length,key:k,name:e.name,scope:s,field,before:previous,value:value(globalThis.PayrollCalculation?previewEmployee(e):selected(),field),previous,reason:'恢复自动计算 / 来源值',at:new Date().toISOString(),reset:true});
     d.revision++;delete d.reviewed[s+':'+k];
     if(s==='gross'&&!['social','fund'].includes(field)){d.taxReview||={};d.taxReview[k]=true;delete d.reviewed['netGenerated:'+k];}
     if(s==='netGenerated'&&field==='tax'){d.taxReview||={};d.taxReview[k]=true;}
@@ -180,6 +187,7 @@ globalThis.PayrollWorkbench = (() => {
     return {label:sourceSheets.find(s=>s.key===sourceKey)?.name||'人工调整',filename:[...new Set(records.map(r=>r._importSource?.filename||r._rosterSource?.filename||state.sourceStatus[sourceKey]?.filename||''))].join('、'),row:source?.rowNumber??(record?rows.indexOf(record)+(rows.sourceStartRow||2):null),sheet:[...new Set(records.map(r=>r._importSource?.sheetName||r._rosterSource?.sheetName||rows.sheetName||''))].join('、'),record:records.length>1&&sourceKey==='other'?{合计金额:e[field],来源明细:records}:record};
   }
   commitSource=(k,item)=>{
+    if(state.calculating)throw new Error('工资正在计算，请等待或取消后再上传');
     if(!state.liveImport) {
       currentBatch().workbench=null;rawProfiles.clear();
       // A first real import replaces the entire demonstration, including its settings/mail.
@@ -261,7 +269,19 @@ globalThis.PayrollWorkbench = (() => {
     original.recalc();saveBatchData();
   };
   function openDB(){return new Promise((resolve,reject)=>{if(!globalThis.indexedDB){reject(new Error('本地存储不可用'));return;}const req=indexedDB.open('payroll-workbench-local',1);req.onupgradeneeded=()=>req.result.createObjectStore('workspace');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
-  async function persist(){const snapshot=structuredClone(state.batches);try{const db=await openDB();await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(snapshot,'batches');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();storageError='';}catch(e){storageError=e.message||'无法保存到本机';}}
+  let persistVersion=0, persistScheduled=false;
+  function schedulePersist() {
+    persistVersion++;
+    if(persistScheduled)return;
+    persistScheduled=true;
+    queue=queue.then(async()=>{
+      try {
+        let saved;
+        do {saved=persistVersion;await persist();} while(saved!==persistVersion);
+      } finally {persistScheduled=false;}
+    });
+  }
+  async function persist(){try{const db=await openDB();await new Promise((resolve,reject)=>{const tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put(state.batches,'batches');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();storageError='';}catch(e){storageError=e.message||'无法保存到本机';}}
   saveBatchData=()=>{original.save();
     const b=currentBatch(), real=state.liveImport && b.draftOrigin!=='demo' && !Object.values(state.sourceStatus).some(st=>st?.demo);
     if(real){
@@ -279,7 +299,7 @@ globalThis.PayrollWorkbench = (() => {
       if(!b.personnelAnalysis || JSON.stringify(b.personnelAnalysis.people)!==JSON.stringify(people))
         b.personnelAnalysis={updatedAt:new Date().toISOString(),people};
     }
-if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=structuredClone(profiles);if(!hydrating)queue=queue.then(persist);notify();};
+if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=structuredClone(profiles);if(!hydrating)schedulePersist();notify();};
   async function restore(){
     hydrating=true;
     try{const db=await openDB();const saved=await new Promise((resolve,reject)=>{const req=db.transaction('workspace').objectStore('workspace').get('batches');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});db.close();
@@ -384,7 +404,7 @@ if(!state.liveImport&&currentBatch().draftOrigin!=='empty')data().demoProfiles=s
   }
   function persistCloudMetadata(batch) {
     if(!state.batches.includes(batch))throw new Error('本机批次已不存在');
-    if(batch===currentBatch())saveBatchData();else {queue=queue.then(persist);notify();}
+    if(batch===currentBatch())saveBatchData();else {schedulePersist();notify();}
   }
   return {fields,key,scope,data,selected,overrides,history,value,source,ambiguous,previewChange,clearPreview,saveChange,undo,resetField,markReviewed,isReviewed,restore,orphaned,rebind,
     deleteBatch,restoreDeletedBatch,packCurrent,validateSnapshot,restoreCloud,persistCloudMetadata,currentBatch,
