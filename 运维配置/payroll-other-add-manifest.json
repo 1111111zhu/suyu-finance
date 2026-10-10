@@ -5,12 +5,12 @@
     {
       "path": "public/salary/index.html",
       "before": "de2b4b6075242f49888cb19100dc81a1b45ff92081535b8037150ca65a423333",
-      "after": "b92046d8fa888b6f8d21c02571aa78fbb181d465bc2d133ed1b9ff768831963a"
+      "after": "c1f9c5943928da58a0af235cc747f4372d65dfe094e40f2081ab46c61f0a10ff"
     },
     {
       "path": "public/salary/calculation-model.js",
       "before": "6faf80964e6f5a85e5b6da5f8f9fefab8af25dd35a9b073326b4a41efd895b12",
-      "after": "4ce858bc043b97c7d45552ab4db91cc22a175b3fb7d991ba45e0854ad23ac638"
+      "after": "2d9ecd5df6b01d430817da7f8cfff188c4a95da4ff65694aba9535c097609668"
     },
     {
       "path": "public/salary/payroll-engine.js",

@@ -47,6 +47,7 @@ test('containing headers normalize uniquely and reject invalid amounts or ambigu
  const {run}=app();
  const rows=run(`normalizeSourceFields([{姓名:'甲','本月其他加补发（元）':'￥1,250.50',金额:999}],'other','数据.xlsx','明细')`);
  assert.equal(rows[0].其他加,'￥1,250.50');
+ assert.equal(run(`normalizeSourceFields(${JSON.stringify(rows)},'other','数据.xlsx','明细')`)[0].其他加,'￥1,250.50');
  assert.throws(()=>run(`normalizeSourceFields([{姓名:'甲',其他加:100,其他加补贴:200}],'other','数据.xlsx','明细')`),/唯一/);
  assert.throws(()=>run(`normalizeSourceFields([{姓名:'甲',其他加金额:'无效'}],'other','数据.xlsx','明细')`),/无效/);
 });

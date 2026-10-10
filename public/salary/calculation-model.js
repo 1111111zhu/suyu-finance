@@ -486,7 +486,8 @@ const icon = {
       const groupMatches=(text,group)=>{if(key==='grossUpload' && /应发薪|天数/.test(text))return false;if(key==='attendance' && /天数$/.test(group[0]) && /补贴|津贴|工资|金额|扣款|小时|分钟/.test(text))return false;const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
       for(const group of groups) {
         if(key==='other' && group[0]==='其他加') {
-          const columns=headers.filter(h=>canonicalKey(h).includes('其他加'));
+          const previousColumn=rows[0]?._otherAddSource?.column;
+          const columns=headers.filter(h=>canonicalKey(h).includes('其他加') && !(h==='其他加' && previousColumn && previousColumn!==h));
           if(columns.length>1)throw new Error(`${sheetName}：其他加需要唯一的对应列，请核对表头`);
           if(columns.length)mappings.push(['其他加',columns[0]]);
           continue;
@@ -515,6 +516,7 @@ const icon = {
           const value=row[column];
           if(key==='other' && label==='其他加' && (!Number.isFinite(PayrollEngine.numeric(value)) || PayrollEngine.blank(value)))throw new Error(`${sheetName}其他加金额缺失或无效`);
           normalized[label]=value;
+          if(key==='other' && label==='其他加')normalized._otherAddSource={filename,sheetName,column};
         }
         return normalized;
       });
