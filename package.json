@@ -30,8 +30,9 @@
     "test:rd-db": "node --test 自动化测试/rd-db.integration.test.mjs",
     "payroll:api": "node server/payroll/start.mjs",
     "test:payroll-api": "node --test 自动化测试/payroll-api.test.mjs 自动化测试/payroll-auth.test.mjs 自动化测试/payroll-cloud.test.mjs 自动化测试/wecom-directory.test.mjs",
-    "prebuild": "node 自动化脚本/build-payroll-worker-model.mjs",
-    "test:payroll-compute": "node --test 自动化测试/payroll-computation.test.mjs 自动化测试/payroll-computation-api.test.mjs"
+    "prebuild": "node 自动化脚本/build-payroll-worker-model.mjs && node 自动化脚本/build-payroll-editor.mjs",
+    "test:payroll-compute": "node --test 自动化测试/payroll-computation.test.mjs 自动化测试/payroll-computation-api.test.mjs",
+    "build:payroll-editor": "node 自动化脚本/build-payroll-editor.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
@@ -41,7 +42,15 @@
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "word-extractor": "^1.0.4",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@univerjs/presets": "1.0.3",
+    "@univerjs/preset-sheets-core": "1.0.3",
+    "@univerjs/preset-sheets-filter": "1.0.3",
+    "exceljs": "4.4.0",
+    "@univerjs/core": "1.0.3",
+    "@univerjs/sheets": "1.0.3",
+    "@univerjs/engine-formula": "1.0.3",
+    "@univerjs/sheets-formula": "1.0.3"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

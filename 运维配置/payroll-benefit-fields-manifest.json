@@ -2,8 +2,8 @@
   "files": [
     {
       "path": "public/salary/index.html",
-      "before": "ee3c17a1815c1ecb5026e7acc4ee62bb26b7b54b7caf76b17cd931299c0189ae",
-      "after": "a6323ae202f4df7206f6a9aa53b856f48d9ff9594a30ca50a6eacb405db1e041"
+      "before": "fb8a3f7133a9f5ecfa5d07bd01d2e73b9f27776c7251ae83d9409ded712f4900",
+      "after": "a3134da55b4e19a182da29ffe782cfdc4797844293b79a5d744f91813e7f5152"
     },
     {
       "path": "public/salary/payroll-engine.js",

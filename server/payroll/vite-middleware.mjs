@@ -1,3 +1,4 @@
+import {isWorkbookPath,workbookResponse} from './workbooks/response.mjs';
 import {Readable} from 'node:stream';
 import {calculationResponse,isCalculationPath} from './calculation-response.mjs';
 import {payrollActor} from '../access/payroll-tag-actor.mjs';
@@ -126,6 +127,10 @@ export function payrollViteMiddleware() {
       const localPersonnelRoute = createLocalPersonnelRoute(personnelService);
       server.middlewares.use((req, res, next) => {
         if (!/^\/api\/payroll(?:\/|\?|$)/.test(req.url || '')) return next();
+        if(isWorkbookPath(new URL(req.url,'http://127.0.0.1:3220').pathname)) {
+          const request=new Request('http://127.0.0.1:3220'+req.url,{headers:req.headers,method:req.method,...['GET','HEAD'].includes(req.method)?{}:{body:Readable.toWeb(req),duplex:'half'}});
+          void workbookResponse(request).then(async response=>{res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}).catch(()=>respond(res,503,{error:'工作簿后台服务暂不可用'}));return;
+        }
         if(isCalculationPath(new URL(req.url,'http://127.0.0.1:3220').pathname)) {
           const request=new Request('http://127.0.0.1:3220'+req.url,{headers:req.headers,method:req.method,
             ...['GET','HEAD'].includes(req.method)?{}:{body:Readable.toWeb(req),duplex:'half'}});

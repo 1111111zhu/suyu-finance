@@ -44,21 +44,21 @@ test('employee detail background export matches the existing adjustment-aware sl
  assert.deepEqual(normalized(XLSX.read(new Uint8Array(result.bytes),{type:'array'})),normalized(XLSX.read(new Uint8Array(expected.bytes),{type:'array'})));
 });
 test('controller prevents duplicate exports and releases failed jobs for retry',async()=>{
- const {ctx,run}=model();const workers=[],downloads=[];
+ const {ctx,run}=model();const calls=[],downloads=[];
  ctx.URL=class extends URL {static createObjectURL(){return 'blob:test';}static revokeObjectURL(){}};
  ctx.location={origin:'https://example.test'};ctx.Blob=Blob;
  ctx.document={currentScript:{src:'https://example.test/salary/workbench-export.js'},createElement:()=>({click(){downloads.push(this.download);},remove(){}}),body:{appendChild(){}}};
- ctx.Worker=class {constructor(){workers.push(this);}postMessage(request){this.request=request;}terminate(){this.terminated=true;}};
+ ctx.PayrollWorkbookAPI={binary:(path,request)=>new Promise((resolve,reject)=>calls.push({path,request:structuredClone(request),resolve,reject}))};
  run(fs.readFileSync(new URL('workbench-export.js',base),'utf8'));
- const first=run('downloadGross()');assert.equal(await run('downloadGross()'),false);assert.equal(workers.length,1);
- workers[0].onmessage({data:{id:workers[0].request.id,error:'模拟导出失败'}});
- assert.equal(await first,false);assert.equal(run('PayrollExport.busy'),false);assert.equal(workers[0].terminated,true);assert.equal(downloads.length,0);
+ const first=run('downloadGross()');assert.equal(await run('downloadGross()'),false);assert.equal(calls.length,1);
+ calls[0].reject(new Error('模拟导出失败'));
+ assert.equal(await first,false);assert.equal(run('PayrollExport.busy'),false);assert.equal(downloads.length,0);
  run(`state.sourceStatus.roster.previews=[{rows:['large preview']}];currentBatch().data.extraLarge=['not needed'];`);
- const second=run('downloadGross()'),request=workers[1].request;
+ const second=run('downloadGross()'),request=calls[1].request;
  assert.equal(request.snapshot.state.sourceStatus.roster.previews,undefined);assert.equal(request.snapshot.state.batches[0].data.extraLarge,undefined);
  const standalone=run('PayrollExport.snapshot()');run(`sourceRows.roster[0]['入职日期']='later';`);assert.equal(standalone.sourceRows.roster[0]['入职日期'],'2024/3/8');
  run(`currentMonth='2027-01';`);
- workers[1].onmessage({data:{id:request.id,bytes:new ArrayBuffer(8),filename:'应发工资表_2026-09.xlsx'}});
+ calls[1].resolve(new Response(new ArrayBuffer(8),{headers:{'X-Workbook-Filename':encodeURIComponent('应发工资表_2026-09.xlsx')}}));
  const completed=await second;assert.ok(completed);ctx.completed=completed;assert.equal(run('PayrollExport.matchesCurrent(completed)'),false);
  run(`currentMonth='2026-09'`);assert.equal(run('PayrollExport.matchesCurrent(completed)'),true);
  run(`sourceRows.attendance=[...sourceRows.attendance]`);assert.equal(run('PayrollExport.matchesCurrent(completed)'),false);
