@@ -26,7 +26,7 @@ globalThis.PayrollWorkbenchUI=(()=>{
     const steps=[['gross','upload','应发核算','准备资料'],['gross','results','应发核算','核对工资'],['net','upload','实发核算','准备资料'],['net','results','实发核算','核对工资']];
     return `<section class="wb-workflow wb-workflow-guide" aria-label="本月工资核算流程"><nav class="wb-flow-groups" aria-label="算薪步骤">${steps.map(([stage,view,phase,label],index)=>{
       const active=index===currentIndex,done=complete[index];
-      return `${index?`<span class="wb-flow-link ${complete[index-1]?'done':''}" aria-hidden="true"><i></i></span>`:''}${action(`<span class="wb-step-dot">${done?'✓':String(index+1).padStart(2,'0')}</span><span class="wb-step-text"><strong>${label}</strong><small>${phase}</small></span>${active?'<em>当前</em>':''}`,'workflow',`data-stage="${stage}" data-route="${view}" aria-label="${phase}：${label}" ${active?'aria-current="step"':''}`,'wb-flow-step'+(active?' active':'')+(done?' done':''))}`;
+      return `${index?`<span class="wb-flow-link ${complete[index-1]?'done':''}" aria-hidden="true"><i></i></span>`:''}<div class="wb-flow-step${active?' active':''}${done?' done':''}" aria-label="${phase}：${label}" ${active?'aria-current="step"':''}><span class="wb-step-dot">${done?'✓':String(index+1).padStart(2,'0')}</span><span class="wb-step-text"><strong>${label}</strong><small>${phase}</small></span>${active?'<em>当前</em>':''}</div>`;
     }).join('')}</nav></section>`;
   }
   function header(){const active=state.view;document.querySelector('.topbar').innerHTML=`<a class="wb-brand" href="./index.html" aria-label="SEEEX TECH 溯驭技术薪资系统"><span class="wb-brand-mark" aria-hidden="true"></span></a><nav class="wb-topnav" aria-label="主导航">${action(navLabel('monthly','本月工资'),'monthly','aria-label="本月工资"',monthlyViews.includes(active)?'active wb-month-home':'wb-month-home')}${[['directory','人员归集'],['batches','历史批次'],['email','邮件发送']].map(([v,t])=>action(navLabel(v,t),'route',`data-route="${v}" aria-label="${t}"`,active===v?'active':'')).join('')}<details class="wb-nav-menu"><summary>${navLabel('settings','核算设置')}<span class="wb-nav-chevron">⌄</span></summary><div>${[['mapping','实习生日薪与字段映射'],['exceptions','异常记录'],['rules','核算规则'],['templates','输出模板']].map(([v,t])=>action(t,'route',`data-route="${v}"`,'')).join('')}</div></details></nav>`;}
@@ -158,7 +158,7 @@ globalThis.PayrollWorkbenchUI=(()=>{
       const previous=currentBatch(),batch=state.batches[Number(b.dataset.index)];if(!batch)return;
       const switched=previous!==batch;if(switched)setCurrentBatch(batch);
       try {
-        if(globalThis.PayrollCalculation && !state.calculated)await calculateStage({automatic:true});
+        if(globalThis.PayrollCalculation && !state.calculated){showToast('请先点击计算并核对工资，再导出');return;}
         if(currentBatch()===batch)await downloadCsv();
       } finally {
         if(switched && currentBatch()===batch && state.batches.includes(previous)){setCurrentBatch(previous);mount('batches',false);}
