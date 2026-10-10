@@ -22,7 +22,7 @@ test -s dist/server/index.js
 python3 "$patch/运维脚本/payroll-workbooks-stage.py" check "$root" "$stage" "$patch" "$backup"
 container=$(docker ps --format '{{.Names}} {{.Image}}' | awk '$2 ~ /^postgres:17/ && $1 ~ /payroll/ {print $1}')
 [[ -n $container && $container != *$'\n'* ]]
-docker exec "$container" sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup/payroll-before.dump"
+docker exec "$container" sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec pg_dump -w -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup/payroll-before.dump"
 test -s "$backup/payroll-before.dump"
 # A connection-only preflight ensures migration targets this same database.
 node --env-file=/etc/suyu-finance/payroll-migrate.env --env-file=/etc/suyu-finance/payroll-api.env "$patch/运维脚本/payroll-workbooks-migrate.mjs" "$stage" "$backup"
