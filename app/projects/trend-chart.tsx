@@ -38,7 +38,7 @@ export function AnimatedAmount({value}:{value:number}){
   const [displayed,setDisplayed]=useState(0);
   useEffect(()=>{
     const reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if(reduce){setDisplayed(value);return;}
+    if(reduce){const frame=requestAnimationFrame(()=>setDisplayed(value));return()=>cancelAnimationFrame(frame);}
     const from=displayed,start=performance.now(),duration=650;
     let frame=0;
     const animate=(now:number)=>{const progress=Math.min(1,(now-start)/duration),eased=1-Math.pow(1-progress,3);setDisplayed(from+(value-from)*eased);if(progress<1)frame=requestAnimationFrame(animate);};

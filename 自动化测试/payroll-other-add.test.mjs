@@ -11,9 +11,9 @@ function app(){
  const html=fs.readFileSync(new URL('index.html',root),'utf8');vm.runInContext(html.match(/<script>\s*([\s\S]*?)<\/script>/)[1].replace("    render('overview');\n  ",''),c);
  vm.runInContext('render=()=>{};showToast=()=>{};',c);return {E:c.PayrollEngine,run:code=>vm.runInContext(code,c)};
 }
-test('other addition matches filename, worksheet name, or any containing header',()=>{
+test('other addition reads any containing header regardless of file or worksheet name',()=>{
  const {E,run}=app();
- for(const [filename,sheet,header] of [['9月其他加明细.xlsx','Sheet1','金额（元）'],['导出.xlsx','其他加补发','金额'],['明细.xlsx','Sheet1','本月其他加（元）']]){
+ for(const [filename,sheet,header] of [['9月其他加明细.xlsx','Sheet1','补发其他加（元）'],['导出.xlsx','其他加补发','其他加金额'],['明细.xlsx','Sheet1','本月其他加（元）']]){
   const rows=E.otherAdditionRowsFromGrid([['公司'],['姓名',header],['甲','￥1,250.50']],filename,sheet);assert.equal(rows[0].其他加,1250.5);rows.sheetName=sheet;
   assert.equal(run(`matchSource(${JSON.stringify(filename)},${JSON.stringify(rows)}).key`),'other');
  }
@@ -25,13 +25,29 @@ test('addition field takes precedence over other totals and preserves reductions
  assert.equal(rows[0].其他加,300);assert.equal(rows[0].其他减,20);
  assert.equal(E.otherAdditionRowsFromGrid([['姓名','金额'],['甲',300]],'补发.xlsx','Sheet1'),null);
  assert.throws(()=>E.otherAdditionRowsFromGrid([['姓名','其他加金额','其他加补贴'],['甲',10,20]],'表.xlsx','Sheet1'),/唯一/);
- assert.throws(()=>E.otherAdditionRowsFromGrid([['姓名','金额'],['甲','坏金额']],'其他加.xlsx','Sheet1'),/无效/);
+ assert.throws(()=>E.otherAdditionRowsFromGrid([['姓名','其他加金额'],['甲','坏金额']],'其他加.xlsx','Sheet1'),/无效/);
 });
 test('worksheet named other addition is read beyond the first worksheet',async()=>{
  const {run}=app();const w=XLSX.utils.book_new();XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet([['说明']]),'说明');
- XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet([['姓名','金额'],['甲',300],['乙',500]]),'9月其他加');
- const bytes=XLSX.write(w,{type:'array',bookType:'xlsx'});const rows=await run('parseXlsxFile')({name:'补发.xlsx',arrayBuffer:async()=>bytes});assert.equal(rows[1].其他加,500);assert.equal(rows.sheetName,'9月其他加');
+ XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet([['姓名','其他加金额'],['乙',500],['甲',300]]),'9月其他加');
+ const bytes=XLSX.write(w,{type:'array',bookType:'xlsx'});const rows=await run('parseXlsxFile')({name:'补发.xlsx',arrayBuffer:async()=>bytes});assert.equal(rows[0].其他加,500);assert.equal(rows.sheetName,'9月其他加');
  run("currentMonth='2026-09';sourceRows={roster:[{姓名:'甲',工号:'001',入职日期:'2025-01-01'}],salary:[{姓名:'甲',基本工资:10000}],attendance:[{姓名:'甲',实际出勤天数:22}]};state.liveImport=true;state.sourceStatus={roster:{uploaded:true}};recalculateEmployees();");
  const original=run('employees[0].gross');run(`commitSource('other',{filename:'补发.xlsx',rows:${JSON.stringify(rows)}})`);
  assert.equal(run('employees[0].otherAdd'),300);assert.equal(run('employees[0].gross'),original+300);
+});
+
+test('generic amount is not inferred from module, filename or worksheet name',()=>{
+ const {E,run}=app();
+ for(const [file,sheet] of [['其他加.xlsx','Sheet1'],['数据.xlsx','其他加'],['数据.xlsx','Sheet1']]) {
+  assert.equal(E.otherAdditionRowsFromGrid([['姓名','金额'],['甲',100]],file,sheet),null);
+  assert.throws(()=>run(`normalizeSourceFields([{姓名:'甲',金额:100}],'other',${JSON.stringify(file)},${JSON.stringify(sheet)})`),/表头含/);
+ }
+});
+test('containing headers normalize uniquely and reject invalid amounts or ambiguous columns',()=>{
+ const {run}=app();
+ const rows=run(`normalizeSourceFields([{姓名:'甲','本月其他加补发（元）':'￥1,250.50',金额:999}],'other','数据.xlsx','明细')`);
+ assert.equal(rows[0].其他加,'￥1,250.50');
+ assert.equal(run(`normalizeSourceFields(${JSON.stringify(rows)},'other','数据.xlsx','明细')`)[0].其他加,'￥1,250.50');
+ assert.throws(()=>run(`normalizeSourceFields([{姓名:'甲',其他加:100,其他加补贴:200}],'other','数据.xlsx','明细')`),/唯一/);
+ assert.throws(()=>run(`normalizeSourceFields([{姓名:'甲',其他加金额:'无效'}],'other','数据.xlsx','明细')`),/无效/);
 });

@@ -55,7 +55,7 @@ export default function SalaryDirectory() {
   const [batchDetail,setBatchDetail]=useState(false);
   const [month, setMonth] = useState(initialMonth);
   const [endMonth,setEndMonth]=useState(initialMonth);
-  useEffect(()=>{const params=new URLSearchParams(window.location.search);const m=params.get("month");if(params.get("detail")==="1"&&m&&/^\d{4}-(0[1-9]|1[0-2])$/.test(m)){setMonth(m);setEndMonth(m);setBatchDetail(true);}},[]);
+  useEffect(()=>{const params=new URLSearchParams(window.location.search);const m=params.get("month");if(params.get("detail")==="1"&&m&&/^\d{4}-(0[1-9]|1[0-2])$/.test(m)){const timer=setTimeout(()=>{setMonth(m);setEndMonth(m);setBatchDetail(true);},0);return()=>clearTimeout(timer);}},[]);
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -103,10 +103,10 @@ export default function SalaryDirectory() {
   }
   useEffect(() => {
     if (window.parent === window) { window.location.replace("/?section=salary-directory"); return; }
-    void refreshDirectory();
+    const timer=setTimeout(()=>void refreshDirectory(),0);return()=>clearTimeout(timer);
   }, []);
   useEffect(() => {
-    setPage(1);
+    const timer=setTimeout(()=>setPage(1),0);return()=>clearTimeout(timer);
   }, [role, query, department, statusFilter, month, selected, overrides]);
   useEffect(() => {
     const receive = (event: MessageEvent) => {

@@ -17,7 +17,7 @@ const icon = {
       {key:'salary',name:'员工基本工资表',icon:'薪',desc:'基本工资、岗位工资、绩效基数及转正前后薪资'},
       {key:'performance',name:'绩效考核表',icon:'绩',desc:'读取所有含姓名、绩效系数的工作表；指定人员缺省系数为 1'},
       {key:'attendance',name:'考勤统计表',icon:'勤',desc:'实际出勤天数、餐补、交通补贴、假期天数'},
-      {key:'other',name:'其他加 / 减',icon:'其',desc:'按姓名匹配；仅含姓名和金额的表作为其他加，津贴和减项需标明项目'},
+      {key:'other',name:'其他加 / 减',icon:'其',desc:'按姓名匹配；读取表头含“其他加”的金额列，津贴和减项需标明项目'},
       {key:'grossUpload',name:'应发工资表（可选）',icon:'薪',desc:'上传优先；未上传使用第一阶段生成结果',stage:'net'},
       {key:'tax',name:'个税表',icon:'税',desc:'姓名、税 / 个税 / 个人所得税 / 税额',stage:'net'},
       {key:'netSocial',name:'社保表',icon:'保',desc:'第二阶段：个人总计、公司总计',stage:'net'},
@@ -485,6 +485,13 @@ const icon = {
       const mappings=[];
       const groupMatches=(text,group)=>{if(key==='grossUpload' && /应发薪|天数/.test(text))return false;if(key==='attendance' && /天数$/.test(group[0]) && /补贴|津贴|工资|金额|扣款|小时|分钟/.test(text))return false;const all=groups.flatMap(g=>g.filter(alias=>fieldLabelMatches(text,alias)));const longest=Math.max(0,...all.map(alias=>canonicalKey(alias).length));return group.some(alias=>fieldLabelMatches(text,alias)&&canonicalKey(alias).length===longest);};
       for(const group of groups) {
+        if(key==='other' && group[0]==='其他加') {
+          const previousColumn=rows[0]?._otherAddSource?.column;
+          const columns=headers.filter(h=>canonicalKey(h).includes('其他加') && !(h==='其他加' && previousColumn && previousColumn!==h));
+          if(columns.length>1)throw new Error(`${sheetName}：其他加需要唯一的对应列，请核对表头`);
+          if(columns.length)mappings.push(['其他加',columns[0]]);
+          continue;
+        }
         const exact=headers.filter(h=>group.some(alias=>canonicalKey(h)===canonicalKey(alias) || PayrollEngine.canonicalHeader(h)===group[0]));
         const labeled=headers.filter(h=>groupMatches(h,group));
         const candidates=exact.length?exact:labeled;
@@ -494,13 +501,10 @@ const icon = {
       // A field in the worksheet/file name may label a generic value column.
       const named=groups.filter(group=>groupMatches(sheetName,group));
       const targets=named.length?named:groups.filter(group=>groupMatches(filename,group));
-      const missing=targets.filter(group=>!mappings.some(([label])=>label===group[0]));
-      // Selecting the other-addition module is sufficient to label a plain name/amount workbook.
-      // Keep explicitly labeled allowances/reductions separate and reject unmapped data.
-      const unnamedOther=key==='other' && !targets.length && !mappings.length;
-      if(unnamedOther)missing.push(['其他加']);
+      const missing=targets.filter(group=>!(key==='other' && group[0]==='其他加') && !mappings.some(([label])=>label===group[0]));
+      if(key==='other' && !mappings.length && !missing.length)throw new Error(`${sheetName}：请提供姓名和表头含“其他加”的金额列；仅“金额”列不能作为其他加`);
       if(missing.length) {
-        const generic=headers.filter(h=>unnamedOther?/^(?:金额|总计金额|合计金额|总金额|金额合计)(?:\(元\)|元)?$/.test(canonicalKey(h)):/^(?:金额|总计金额|合计金额|总金额|金额合计|数值|值|天数|系数|分数)(?:\(元\)|\(天\)|元|天)?$/.test(canonicalKey(h)));
+        const generic=headers.filter(h=>/^(?:金额|总计金额|合计金额|总金额|金额合计|数值|值|天数|系数|分数)(?:\(元\)|\(天\)|元|天)?$/.test(canonicalKey(h)));
         if(missing.length!==1 || generic.length!==1)throw new Error(`${sheetName}：名称已识别${missing.map(g=>g[0]).join('、')}，但对应数值列不唯一，请核对表头`);
         mappings.push([missing[0][0],generic[0]]);
       }
@@ -512,6 +516,7 @@ const icon = {
           const value=row[column];
           if(key==='other' && label==='其他加' && (!Number.isFinite(PayrollEngine.numeric(value)) || PayrollEngine.blank(value)))throw new Error(`${sheetName}其他加金额缺失或无效`);
           normalized[label]=value;
+          if(key==='other' && label==='其他加')normalized._otherAddSource={filename,sheetName,column};
         }
         return normalized;
       });
@@ -540,7 +545,7 @@ const icon = {
       if(best.length===1)return {key:best[0].key,reason:'表头匹配'};
       return {key:'',reason:candidates.length?'识别存在歧义，请指定模块':'未识别到模块，请手动指定'};
     }
-    function commitSource(key, item) {
+    function commitSource(key, item, deferUpdate=false) {
       if (['social','fund'].includes(key) || (state.payrollStage==='gross' && ['netSocial','netFund'].includes(key))) throw new Error('社保、公积金请在实发阶段上传');
       if (!state.liveImport) {
         sourceRows={};
@@ -560,7 +565,7 @@ const icon = {
       const previews=item.replace?{}:{...(state.sourceStatus[key]?.previews || {})};
       for(const preview of item.previews || (item.preview?[item.preview]:[]))previews[preview.filename]=preview;
       state.sourceStatus[key]={uploaded:true,filename:filenames.join('、'),filenames,files:filenames.length,rows:sourceRows[key].length,parsed:true,previews};
-      recalculateEmployees();saveBatchData();
+      if(!deferUpdate){recalculateEmployees();saveBatchData();}
       Object.assign(currentBatch(),{employees:employees.length,sources:Object.keys(sourceRows).length,status:'待计算'});
       state.calculated=false;
     }
@@ -588,6 +593,9 @@ const icon = {
           try {
             if (!PayrollEngine.isSpreadsheetFile(file.name)) throw new Error('请选择 Excel 工作簿、模板或 CSV 文件');
             if (file.size>20*1024*1024) throw new Error('单个文件不能超过 20MB');
+            session.summary=`正在读取 ${Array.from(files).indexOf(file)+1} / ${files.length}：${file.name}`;
+            const progress=content.querySelector?.('[data-import-progress]');
+            if(progress)progress.textContent=session.summary;
             const rows=await parseXlsxFile(file,explicitKey);
             const items=rows.importItems || [{filename:file.name,rows,...(explicitKey?{key:explicitKey,reason:'手动指定模块'}:matchSource(file.name,rows))}];
             const grouped=new Map();
@@ -614,9 +622,10 @@ const icon = {
         let imported=0;
         for (const item of parsed) {
           if(!item.error && item.key && stageSheets().some(sheet=>sheet.key===item.key)) {
-            commitSource(item.key,item);imported++;
+            commitSource(item.key,item,true);imported++;
           } else session.items.push(item);
         }
+        if(imported){recalculateEmployees();saveBatchData();}
         session.summary=`本次选择 ${files.length} 个文件，合并导入 ${imported} 组资料，待处理 ${parsed.length-imported} 组`;
       } finally {
         session.busy=false;
@@ -637,7 +646,7 @@ const icon = {
     }
     function renderImportReview() {
       const session=importSession();
-      return `<div role="status" aria-live="polite" class="section-desc" style="margin-top:12px">${escapeHtml(session.summary)}</div>${session.items.length?`<div class="import-review"><div class="section-title">待确认 / 导入失败（${session.items.length}）</div>${session.items.map((item,index)=>`<div class="import-review-row"><div><strong>${escapeHtml(item.filename)}</strong><div class="section-desc">${escapeHtml(item.error || item.reason)}${item.rows?` · ${item.rows.length} 行`:''}</div></div>${item.error?'':`<select class="select" aria-label="${escapeHtml(item.filename)}的目标模块" data-import-target="${index}" ${session.busy?'disabled':''}><option value="">请选择模块</option>${sourceSheets.map(s=>`<option value="${s.key}" ${item.key===s.key?'selected':''}>${s.name}${state.sourceStatus[s.key]?.uploaded && !state.sourceStatus[s.key]?.demo?'（合并已有文件）':''}</option>`).join('')}</select><button class="btn btn-sm" data-import-confirm="${index}" ${session.busy?'disabled':''}>确认导入 / 合并</button>`}<button class="btn btn-sm" data-import-dismiss="${index}" ${session.busy?'disabled':''}>移除</button></div>`).join('')}</div>`:''}`;
+      return `<div data-import-progress role="status" aria-live="polite" class="section-desc" style="margin-top:12px">${escapeHtml(session.summary)}</div>${session.items.length?`<div class="import-review"><div class="section-title">待确认 / 导入失败（${session.items.length}）</div>${session.items.map((item,index)=>`<div class="import-review-row"><div><strong>${escapeHtml(item.filename)}</strong><div class="section-desc">${escapeHtml(item.error || item.reason)}${item.rows?` · ${item.rows.length} 行`:''}</div></div>${item.error?'':`<select class="select" aria-label="${escapeHtml(item.filename)}的目标模块" data-import-target="${index}" ${session.busy?'disabled':''}><option value="">请选择模块</option>${sourceSheets.map(s=>`<option value="${s.key}" ${item.key===s.key?'selected':''}>${s.name}${state.sourceStatus[s.key]?.uploaded && !state.sourceStatus[s.key]?.demo?'（合并已有文件）':''}</option>`).join('')}</select><button class="btn btn-sm" data-import-confirm="${index}" ${session.busy?'disabled':''}>确认导入 / 合并</button>`}<button class="btn btn-sm" data-import-dismiss="${index}" ${session.busy?'disabled':''}>移除</button></div>`).join('')}</div>`:''}`;
     }
 
     const content = null;
@@ -664,7 +673,7 @@ const icon = {
     }
     function saveBatchData() {
       const rates=structuredClone(currentBatch().data?.internDailyRates || {});
-      Object.assign(currentBatch(), {workdays:currentWorkdays, data:{schemaVersion:3,grossSource:state.grossSource,comparison:structuredClone(state.comparison),payrollStage:state.payrollStage,sourceRows:structuredClone(sourceRows), sourceStatus:structuredClone(state.sourceStatus), liveImport:state.liveImport, internDailyRates:rates, makeupWorkdays:structuredClone(makeupWorkdays), emailDraft:structuredClone(state.emailDraft)}});
+      Object.assign(currentBatch(), {workdays:currentWorkdays, data:{schemaVersion:3,grossSource:state.grossSource,comparison:state.comparison,payrollStage:state.payrollStage,sourceRows:{...sourceRows}, sourceStatus:{...state.sourceStatus}, liveImport:state.liveImport, internDailyRates:rates, makeupWorkdays:structuredClone(makeupWorkdays), emailDraft:structuredClone(state.emailDraft)}});
     }
     function setCurrentBatch(batch) {
       saveBatchData();
@@ -1039,7 +1048,7 @@ const icon = {
       content.querySelector('[data-email-body]')?.addEventListener('input',event=>{const draft=ensureEmailDraft();draft.bodyOverride=event.target.value;draft.validation=PayrollEmailEngine.validate(draft);saveBatchData();const preview=content.querySelector('#emailAlignedPreview');if(preview)preview.innerHTML=PayrollEmailEngine.renderHtml(event.target.value);});
       content.querySelector('[data-email-ack]')?.addEventListener('change',event=>{const draft=ensureEmailDraft();draft.acknowledgedWarnings=event.target.checked;draft.validation=PayrollEmailEngine.validate(draft);saveBatchData();render('email');});
       content.querySelectorAll('[data-email-refresh]').forEach(button=>button.addEventListener('click',()=>{ensureEmailDraft(true);render('email');showToast('已从最终二阶段工资结果重新生成正文');}));
-      content.querySelectorAll('[data-email-export]').forEach(button=>button.addEventListener('click',()=>{const draft=ensureEmailDraft();if(state.payrollStage==='gross') downloadGross(); else downloadCsv();draft.attachmentReady=true;saveBatchData();showToast('工资表附件已导出，请在邮箱编辑页手动选择该文件');}));
+      content.querySelectorAll('[data-email-export]').forEach(button=>button.addEventListener('click',async()=>{const draft=ensureEmailDraft(),result=await downloadCsv();if(!result || globalThis.PayrollExport && !PayrollExport.matchesCurrent(result) || draft!==state.emailDraft)return;draft.attachmentReady=true;saveBatchData();showToast('工资表附件已导出，请在邮箱编辑页手动选择该文件');}));
       content.querySelectorAll('[data-email-copy]').forEach(button=>button.addEventListener('click',copyEmailBody));
       content.querySelectorAll('[data-email-open]').forEach(button=>button.addEventListener('click',openEmailComposer));
       content.querySelector('[data-remove-gross]')?.addEventListener('click',removeUploadedGross);
@@ -1184,6 +1193,22 @@ const icon = {
     function numericCell(sheet,address,value,formula) {
       sheet[address]={t:'n',v:PayrollEngine.round(num(value)),z:'0.00',...(formula?{f:formula}:{})};
     }
+    let exportSourceRowCache=null;
+    function exportRowsForName(rows,name) {
+      if(!exportSourceRowCache)return rows.filter(row=>canonicalKey(rowValue(row,['姓名']))===canonicalKey(name));
+      let index=exportSourceRowCache.get(rows);
+      if(!index) {
+        index=new Map();
+        for(const row of rows){const key=canonicalKey(rowValue(row,['姓名']));if(!index.has(key))index.set(key,[]);index.get(key).push(row);}
+        exportSourceRowCache.set(rows,index);
+      }
+      return index.get(canonicalKey(name))||[];
+    }
+    function withExportLookupCache(action) {
+      const previous=[exportSourceRowCache,calculationRowCache,calculationHeaderCache];
+      exportSourceRowCache=new WeakMap();calculationRowCache=new WeakMap();calculationHeaderCache=new Map();
+      try{return action();}finally{[exportSourceRowCache,calculationRowCache,calculationHeaderCache]=previous;}
+    }
     function applyPayrollExportFormulas(sheet, employee, ref, grossOnly=false) {
       const e=employee, p=e._input || e, generated=grossOnly || !sourceRows.grossUpload;
       const descriptors=exportDescriptors(grossOnly), types=new Map(descriptors.map(([,field,type])=>[field,type]));
@@ -1203,7 +1228,7 @@ const icon = {
       };
       const sum=(fields)=>({expression:`SUM(${fields.map(ref).join(',')})`,amount:fields.reduce((total,field)=>total+value(field),0)});
       const aggregate=(source,field,aliases)=>{
-        const values=(sourceRows[source]||[]).filter(row=>canonicalKey(rowValue(row,['姓名']))===canonicalKey(e.name)).flatMap(row=>{
+        const values=exportRowsForName(sourceRows[source]||[],e.name).flatMap(row=>{
           const header=Object.keys(row).find(key=>aliases.some(alias=>canonicalKey(key)===canonicalKey(alias)));
           return header && hasNumber(row[header])?[num(row[header])]:[];
         });
@@ -1272,7 +1297,7 @@ const icon = {
       Object.entries(sheet).forEach(([key,cell])=>{if(!key.startsWith('!') && cell?.t==='n') cell.z='0.00';});
       return sheet;
     }
-    function detailSheet(grossOnly=false) {return withRosterExportIndex(()=>detailSheetRows(grossOnly));}
+    function detailSheet(grossOnly=false) {return withExportLookupCache(()=>withRosterExportIndex(()=>detailSheetRows(grossOnly)));}
     function detailSheetRows(grossOnly=false) {
       const list=grossOnly?generatedEmployees:employees;
       const descriptors=exportDescriptors(grossOnly);

@@ -1,18 +1,19 @@
 export type ExpensePerson = { name: string; employeeNumber: string; dept: string; company: string; status: string; gross: number|null; net: number|null; cost: number|null };
 export type ExpenseBatch = { id:string; month:string; name:string; updatedAt:string; people:ExpensePerson[] };
+type StoredBatch = { draftOrigin?:string; id?:string; name?:string; month?:string; date?:string; data?:{sourceStatus?:Record<string,{demo?:boolean}>;sourceRows?:{roster?:Record<string,unknown>[]}};personnelAnalysis?:{updatedAt?:string;people?:Record<string,unknown>[]}};
 const number = (v:unknown):number|null => typeof v==='number' && Number.isFinite(v)?v:null;
 export function expenseHistory(batches:unknown[]): ExpenseBatch[] {
   return batches.flatMap((input)=>{
-    const b=input as Record<string,any>;
-    if(b.draftOrigin==='demo' || Object.values(b.data?.sourceStatus||{}).some((s:any)=>s?.demo) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(b.month||''))return [];
+    const b=input as StoredBatch;
+    if(b.draftOrigin==='demo' || Object.values(b.data?.sourceStatus||{}).some(s=>s?.demo) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(b.month||''))return [];
     const stored=b.personnelAnalysis;
     if(!stored || !Array.isArray(stored.people) || !stored.people.length){
       const rows=b.data?.sourceRows?.roster;
       if(!Array.isArray(rows)||!rows.length)return [];
       const get=(r:Record<string,unknown>,keys:string[])=>String(keys.map(k=>r[k]).find(v=>v!==undefined&&v!==null)||'');
-      return [{id:String(b.id||b.name),name:String(b.name),month:b.month,updatedAt:b.date||'',people:rows.map(r=>({name:get(r,['姓名','员工姓名']),employeeNumber:get(r,['工号','员工编号']),dept:get(r,['一级部门','部门']),company:get(r,['公司','签约公司']),status:get(r,['员工状态','是否入离职','状态'])||'待核对',gross:null,net:null,cost:null})).filter(p=>p.name)}];
+      return [{id:String(b.id||b.name),name:String(b.name),month:b.month!,updatedAt:b.date||'',people:rows.map(r=>({name:get(r,['姓名','员工姓名']),employeeNumber:get(r,['工号','员工编号']),dept:get(r,['一级部门','部门']),company:get(r,['公司','签约公司']),status:get(r,['员工状态','是否入离职','状态'])||'待核对',gross:null,net:null,cost:null})).filter(p=>p.name)}];
     }
-    return [{id:String(b.id||b.name),name:String(b.name),month:b.month,updatedAt:stored.updatedAt||b.date||'',people:stored.people.map((p:any)=>({name:String(p.name||''),employeeNumber:String(p.employeeNumber||''),dept:String(p.dept||''),company:String(p.company||''),status:String(p.status||'在职'),gross:number(p.gross),net:number(p.net),cost:number(p.cost)})).filter((p:ExpensePerson)=>p.name)}];
+    return [{id:String(b.id||b.name),name:String(b.name),month:b.month!,updatedAt:stored.updatedAt||b.date||'',people:stored.people.map((p:Record<string,unknown>)=>({name:String(p.name||''),employeeNumber:String(p.employeeNumber||''),dept:String(p.dept||''),company:String(p.company||''),status:String(p.status||'在职'),gross:number(p.gross),net:number(p.net),cost:number(p.cost)})).filter((p:ExpensePerson)=>p.name)}];
   }).sort((a,b)=>b.month.localeCompare(a.month)||b.updatedAt.localeCompare(a.updatedAt));
 }
 export function personHistory(person:ExpensePerson, batches:ExpenseBatch[]){

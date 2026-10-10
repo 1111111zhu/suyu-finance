@@ -153,7 +153,17 @@ globalThis.PayrollWorkbenchUI=(()=>{
     if(cmd==='batch-restore'){if(await W.restoreDeletedBatch()){mount('batches',false);showToast('批次已恢复');}}
     if(cmd==='batch-back'){mount('batches',false);}
     if(cmd==='batch-rerun'){if(!leave())return;const batch=state.batches[Number(b.dataset.index)];if(!batch)return;setCurrentBatch(batch);recalculateEmployees();saveBatchData();mount('batches',false);showToast('批次已重新计算');}
-    if(cmd==='batch-export'){if(!leave())return;const previous=currentBatch();const batch=state.batches[Number(b.dataset.index)];setCurrentBatch(batch);try{if(state.payrollStage==='gross')downloadGross();else downloadCsv();}finally{setCurrentBatch(previous);mount('batches',false);}}
+    if(cmd==='batch-export'){
+      if(!leave() || globalThis.PayrollExport?.busy)return;
+      const previous=currentBatch(),batch=state.batches[Number(b.dataset.index)];if(!batch)return;
+      const switched=previous!==batch;if(switched)setCurrentBatch(batch);
+      try {
+        if(globalThis.PayrollCalculation && !state.calculated)await calculateStage({automatic:true});
+        if(currentBatch()===batch)await downloadCsv();
+      } finally {
+        if(switched && currentBatch()===batch && state.batches.includes(previous)){setCurrentBatch(previous);mount('batches',false);}
+      }
+    }
     if(cmd==='source'){const e=W.selected(),s=W.source(e,ui.draft?.field);dialog(`<h2>数据来源</h2><p>${esc(s.filename||s.label)}${s.sheet?' · '+esc(s.sheet):''}${s.row?' · 第 '+s.row+' 行':''}</p>${s.record?`<table class="wb-table">${Object.entries(s.record).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`:'<p class="wb-muted">此项来自计算结果或示例数据。原始文件不会被修改。</p>'}`);}
     if(cmd==='grossdetail'){if(sourceRows.grossUpload){const selected=W.selected(),e=PayrollEngine.uploadedEmployees(sourceRows.grossUpload).find(x=>W.key(x)===W.key(selected))||selected;dialog(`<h2>上传应发表 · ${esc(e.name)}</h2><p class="wb-muted">当前实发使用上传表。本批次生成应发与此来源分别保留。</p><table class="wb-table">${exportDescriptors(true).map(([label,f])=>`<tr><td>${label}</td><td>${esc(e[f]??'—')}</td></tr>`).join('')}</table>`);}else changeStage('gross');}
     if(cmd==='add'){const gross=state.payrollStage==='gross',e=W.selected();const choices=gross?(e.isIntern?['dailyRate','actualPaidDays','grossTarget']:['otherAdd','otherReduction','transit','otherAllow','meal','sickSubsidy','perfBase','score','grossTarget']):e.isIntern?['netTarget']:['otherDeduct','utility','mealDeduct','netTarget'];dialog(`<h2>${gross?'选择工资项目':'选择代扣或调整'}</h2><div class="wb-shortcuts">${choices.map(f=>action(W.fields[f][0],'choose-field',`data-field="${f}"`,'btn')).join('')}</div>`);}

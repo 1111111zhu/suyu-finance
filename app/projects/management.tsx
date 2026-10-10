@@ -30,7 +30,7 @@ export function ManagementDialog({request,onClose,onBusy,onMutated}:Props){
     catch(e){if(live.current&&version===trashVersion.current)setError(e instanceof Error?e.message:"回收站读取失败。");}
     finally{if(live.current&&version===trashVersion.current)setTrashLoading(false);}
   }
-  useEffect(()=>{if(request.mode==="trash")void refreshTrash();},[]);
+  useEffect(()=>{if(request.mode==="trash"){const timer=setTimeout(()=>void refreshTrash(),0);return()=>clearTimeout(timer);}},[]);
   function close(){if(!lock.current)onClose();}
   function changeMode(next:string){setError("");setMode(next);}
   function submitForm(event:FormEvent){
