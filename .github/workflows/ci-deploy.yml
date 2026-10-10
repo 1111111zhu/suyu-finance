@@ -62,7 +62,8 @@ jobs:
       - name: Run JavaScript tests
         run: |
           npm run test:company-profile
-          node --test 自动化测试/salary.test.mjs
+          # Current modular suites exercise production identities, imports, calculation workers and Excel formulas.
+          node --test 自动化测试/payroll-other-add.test.mjs 自动化测试/payroll-multi-files.test.mjs 自动化测试/payroll-all-formulas.test.mjs 自动化测试/payroll-computation.test.mjs 自动化测试/payroll-computation-api.test.mjs 自动化测试/payroll-roster-identity.test.mjs 自动化测试/payroll-gross-sources.test.mjs 自动化测试/payroll-local-personnel.test.mjs 自动化测试/payroll-expenses.test.mjs 自动化测试/payroll-roster-export-dates.test.mjs 自动化测试/payroll-subtotal-formula.test.mjs
 
       - name: Run RD database integration tests
         run: node --test 自动化测试/rd-master-import.integration.test.mjs 自动化测试/rd-platform-batch.integration.test.mjs 自动化测试/rd-db.integration.test.mjs

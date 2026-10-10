@@ -298,12 +298,9 @@ globalThis.PayrollEngine = (() => {
     const headerIndex=grid.findIndex(row=>row.some(v=>canonicalHeader(v)==='姓名'));
     if(headerIndex<0)return null;
     const headers=grid[headerIndex].map(v=>String(v??'').trim());
-    if(!key(filename).includes('其他加')&&!key(sheetName).includes('其他加')&&!headers.some(h=>key(h).includes('其他加')))return null;
-    const exact=headers.filter(h=>key(h)==='其他加');
-    const labeled=headers.filter(h=>key(h).includes('其他加'));
-    const money=headers.filter(h=>/^(?:金额|总计金额|合计金额|总金额|金额合计)(?:\(元\)|元)?$/.test(key(h)));
-    const candidates=exact.length?exact:labeled.length?labeled:money;
-    if(candidates.length!==1)throw new Error('其他加表需有唯一的“其他加”或“金额”列，请核对金额表头');
+    if(!headers.some(h=>key(h).includes('其他加')))return null;
+    const candidates=headers.filter(h=>key(h).includes('其他加'));
+    if(candidates.length!==1)throw new Error('其他加表需有唯一的表头含“其他加”的金额列，请核对金额表头');
     const column=candidates[0];
     return rowsFromGrid(grid).filter(row=>!blank(canonicalRow(row)['姓名'])).map((row,i)=>{
       const amount=numeric(row[column]);

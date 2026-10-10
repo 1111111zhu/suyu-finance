@@ -40,9 +40,9 @@ test('all worksheets and mixed modules in one workbook are imported',async()=>{
 });
 test('other allowances, additions and reductions recognize headers or either name and combine by employee',async()=>{
  const a=app();await a.importFiles([file('花名册.xlsx',[['人员',roster('甲','001')]]),file('工资.xlsx',[['基本工资',[['姓名','基本工资'],['甲',1000]]]])]);
- await a.importFiles([file('其他津贴.xlsx',[['Sheet1',[['姓名','金额（元）'],['甲',50]]]]),file('补发.xlsx',[['其他加',[['姓名','金额'],['甲',200]]],['其他加第二笔',[['姓名','金额'],['甲',100]]]]),file('减项.xlsx',[['Sheet1',[['姓名','本月其他减（元）'],['甲',20]]]])],'other');
+ await a.importFiles([file('其他津贴.xlsx',[['Sheet1',[['姓名','金额（元）'],['甲',50]]]]),file('补发.xlsx',[['其他加',[['姓名','其他加金额'],['甲',200]]],['其他加第二笔',[['姓名','本月其他加'],['甲',100]]]]),file('减项.xlsx',[['Sheet1',[['姓名','本月其他减（元）'],['甲',20]]]])],'other');
  assert.equal(a.run('employees[0].otherAllow'),50);assert.equal(a.run('employees[0].otherAdd'),300);assert.equal(a.run('employees[0].otherReduction'),20);assert.equal(a.run('employees[0].gross'),1330);
- await a.importFiles([file('补发.xlsx',[['其他加',[['姓名','金额'],['甲',250]]]])],'other');assert.equal(a.run('employees[0].otherAdd'),250);assert.equal(a.run('sourceRows.other.length'),3);
+ await a.importFiles([file('补发.xlsx',[['其他加',[['姓名','其他加金额'],['甲',250]]]])],'other');assert.equal(a.run('employees[0].otherAdd'),250);assert.equal(a.run('sourceRows.other.length'),3);
 });
 test('every financial module recognizes its field in file name, sheet name, or header',async()=>{
  for(const [module,field,value] of [['salary','基本工资',1000],['performance','绩效系数',0.8],['attendance','实际出勤天数',22],['other','其他减',30],['netSocial','个人社保',100],['netFund','个人公积金',80],['tax','个人所得税',50],['afterTax','水电代扣',10],['grossUpload','应发工资',1200]]){
@@ -55,9 +55,9 @@ test('every financial module recognizes its field in file name, sheet name, or h
  }
 });
 test('ambiguous named amounts fail without overwriting existing data',async()=>{
- const a=app();await a.importFiles([file('其他加.xlsx',[['Sheet1',[['姓名','金额'],['甲',100]]]])],'other');
- await a.importFiles([file('其他加.xlsx',[['Sheet1',[['姓名','金额','总金额'],['甲',200,300]]]])],'other');
- assert.equal(a.run('sourceRows.other[0].其他加'),100);assert.match(a.run('importSession().items[0].error'),/不唯一/);
+ const a=app();await a.importFiles([file('其他加.xlsx',[['Sheet1',[['姓名','其他加金额'],['甲',100]]]])],'other');
+ await a.importFiles([file('其他加.xlsx',[['Sheet1',[['姓名','其他加金额','其他加补贴'],['甲',200,300]]]])],'other');
+ assert.equal(a.run('sourceRows.other[0].其他加'),100);assert.match(a.run('importSession().items[0].error'),/唯一/);
 });
 test('new roster file does not prune another file intern rates and batch restore keeps filenames',async()=>{
  const a=app();const grid=(name,id)=>[['姓名','工号','职位','入职日期'],[name,id,'实习生','2025-01-01']];

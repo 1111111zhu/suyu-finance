@@ -1,0 +1,21 @@
+{
+  "version": "20261010-other-add-header-v1",
+  "base": "df99dbb",
+  "files": [
+    {
+      "path": "public/salary/index.html",
+      "before": "de2b4b6075242f49888cb19100dc81a1b45ff92081535b8037150ca65a423333",
+      "after": "b92046d8fa888b6f8d21c02571aa78fbb181d465bc2d133ed1b9ff768831963a"
+    },
+    {
+      "path": "public/salary/calculation-model.js",
+      "before": "6faf80964e6f5a85e5b6da5f8f9fefab8af25dd35a9b073326b4a41efd895b12",
+      "after": "4ce858bc043b97c7d45552ab4db91cc22a175b3fb7d991ba45e0854ad23ac638"
+    },
+    {
+      "path": "public/salary/payroll-engine.js",
+      "before": "408351521da9b8b34903bc946cf3f94bff4088f5e4136031e92bc06c74e39352",
+      "after": "fee3ad339c74d6fe0939a3a2408cbb2a5d8962732f8d873b37cba0de0670be8f"
+    }
+  ]
+}
