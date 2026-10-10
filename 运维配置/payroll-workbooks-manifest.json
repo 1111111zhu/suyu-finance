@@ -1,0 +1,89 @@
+{
+  "files": [
+    {
+      "path": "app/api/payroll/workbooks/[...path]/route.ts",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "1e8e53201ab1663f2c14aca7c2f28d83b6c174c49fc939d2f9a9cc6522087061"
+    },
+    {
+      "path": "database/payroll/migrations/008_workbooks.sql",
+      "before": null,
+      "after": "e1a1cc2ca89ea27a6c49b59775dd6a69d0e87f8f788d325747218a6008c803b9"
+    },
+    {
+      "path": "public/salary/builtin-sheets.js",
+      "before": null,
+      "after": "a1876eacaa28616eafe86365373e34d9ce963755cc4a8d30b94402fc06ae9231"
+    },
+    {
+      "path": "public/salary/workbench-export.js",
+      "before": "cae314a9b054cea0970735dfc6a88594644c20a7bf5c024e77cbd23aa15282f6",
+      "after": "0236de6c11cc83ad5afdd2146b6a2340ca5b96c66e48d49a80524f6af587764c"
+    },
+    {
+      "path": "public/salary/workbench-import.js",
+      "before": "d822333debb33f836d3e91b1eadebc8488bd1ebdf083fd01815aa419b220bcc3",
+      "after": "bc175d8349923bd9b98446b7a4a688864e7e46010127480580da8ee0b4b9b51c"
+    },
+    {
+      "path": "public/salary/workbook-api.js",
+      "before": null,
+      "after": "c737a72aa3107746d2116f1bc3a066d3605f6fbc50c30e9bdde695780af97cfd"
+    },
+    {
+      "path": "public/salary/workbook-editor.html",
+      "before": null,
+      "after": "17b28c85b50753fc2de06e680a9c892127a7810db4720169ed3c6c84c1213764"
+    },
+    {
+      "path": "public/salary/workbook-network-worker.js",
+      "before": null,
+      "after": "201cad475f0082ff7aba18e197fe265ecb8db0058730d0f6242cc3643431e80d"
+    },
+    {
+      "path": "salary-editor/editor.css",
+      "before": null,
+      "after": "300310f69d9bc28df07a609861c9db056a9f3b28f20fba2af51528801110b693"
+    },
+    {
+      "path": "salary-editor/editor.js",
+      "before": null,
+      "after": "5bf3c619fec58941ceb629aa17f65669f767b8fb43798640935ca5b384038a01"
+    },
+    {
+      "path": "salary-editor/formula-worker.js",
+      "before": null,
+      "after": "c53862ae37dec28f6fd3bbd6361c7976ebea0047c34d393231a046a756f0c2ea"
+    },
+    {
+      "path": "server/payroll/workbooks/formulas.mjs",
+      "before": null,
+      "after": "1b982cfc0ee980102df6c32268e285c1a78444de59925a2b13bd99d06ded7c58"
+    },
+    {
+      "path": "server/payroll/workbooks/jobs.mjs",
+      "before": null,
+      "after": "e092838d766b15ae7978e3c491047f7d2c9c5ba79abb467c3fd2378f8cf9c56c"
+    },
+    {
+      "path": "server/payroll/workbooks/model.mjs",
+      "before": null,
+      "after": "a947aeb713cfd98a7f2ff593c5c1c16c289f0943d21d6f552617d4b70713053c"
+    },
+    {
+      "path": "server/payroll/workbooks/repository.mjs",
+      "before": null,
+      "after": "c3d3c2b41625a4965ba7df729df2c7eac54329c54b72e894cc1aaf49d951e397"
+    },
+    {
+      "path": "server/payroll/workbooks/response.mjs",
+      "before": null,
+      "after": "aa3595d58a0e60f213f43b600ac6247b3bc43db173ada51fc32899f836ec4398"
+    },
+    {
+      "path": "server/payroll/workbooks/thread.mjs",
+      "before": null,
+      "after": "f81d7fc3d744d70ec157865af91cff629e8b6db22309c94e11b61792d9730028"
+    }
+  ]
+}
