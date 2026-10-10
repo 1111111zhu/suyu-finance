@@ -1,11 +1,11 @@
 /* Read-only formatted cell previews; originals are never changed. */
 function sourcePreviewFiles(key) {
-  const status=state.sourceStatus[key] || {},previews=status.previews || {};
+  const status=key==='netBenefits'?benefitStatus():state.sourceStatus[key] || {},previews=status.previews || {};
   const names=status.filenames || Object.keys(previews);
   if(names.length && names.every(name=>previews[name]))return names.map(name=>previews[name]);
   // Older saved batches have imported rows, but no original cell snapshot.
   const files=new Map();
-  for(const row of sourceRows[key] || []) {
+  for(const row of key==='netBenefits'?[...(sourceRows.netSocial||[]),...(sourceRows.netFund||[])]:sourceRows[key] || []) {
     const source=row._importSource || row._rosterSource || row._deductionSource || {};
     const filename=source.filename || status.filename || '已导入资料',name=source.sheetName || '已导入数据';
     if(!files.has(filename))files.set(filename,new Map());

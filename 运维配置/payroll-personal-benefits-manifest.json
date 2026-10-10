@@ -1,0 +1,51 @@
+{
+  "version": "20261010-personal-benefits-v1",
+  "base": "f154c7f8bf3823803189526b88abdf31b050a2cb",
+  "files": [
+    {
+      "path": "public/salary/calculation-model.js",
+      "before": "1170d2877f8b6fdf1c8549f38be0e92a9cffa3d4990d33825e4968b0ece21cc5",
+      "after": "0d6d0c64c9f96e38c1b547993caed170dea1e6fa9151136aef527c462ac037f3"
+    },
+    {
+      "path": "public/salary/export-worker.js",
+      "before": "e59f208a6baf0ac06bde1ebcda4865abc4ffca6f858a09d02c636c6e1f97c4d3",
+      "after": "e612c5241de5654f3039ab87a4f69af97c6d1badde59b233531adec49d8cd28f"
+    },
+    {
+      "path": "public/salary/import-worker.js",
+      "before": "96744b18329f8ebbfacb442b529bc221cabc04daa0eb7026f588e01cf53401bd",
+      "after": "32537a645a4a030514123365fa16d3374e3fa75a08576f44d9a947bafad50911"
+    },
+    {
+      "path": "public/salary/index.html",
+      "before": "92955cc6f3ef058af405eebabc397e4de2727ab62ee5fa7326da8cdc504aa78f",
+      "after": "8fe2e3d6ba167800d0df59e7227b4d24fb30059ae1680a1975bfbcd607e729fd"
+    },
+    {
+      "path": "public/salary/payroll-engine.js",
+      "before": "fee3ad339c74d6fe0939a3a2408cbb2a5d8962732f8d873b37cba0de0670be8f",
+      "after": "e8495089a63b49703d5d625d4bf7d85ff79238c943d56c27e4e39896e8d0af47"
+    },
+    {
+      "path": "public/salary/source-preview.js",
+      "before": "734df67b3660647ce718c5837c0934c4249b28cada482955723290fe289b574a",
+      "after": "0264a1517bede1b4222ed597f690c62437b54b87d35ccd53f18f6aacc9ef9bdb"
+    },
+    {
+      "path": "public/salary/workbench-export.js",
+      "before": "6f43eb448accef834dc82e48ca27a40b8c93671404718e69fdb9c54ec5da1619",
+      "after": "b6b424c238a96ddd7c99f80d06fae3eff3f6da0eef9ba1a7981bedba6f076306"
+    },
+    {
+      "path": "public/salary/workbench-import.js",
+      "before": "ba8cefa056fe9e9a937e1ddff979936f1b27d22e5b2f6101c5bad909f857b2eb",
+      "after": "40b7dbe52214d4ae8602a2d77e91e65b84d2944cf368e9fa60ea0e1a80627db1"
+    },
+    {
+      "path": "public/salary/workbench-pages.js",
+      "before": "4d8b43b67f992eef3bbb6407e23d19c5ecc96322366a1f5af46515783ec3510b",
+      "after": "a49824b26ffb7cafec71b1f1e3b8619c86746765136dcc6912b3d6529302ba59"
+    }
+  ]
+}

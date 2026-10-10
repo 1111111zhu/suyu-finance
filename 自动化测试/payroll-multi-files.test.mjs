@@ -69,7 +69,7 @@ test('new roster file does not prune another file intern rates and batch restore
 test('all input controls support multiple files at both payroll stages',()=>{
  const a=app();for(const stage of ['gross','net']){
   a.run(`state.payrollStage='${stage}'`);const html=a.run('PayrollWorkbenchPages.upload()');
-  const controls=html.match(/<input type="file"[^>]+data-source-input[^>]+>/g);assert.ok(controls.length>=5);assert.ok(controls.every(control=>/multiple/.test(control)));
+  const controls=html.match(/<input type="file"[^>]+data-source-input[^>]+>/g);assert.equal(controls.length,stage==='net'?4:5);assert.ok(controls.every(control=>/multiple/.test(control)));
  }
 });
 
