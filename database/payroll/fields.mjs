@@ -118,3 +118,148 @@ const legacyAliases = {
   utility: ['员工宿舍水电费代扣', '水电费代扣', '水电费合计'],
   mealDeduct: ['餐费合计'],
   tax: ['应补（退）税额', '税', '个人所得税', '税额'],
+  companySocial: ['公司总计', '公司总计（社保）'],
+  companyFund: ['公司缴纳', '公司缴纳（公积金）'],
+  employeeNumber: ['员工编号', '员工工号'],
+};
+
+const headerKey = header => header.replace(/\s+/gu, '').replace(/（/gu, '(').replace(/）/gu, ')');
+const standardHeaders = new Map(payrollFields.map(field => [headerKey(field.label), field]));
+const aliasHeaders = new Map(Object.entries(legacyAliases).flatMap(([key, aliases]) =>
+  aliases.map((alias, index) => [headerKey(alias), { field: fieldsByKey.get(key), index }])));
+
+function recordEntries(record, name) {
+  if (record === null || typeof record !== 'object' || Array.isArray(record)
+    || ![Object.prototype, null].includes(Object.getPrototypeOf(record))) {
+    throw new TypeError(`${name} 必须是普通对象`);
+  }
+  // Avoid silently dropping symbol/non-enumerable fields or invoking getters.
+  return Reflect.ownKeys(record).map(key => {
+    if (typeof key !== 'string') throw new TypeError(`${name} 不支持 Symbol 字段`);
+    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+      throw new TypeError(`${name} 仅支持自有、可枚举的数据字段`);
+    }
+    return [key, descriptor.value];
+  });
+}
+
+function fixedDecimal(value, field) {
+  const scale = field.type === 'money' ? 2 : 4;
+  const precision = field.type === 'money' ? 18 : 10;
+  if (!['string', 'number'].includes(typeof value)) {
+    throw new TypeError(`${field.key} 必须是十进制字符串或有限 number`);
+  }
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    throw new TypeError(`${field.key} 不接受 NaN 或 Infinity`);
+  }
+  const match = /^([+-]?)(?:(\d+)(?:\.(\d+))?|\.(\d+))$/.exec(String(value).trim());
+  if (!match) throw new TypeError(`${field.key} 必须是普通十进制数，不接受空白、指数、货币符号或分隔符`);
+  const integer = (match[2] || '0').replace(/^0+(?=\d)/u, '');
+  const fraction = match[3] || match[4] || '';
+  if (fraction.length > scale) throw new RangeError(`${field.key} 最多允许 ${scale} 位小数，不进行舍入`);
+  if (integer.length > precision - scale) {
+    throw new RangeError(`${field.key} 超出 numeric(${precision},${scale}) 范围`);
+  }
+  const padded = fraction.padEnd(scale, '0');
+  const units = BigInt(integer + padded);
+  // High-magnitude JS numbers cannot reliably distinguish adjacent minor units.
+  const numberLimit = 2 ** (53 - Math.ceil(Math.log2(10 ** scale)));
+  if (typeof value === 'number'
+    && (units > BigInt(Number.MAX_SAFE_INTEGER) || Math.abs(value) >= numberLimit)) {
+    throw new RangeError(`${field.key} 的 number 精度不安全，请传入原始十进制字符串`);
+  }
+  const sign = match[1] === '-' && units !== 0n ? '-' : '';
+  return `${sign}${integer}.${padded}`;
+}
+
+function dateString(value, field) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    throw new TypeError(`${field.key} 必须严格使用 YYYY-MM-DD 字符串`);
+  }
+  const [year, month, day] = value.split('-').map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month - 1]) {
+    throw new RangeError(`${field.key} 不是有效公历日期`);
+  }
+  return value;
+}
+
+function normalizeValue(value, field) {
+  if (value === null) return null;
+  switch (field.type) {
+    case 'money':
+    case 'decimal':
+      return fixedDecimal(value, field);
+    case 'text':
+      if (typeof value !== 'string') {
+        throw new TypeError(`${field.key} 必须是字符串，工号及银行卡号应保留原始文本`);
+      }
+      return value;
+    case 'date':
+      return dateString(value, field);
+    case 'boolean': {
+      if (typeof value === 'boolean') return value;
+      if (value === 1 || value === 0) return value === 1;
+      if (typeof value === 'string') {
+        const token = value.trim().toUpperCase();
+        if (['是', '实习生', '1', 'TRUE', 'Y'].includes(token)) return true;
+        if (['否', '非实习生', '0', 'FALSE', 'N'].includes(token)) return false;
+      }
+      throw new TypeError(`${field.key} 必须是明确的实习布尔标识`);
+    }
+    default:
+      throw new TypeError(`不支持的工资字段类型: ${field.type}`);
+  }
+}
+
+/**
+ * Convert a partial { JS key: value } record to { SQL column: normalized value }.
+ * No defaulting, recalculation, rounding or employee lookup. Explicit null survives.
+ * @param {Record<string, unknown>} values
+ * @returns {Record<string, string | boolean | null>}
+ */
+export function normalizePayrollValues(values) {
+  const entries = recordEntries(values, 'values');
+  for (const [key] of entries) {
+    if (!fieldsByKey.has(key)) throw new TypeError(`未知工资字段: ${key}`);
+  }
+  return Object.fromEntries(entries.map(([key, value]) => {
+    const field = fieldsByKey.get(key);
+    return [field.column, normalizeValue(value, field)];
+  }));
+}
+
+/**
+ * Map legacy headers to JS keys WITHOUT coercing source values or finding people.
+ * Priority: exact standard label > equivalent standard label > JS key > alias.
+ * Alias ties use the declared alias order; otherwise the first source column wins.
+ * Recognized but superseded columns remain in unmapped for caller review.
+ * @param {Record<string, unknown>} row
+ * @returns {{ values: Record<string, unknown>, unmapped: Record<string, unknown> }}
+ */
+export function fromLegacyPayrollRow(row) {
+  const entries = recordEntries(row, 'row');
+  const selected = new Map();
+  for (const [header, value] of entries) {
+    const standard = standardHeaders.get(headerKey(header));
+    const direct = fieldsByKey.get(header);
+    const alias = aliasHeaders.get(headerKey(header));
+    const candidate = standard
+      ? { field: standard, priority: header === standard.label ? 4 : 3, aliasIndex: -1 }
+      : direct ? { field: direct, priority: 2, aliasIndex: -1 }
+        : alias ? { field: alias.field, priority: 1, aliasIndex: alias.index } : null;
+    if (!candidate) continue;
+    const previous = selected.get(candidate.field.key);
+    if (!previous || candidate.priority > previous.priority
+      || (candidate.priority === previous.priority && candidate.aliasIndex < previous.aliasIndex)) {
+      selected.set(candidate.field.key, { ...candidate, header, value });
+    }
+  }
+  const consumed = new Set([...selected.values()].map(item => item.header));
+  return {
+    values: Object.fromEntries([...selected].map(([key, item]) => [key, item.value])),
+    unmapped: Object.fromEntries(entries.filter(([header]) => !consumed.has(header))),
+  };
+}

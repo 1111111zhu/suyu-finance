@@ -53,3 +53,11 @@ test('combined benefits upload explicitly names each missing worksheet',async()=
 test('tax refund or supplement column takes precedence and joins by employee name',async()=>{
  for(const header of ['应补（退）税额','应补(退)税额','本月应补（退）税额（元）']){
   const a=await setup();await a.importFiles([file('数据.xlsx',[['明细',[['姓名',header,'税','累计应纳税额','已缴税额','应补（退）税额说明'],['乙',200,999,800,600,'说明'],['甲',-50,999,300,350,'说明']]]])],'tax');
+  assert.equal(a.run('employees[0].tax'),-50);assert.equal(a.run('employees[0].net'),1050);assert.equal(a.run('employees[1].tax'),200);assert.equal(a.run('employees[1].net'),1800);
+  const ws=a.run('detailSheet(false)'),descriptors=a.run('exportDescriptors(false)'),column=XLSX.utils.encode_col(descriptors.findIndex(x=>x[1]==='tax'));assert.equal(ws[column+'3'].v,-50);
+ }
+});
+test('tax supplement headers work for automatic workbook detection and reject invalid amounts',async()=>{
+ const a=await setup();await a.importFiles([file('数据.xlsx',[['明细',[['姓名','应补（退）税额'],['甲',75]]]])]);assert.equal(a.run('employees[0].tax'),75);
+ for(const grid of [[['姓名','应补（退）税额'],['甲','错误']],[['姓名','应补（退）税额','本月应补（退）税额'],['甲',1,2]]]){await a.importFiles([file('坏.xlsx',[['明细',grid]])],'tax');assert.equal(a.run('employees[0].tax'),75);assert.ok(a.run('importSession().items.length')>0);}
+});
