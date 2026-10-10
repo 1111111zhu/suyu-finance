@@ -1,6 +1,12 @@
-const fs=require('node:fs'),http=require('node:http'),path=require('node:path'),assert=require('node:assert/strict');
-const {Readable}=require('node:stream');const {pathToFileURL}=require('node:url');
-const {chromium}=require(process.env.PAYROLL_PLAYWRIGHT_MODULE || 'playwright');
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {Readable} from 'node:stream';
+import {pathToFileURL, fileURLToPath} from 'node:url';
+const playwrightModule=process.env.PAYROLL_PLAYWRIGHT_MODULE;
+const {chromium}=await import(playwrightModule ? pathToFileURL(path.join(playwrightModule,'index.mjs')).href : 'playwright');
+const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(__dirname,'..');
 (async()=>{
  const {createCalculationJobs}=await import(pathToFileURL(path.join(root,'server/payroll/calculation-jobs.mjs')));
@@ -70,6 +76,15 @@ const root=path.resolve(__dirname,'..');
    return {count:employees.length,grossMs,ticks,gross:employees[0].gross,net:employees[0].net,cancelRetry:true,automatic:true};
   });
   assert(result.ticks>3);assert(requests.includes('POST')&&requests.includes('GET')&&requests.includes('DELETE'));
+  const mail=await browser.newPage();mail.on('pageerror',error=>errors.push(error.message));
+  await mail.goto(`http://127.0.0.1:${server.address().port}/salary/email.html`);
+  await mail.locator('#file').setInputFiles({name:'synthetic-payroll.csv',mimeType:'text/csv',buffer:Buffer.from('姓名,实发工资,公司总成本,部门\n测试甲,10000,12000,研发\n','utf8')});
+  await mail.waitForFunction(()=>document.querySelector('#status').textContent.includes('已读取 1 人'));
+  assert.equal(await mail.locator('#total').inputValue(),'12000');
+  assert.equal(await mail.locator('#average').inputValue(),'12000');
+  assert((await mail.locator('#body').inputValue()).includes('本月合计发薪成本12,000.00元'));
+  assert((await mail.locator('#preview').innerText()).includes('董博'));
+  result.emailCsv=true;
   assert.deepEqual(errors,[]);console.log(JSON.stringify(result));
  }finally{await browser.close();jobs.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
