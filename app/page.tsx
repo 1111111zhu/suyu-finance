@@ -72,8 +72,8 @@ export default function Home() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ rd: true, salary: false });
   const [activeItemId, setActiveItemId] = useState(initialItemId);
   const [visitedItems, setVisitedItems] = useState<Record<string, boolean>>({ [initialItemId]: true });
-  useEffect(()=>{if(access?.capabilities?.rd&&!access.capabilities.payroll&&activeItemId.startsWith('salary')){setActiveItemId('rd-projects');setVisitedItems({'rd-projects':true});}},[access,activeItemId]);
-  useEffect(()=>{if(access?.capabilities?.payroll&&!access.capabilities.rd&&!activeItemId.startsWith('salary')){setActiveItemId('salary-auto');setVisitedItems({'salary-auto':true});setExpandedGroups({salary:true});}},[access,activeItemId]);
+  useEffect(()=>{if(access?.capabilities?.rd&&!access.capabilities.payroll&&activeItemId.startsWith('salary')){const timer=setTimeout(()=>{setActiveItemId('rd-projects');setVisitedItems({'rd-projects':true});},0);return()=>clearTimeout(timer);}},[access,activeItemId]);
+  useEffect(()=>{if(access?.capabilities?.payroll&&!access.capabilities.rd&&!activeItemId.startsWith('salary')){const timer=setTimeout(()=>{setActiveItemId('salary-auto');setVisitedItems({'salary-auto':true});setExpandedGroups({salary:true});},0);return()=>clearTimeout(timer);}},[access,activeItemId]);
   const rosterMapping = useRef<unknown>(null);
   const pendingRoster = useRef<{ id: string; payload: unknown } | null>(null);
 
@@ -138,7 +138,7 @@ export default function Home() {
   }
 
   if(!access)return <main style={{padding:40}}>正在核验访问权限…</main>;
-  if(!access.capabilities?.rd&&!access.capabilities?.payroll)return <main style={{padding:40}}><h1>财务工作台</h1><p>请使用企业微信登录后访问。</p><a href="/api/auth/login">企业微信登录</a></main>;
+  if(!access.capabilities?.rd&&!access.capabilities?.payroll)return <main style={{padding:40}}><h1>财务工作台</h1><p>请使用企业微信登录后访问。</p><button type="button" onClick={()=>window.location.assign("/api/auth/login")}>企业微信登录</button></main>;
   return <div className="local-workspace">
     <aside className="local-sidebar" aria-label="业务导航">
       <div className="local-brand" aria-label="财务系统"><span className="local-brand-mark" aria-hidden="true" /></div>
