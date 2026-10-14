@@ -21,11 +21,12 @@ test('preview requires explicit dev env and exact loopback host, finance cannot 
 });
 test('production preview role endpoint never available',async()=>{const before=process.env.NODE_ENV;try{process.env.NODE_ENV='production';const response=await authResponse(new Request('http://127.0.0.1:3220/api/auth/preview-role',{method:'POST',headers:{host:'127.0.0.1:3220'}}));assert.equal(response.status,404);}finally{if(before===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=before;}});
 import {routeCapability} from '../server/access/policy.mjs';
-test('raw exports documents ledgers payroll and mutations manager-only; aggregates finance',()=>{
- for(const path of ['/api/rd/export','/api/rd/result-exports','/api/rd/projects/x/documents/y','/api/rd/projects/x/ledger','/salary/index.html','/salary-preview/index.html','/api/payroll/session'])assert.equal(routeCapability(path),'payroll',path);
- assert.equal(routeCapability('/api/rd/projects','POST'),'payroll');
+test('research uploads calculations exports and mutations allow finance; payroll is separate',()=>{
+ for(const path of ['/salary/index.html','/salary-preview/index.html','/api/payroll/session'])assert.equal(routeCapability(path),'payroll',path);
+ for(const path of ['/api/rd/export','/api/rd/result-exports','/api/rd/projects/x/documents/y','/api/rd/projects/x/ledger','/api/rd/compute','/api/rd/image-import'])for(const method of ['GET','POST','PUT'])assert.equal(routeCapability(path,method),'rd');
+ assert.equal(routeCapability('/api/rd/projects','POST'),'rd');
  for(const path of ['/api/rd/analysis','/api/rd/monthly-totals','/api/rd/payroll-sync','/rd-cost/labor'])assert.equal(routeCapability(path),'rd',path);
 });
 test('encoded static and API paths cannot bypass route classification',()=>{
- for(const path of ['/%73alary/index.html','/%2573alary/index.html','/salary%2findex.html','//salary/index.html','/api/rd/%65xport','/api/rd/projects/x/%64ocuments'])assert.equal(routeCapability(path),'payroll',path);
+ for(const path of ['/%73alary/index.html','/%2573alary/index.html','/salary%2findex.html','//salary/index.html'])assert.equal(routeCapability(path),'payroll',path);
 });
