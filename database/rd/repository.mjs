@@ -2,7 +2,7 @@ import {storeArtifact,readArtifact} from './artifact-store.mjs';
 import { exportResults } from './result-exports.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { withTransaction } from '../payroll/pool.mjs';
-import { confirmProjectBatch } from './batch.mjs';
+import { confirmProjectBatch, recordProjectBatches } from './batch.mjs';
 import { importAnalysisWorkbook } from './analysis-import.mjs';
 import { manage as manageCatalogItem, listTrash as listCatalogTrash, lockCatalog } from './management.mjs';
 
@@ -222,5 +222,5 @@ export function createRdRepository(pool) {
     const file=metadata[index],content=await readArtifact(pool,{kind:'source_document',objectId:runId+':'+index,sha256:file.sha256});
     return {...file,content};
   }
-  return { batchSources, recordProjectBatch: input=>confirmProjectBatch(pool,input), exportResults:(input,download)=>exportResults(pool,input,download), listPlatforms, listMonthlyTotals, listAnalysis, importAnalysisWorkbook: input=>importAnalysisWorkbook(pool,input), confirmProjectBatch: input=>confirmProjectBatch(pool,input), listProjects, getProject, listLedger, listProjectDocuments, getProjectDocument, createProject, setProjectStatus, removeProject, recordCalculation, exportData, importLegacy, manage: input=>manageCatalogItem(pool,input), listTrash: ()=>listCatalogTrash(pool) };
+  return { recordProjectBatches: inputs=>recordProjectBatches(pool,inputs), batchSources, recordProjectBatch: input=>confirmProjectBatch(pool,input), exportResults:(input,download)=>exportResults(pool,input,download), listPlatforms, listMonthlyTotals, listAnalysis, importAnalysisWorkbook: input=>importAnalysisWorkbook(pool,input), confirmProjectBatch: input=>confirmProjectBatch(pool,input), listProjects, getProject, listLedger, listProjectDocuments, getProjectDocument, createProject, setProjectStatus, removeProject, recordCalculation, exportData, importLegacy, manage: input=>manageCatalogItem(pool,input), listTrash: ()=>listCatalogTrash(pool) };
 }

@@ -10,7 +10,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const embedded = searchParams.get("embed") === "1";
   useEffect(() => {
     if (embedded) return;
-    const section = pathname.startsWith("/scenario") ? "rd-assistant"
+    const section = pathname.startsWith("/projects") ? "rd-platforms"
+      : pathname.startsWith("/scenario") ? "rd-assistant"
       : pathname.startsWith("/rd-cost/analysis") ? "rd-analysis" : "rd-calculation";
     window.location.replace(`/?section=${section}`);
   }, [embedded, pathname]);

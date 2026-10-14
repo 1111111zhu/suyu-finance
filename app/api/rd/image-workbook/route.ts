@@ -1,0 +1,4 @@
+import {imageWorkbook} from '../../../../server/rd/compute.mjs';
+import {assertRdAuthorized,assertSameOrigin,rdError} from '../_database';
+export const runtime='nodejs';
+export async function POST(request:Request){try{await assertRdAuthorized(request);assertSameOrigin(request);let size=0;const chunks:Uint8Array[]=[];const reader=request.body?.getReader();if(!reader)throw Object.assign(new Error('缺少复核内容。'),{status:422});try{for(;;){const {value,done}=await reader.read();if(done)break;size+=value.length;if(size>8*1024*1024){await reader.cancel();throw Object.assign(new Error('复核表格过大。'),{status:413});}chunks.push(value);}}finally{reader.releaseLock();}const bytes=await imageWorkbook(JSON.parse(Buffer.concat(chunks).toString('utf8')));return new Response(new Uint8Array(bytes),{headers:{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Cache-Control':'no-store'}});}catch(error){return rdError(error);}}

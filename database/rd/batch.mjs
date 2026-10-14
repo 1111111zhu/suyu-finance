@@ -36,7 +36,7 @@ async function writeBatch(client,input) {
   const hash=createHash('sha256').update(JSON.stringify(input)).digest('hex');
   const resultFile=input.resultFile?validateResultFile(input.resultFile):null;
   const sourceFiles=validateSourceFiles(input);
-  const stored={...input,sourceFiles:sourceFiles.map(({name,sha256,content})=>({name,sha256,byteSize:content.length})),resultFile:resultFile?{filename:resultFile.filename,sha256:resultFile.sha256}:undefined};
+  const stored={...input,sourceFiles:sourceFiles.map(({name,sha256,content,byteSize})=>({name,sha256,byteSize:content?.length??byteSize})),resultFile:resultFile?{filename:resultFile.filename,sha256:resultFile.sha256}:undefined};
     // All writers of the same accounting month serialize; the complete scope snapshot is replaced.
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`rd-batch:${scope}:${period}`]);
     await client.query("SELECT pg_advisory_xact_lock(hashtext('rd-catalog-write'))");
@@ -88,7 +88,7 @@ async function writeBatch(client,input) {
       VALUES($1,$2,$3,$4,$5,$6,'confirmed',CURRENT_TIMESTAMP)`,[runId,input.requestKey,scope,period,hash,JSON.stringify(stored)]);
     if(resultFile) await client.query('INSERT INTO rd.result_files(run_id,filename,sha256,content) VALUES($1,$2,$3,$4)',[runId,resultFile.filename,resultFile.sha256,resultFile.content]);
     if(resultFile) await storeArtifact(client,{kind:'result_file',objectId:runId,...resultFile});
-    for(let index=0;index<sourceFiles.length;index++)await storeArtifact(client,{kind:'source_document',objectId:`${runId}:${index}`,...sourceFiles[index]});
+    for(let index=0;index<sourceFiles.length;index++){const source=sourceFiles[index];const content=source.load?await source.load():source.content;if(createHash('sha256').update(content).digest('hex')!==source.sha256||content.length!==(source.byteSize??content.length))fail('来源文件摘要或大小校验失败');await storeArtifact(client,{kind:'source_document',objectId:`${runId}:${index}`,...source,content});}
     if(superseded.rowCount) await client.query(`UPDATE rd.calculation_runs SET superseded_by=$1 WHERE id=ANY($2::uuid[])`,[runId,superseded.rows.map(row=>row.id)]);
     for(const row of input.projects) for(const item of row.costs) {
       if(cents(item.amount)===0) continue;
@@ -108,10 +108,10 @@ export async function confirmProjectBatch(pool,input) { return withTransaction(p
 export const recordProjectBatch=confirmProjectBatch;
 export function validateResultFile(file) {
  if(!file || typeof file.filename!=='string' || !file.filename.endsWith('.xlsx') || /[\\/]/.test(file.filename) || file.filename.length>255) fail('归档文件名无效');
- if(typeof file.base64!=='string'||file.base64.length>41943040||!file.base64.length||file.base64.length%4||!/^[A-Za-z0-9+/]*={0,2}$/.test(file.base64)) fail('归档文件编码无效');
+ if(typeof file.base64!=='string'||file.base64.length>69905068||!file.base64.length||file.base64.length%4||!/^[A-Za-z0-9+/]*={0,2}$/.test(file.base64)) fail('归档文件编码无效');
  const content=Buffer.from(file.base64,'base64');
- if(content.length>31457280||content.length<4||content.toString('base64')!==file.base64) fail('归档文件大小无效');
- try {let expanded=0;const files=unzipSync(content,{filter:file=>{expanded+=file.originalSize;if(expanded>67108864)fail('Excel解压后过大');return ['[Content_Types].xml','xl/workbook.xml'].includes(file.name);}});if(!files['[Content_Types].xml']||!files['xl/workbook.xml'])fail('无效Excel归档');}catch{fail('无效Excel归档');}
+ if(content.length>52428800||content.length<4||content.toString('base64')!==file.base64) fail('归档文件大小无效');
+ try {let expanded=0;const files=unzipSync(content,{filter:file=>{expanded+=file.originalSize;if(expanded>536870912)fail('Excel解压后过大');return ['[Content_Types].xml','xl/workbook.xml'].includes(file.name);}});if(!files['[Content_Types].xml']||!files['xl/workbook.xml'])fail('无效Excel归档');}catch{fail('无效Excel归档');}
  return {filename:file.filename,content,sha256:createHash('sha256').update(content).digest('hex')};
 }
 export async function recordProjectBatches(pool,inputs) {
@@ -127,14 +127,15 @@ export async function recordProjectBatches(pool,inputs) {
 
 export function validateSourceFiles(input) {
  if(input.sourceFiles===undefined)return [];
- if(!Array.isArray(input.sourceFiles)||input.sourceFiles.length>20||!Array.isArray(input.files)||input.files.length!==input.sourceFiles.length)fail('来源文件与核算证据不一致');
+ if(!Array.isArray(input.sourceFiles)||input.sourceFiles.length>(input.sourceFiles.every(file=>typeof file?.load==='function')?200:100)||!Array.isArray(input.files)||input.files.length!==input.sourceFiles.length)fail('来源文件与核算证据不一致');
  let size=0;
  return input.sourceFiles.map((file,index)=>{
   if(typeof file?.name!=='string'||!file.name.length||file.name.length>255||/[\\/\x00-\x1f]/.test(file.name)||!/^[a-f0-9]{64}$/.test(file.sha256||''))fail('来源文件名称或摘要无效');
   const evidence=input.files[index];if(evidence?.name!==file.name||evidence?.sha256!==file.sha256)fail('来源文件与核算证据不一致');
-  if(typeof file.base64!=='string'||!file.base64.length||file.base64.length>27962028||file.base64.length%4||!/^[A-Za-z0-9+/]*={0,2}$/.test(file.base64))fail('来源文件编码或大小无效');
+  if(typeof file.load==='function'){if(!Number.isInteger(file.byteSize)||file.byteSize<1||file.byteSize>50*1024*1024)fail('来源文件大小无效');size+=file.byteSize;if(size>10000*1024*1024)fail('来源批次大小无效');return {...file};}
+  if(typeof file.base64!=='string'||!file.base64.length||file.base64.length>69905068||file.base64.length%4||!/^[A-Za-z0-9+/]*={0,2}$/.test(file.base64))fail('来源文件编码或大小无效');
   const content=Buffer.from(file.base64,'base64');size+=content.length;
-  if(content.length>20*1024*1024||size>30*1024*1024||content.toString('base64')!==file.base64||createHash('sha256').update(content).digest('hex')!==file.sha256)fail('来源文件摘要或大小校验失败');
+  if(content.length>50*1024*1024||size>5000*1024*1024||content.toString('base64')!==file.base64||createHash('sha256').update(content).digest('hex')!==file.sha256)fail('来源文件摘要或大小校验失败');
   return {name:file.name,sha256:file.sha256,content};
  });
 }

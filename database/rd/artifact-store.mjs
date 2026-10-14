@@ -15,7 +15,7 @@ async function verifiedBytes(path,sha256,size) {
  try {
   handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
   const stat=await handle.stat();
-  if(!stat.isFile()||stat.size!==Number(size)||stat.size>31457280)fail();
+  if(!stat.isFile()||stat.size!==Number(size)||stat.size>52428800)fail();
   const bytes=await handle.readFile();
   if(digest(bytes)!==sha256)fail();
   return bytes;
@@ -23,7 +23,7 @@ async function verifiedBytes(path,sha256,size) {
 }
 /** Files are content addressed, never named by user input; registry writes share caller's transaction. */
 export async function storeArtifact(client,{kind,objectId,content,sha256}) {
- if(!['project_document','result_file','source_document'].includes(kind)||typeof objectId!=='string'||!objectId||!Buffer.isBuffer(content)||!content.length||content.length>31457280)fail();
+ if(!['project_document','result_file','source_document'].includes(kind)||typeof objectId!=='string'||!objectId||!Buffer.isBuffer(content)||!content.length||content.length>52428800)fail();
  const actual=digest(content);if(sha256&&sha256!==actual)fail();
  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['rd-artifact:'+actual]);
  const filename=actual+'.bin',path=join(await storageRoot(),filename);

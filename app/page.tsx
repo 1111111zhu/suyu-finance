@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import "./local-workspace.css";
+import LoginPanel from "./login-panel";
 
 type NavItem = {
   id: string;
@@ -37,9 +38,8 @@ const groups: NavGroup[] = [
     label: "研发费用",
     icon: icons.rd,
     items: [
-      { id: "rd-projects", label: "研发项目", description: "按项目状态跟踪研发项目并汇总费用", src: "/projects?embed=1", icon: icons.folder },
-      { id: "rd-calculation", label: "研发费用测算", description: "上传资料并完成研发费用测算", src: "/rd-cost?embed=1", icon: icons.rd },
-      { id: "rd-platforms", label: "平台管理", description: "管理平台项目与费用归集", src: "/projects/platforms?embed=1", icon: icons.folder },
+      { id: "rd-platforms", label: "项目管理", description: "按平台筛选并管理研发项目与费用归集", src: "/projects/platforms?embed=1", icon: icons.folder },
+      { id: "rd-calculation", label: "费用测算", description: "上传资料并完成研发费用测算", src: "/rd-cost?embed=1", icon: icons.rd },
       { id: "rd-analysis", label: "研发费用分析", description: "月度趋势与各项费用构成", src: "/rd-cost/analysis?embed=1", icon: icons.analysis },
       { id: "rd-assistant", label: "AI 助手", description: "辅助整理研发费用场景与材料", src: "/scenario/1?embed=1", icon: icons.bot },
     ],
@@ -63,16 +63,20 @@ function NavIcon({ children }: { children: ReactNode }) {
 }
 
 export default function Home() {
-  const [access,setAccess]=useState<{user?:{role:string;displayName:string;local?:boolean};capabilities?:{rd:boolean;payroll:boolean}}|null>(null);
-  useEffect(()=>{let live=true; const refresh=()=>fetch('/api/auth/session',{cache:'no-store'}).then(r=>r.json()).then(data=>{if(live)setAccess(data as NonNullable<typeof access>)}).catch(()=>{if(live)setAccess({})});refresh();const timer=setInterval(refresh,60000);return()=>{live=false;clearInterval(timer)};},[]);
+  const [access,setAccess]=useState<{user?:{role:string;displayName:string;local?:boolean};capabilities?:{rd:boolean;payroll:boolean};configured?:boolean;passwordConfigured?:boolean}|null>(null);
+  useEffect(()=>{let live=true; const refresh=()=>fetch('/api/auth/session',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('会话核验失败');return r.json()}).then(data=>{if(!live)return;const session=data as NonNullable<typeof access>;setAccess(session);if(!session.user&&session.configured&&/\bwxwork\b/i.test(navigator.userAgent)&&new URLSearchParams(window.location.search).get('login')!=='password')window.location.replace('/api/auth/login');}).catch(()=>{if(live)setAccess({})});refresh();const timer=setInterval(refresh,60000);return()=>{live=false;clearInterval(timer)};},[]);
   const visibleGroups=groups.filter(group=>group.id==='salary'?access?.capabilities?.payroll:access?.capabilities?.rd);
   const searchParams = useSearchParams();
   const requestedItemId = searchParams.get("section");
-  const initialItemId = groups.some((group) => group.items.some((item) => item.id === requestedItemId)) ? requestedItemId! : "rd-projects";
+  const resolvedItemId = requestedItemId === "rd-projects" ? "rd-platforms" : requestedItemId;
+  const initialItemId = groups.some((group) => group.items.some((item) => item.id === resolvedItemId)) ? resolvedItemId! : "rd-platforms";
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ rd: true, salary: false });
   const [activeItemId, setActiveItemId] = useState(initialItemId);
   const [visitedItems, setVisitedItems] = useState<Record<string, boolean>>({ [initialItemId]: true });
-  useEffect(()=>{if(access?.capabilities?.rd&&!access.capabilities.payroll&&activeItemId.startsWith('salary')){setActiveItemId('rd-projects');setVisitedItems({'rd-projects':true});}},[access,activeItemId]);
+  useEffect(() => {
+    if (requestedItemId === "rd-projects") window.history.replaceState(null, "", "/?section=rd-platforms");
+  }, [requestedItemId]);
+  useEffect(()=>{if(access?.capabilities?.rd&&!access.capabilities.payroll&&activeItemId.startsWith('salary')){setActiveItemId('rd-platforms');setVisitedItems({'rd-platforms':true});}},[access,activeItemId]);
   useEffect(()=>{if(access?.capabilities?.payroll&&!access.capabilities.rd&&!activeItemId.startsWith('salary')){setActiveItemId('salary-auto');setVisitedItems({'salary-auto':true});setExpandedGroups({salary:true});}},[access,activeItemId]);
   const rosterMapping = useRef<unknown>(null);
   const pendingRoster = useRef<{ id: string; payload: unknown } | null>(null);
@@ -138,7 +142,7 @@ export default function Home() {
   }
 
   if(!access)return <main style={{padding:40}}>正在核验访问权限…</main>;
-  if(!access.capabilities?.rd&&!access.capabilities?.payroll)return <main style={{padding:40}}><h1>财务工作台</h1><p>请使用企业微信登录后访问。</p><a href="/api/auth/login">企业微信登录</a></main>;
+  if(!access.capabilities?.rd&&!access.capabilities?.payroll)return access.user?<main style={{padding:40}}><h1>财务工作台</h1><p>当前账号没有财务系统访问权限，请联系管理员。</p></main>:<LoginPanel wecomConfigured={!!access.configured} passwordConfigured={!!access.passwordConfigured}/>;
   return <div className="local-workspace">
     <aside className="local-sidebar" aria-label="业务导航">
       <div className="local-brand" aria-label="财务系统"><span className="local-brand-mark" aria-hidden="true" /></div>

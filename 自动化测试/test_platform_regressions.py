@@ -18,6 +18,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "public" / "py"))
 
 from rd_cost_workflow_v1.engine import (  # noqa: E402
     LedgerRecord,
+    RuleError,
     OUTPUT_TEMPLATE,
     Project,
     SalaryRow,
@@ -96,22 +97,13 @@ class PlatformRegressionTests(unittest.TestCase):
         self.assertEqual(candidates[0]["status"], "待确认")
         self.assertIn("子项目归集", candidates[0]["reason"])
 
-    def test_browser_generated_calculation_script_compiles(self) -> None:
-        """Prevent indentation regressions inside the R&D workbench Python template."""
-        page_source = (PROJECT_ROOT / "app" / "rd-cost" / "page.tsx").read_text(encoding="utf-8")
-        match = re.search(
-            r"await runtime\.runPythonAsync\(\s*`(.*?)`\s*,?\s*\);",
-            page_source,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(match, "未找到浏览器端测算 Python 模板")
-        calculation_source = (
-            match.group(1)
-            .replace(r"\n", "\n")
-            .replace('${paths.join(",")}', 'Path("/work/input_1.xlsx")')
-            .replace('${accountingYear}', '2025')
-        )
-        compile(calculation_source, "browser_calculation_template.py", "exec")
+    def test_server_calculation_worker_compiles(self) -> None:
+        """Calculation runs in an isolated server process, not page JS."""
+        for path in (
+            PROJECT_ROOT / "server" / "rd" / "compute.py",
+            PROJECT_ROOT / "public" / "py" / "rd_cost_workflow_v1" / "excel_formulas.py",
+        ):
+            compile(path.read_text(encoding="utf-8"), str(path), "exec")
 
     def test_browser_rule_python_sources_compile(self) -> None:
         """网页端会直接加载这些源码；发布前必须拦截任何 Python 语法错误。"""
@@ -414,24 +406,11 @@ class PlatformRegressionTests(unittest.TestCase):
             )
             summary = workbook["项目分类明细汇总表1月"]
 
-        self.assertEqual(
-            [summary.cell(1, col).value for col in range(1, 5)],
-            ["序号", "费用项目", "研发项目", "费用金额（元）"],
-        )
-        self.assertEqual(
-            [summary.cell(2, col).value for col in range(1, 5)],
-            [1, "FYXM02_SYS  运费", "RD9999  研发公摊", 100],
-        )
-        self.assertEqual(
-            [summary.cell(3, col).value for col in range(1, 5)],
-            [None, "FYXM02_SYS  运费 小计", None, 100],
-        )
-        self.assertEqual(
-            [summary.cell(4, col).value for col in range(1, 5)],
-            [2, "FYXM28_SYS  直接投入(材料、燃料)", "RD1260301  生产自研工装", 50],
-        )
+        self.assertEqual(summary.max_row,source.max_row)
+        self.assertEqual(summary.max_column,source.max_column)
+        self.assertEqual(list(summary.values),list(source.values))
 
-    def test_oversized_combination_copy_filters_non_template_fee_rows(self) -> None:
+    def test_oversized_combination_copy_keeps_all_source_rows(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             source_path = Path(temp_dir) / "核算维度与科目组合表.xlsx"
             source_book = Workbook()
@@ -448,24 +427,13 @@ class PlatformRegressionTests(unittest.TestCase):
 
             workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)
             warnings: list[str] = []
-            copy_summary_to_template(
-                workbook,
-                (source_path, "Sheet", "combination"),
-                [],
-                month=1,
-                warnings=warnings,
-            )
-            summary = workbook["项目分类明细汇总表1月"]
-            copied_values = [
-                summary.cell(row, 2).value
-                for row in range(2, summary.max_row + 1)
-                if summary.cell(row, 2).value
-            ]
-
-        self.assertIn("FYXM02_SYS  运费", copied_values)
-        self.assertIn("FYXM08_SYS  折旧费用", copied_values)
-        self.assertTrue(all("企业基本养老保险" not in str(value) for value in copied_values))
-        self.assertTrue(any("未进入固定费用页" in warning for warning in warnings))
+            sheet_names=list(workbook.sheetnames)
+            copy_summary_to_template(workbook,(source_path,"Sheet","combination"),[],month=1,warnings=warnings)
+            summary=workbook["项目分类明细汇总表1月"]
+            self.assertEqual(workbook.sheetnames,sheet_names)
+            self.assertEqual(list(summary.values),list(source.values))
+            self.assertEqual(summary.max_row,source.max_row)
+            self.assertFalse(any("剔除" in warning for warning in warnings))
 
     def test_material_allocation_overwrites_old_helper_addition(self) -> None:
         workbook = load_workbook(OUTPUT_TEMPLATE, data_only=False)

@@ -7,6 +7,7 @@ export function routeCapability(path,method='GET'){
  path=canonicalPath(path);
  if(path==='/salary'||path.startsWith('/salary/')||path.startsWith('/salary-directory')||path.startsWith('/salary-preview')||path.startsWith('/api/payroll/'))return 'payroll';
  if(path.startsWith('/api/rd/')){
+  if(path.startsWith('/api/rd/compute'))return 'payroll';
   if(path.startsWith('/api/rd/payroll-sync'))return 'rd'; // route itself separates source reads and aggregate reads.
   if(method!=='GET'||/\/(?:export|result-exports|import|calculations|calculation-batches|ledger|documents|manage|charter-ocr)(?:\/|$)/.test(path))return 'payroll';
   return 'rd';

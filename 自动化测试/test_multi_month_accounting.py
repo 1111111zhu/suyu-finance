@@ -6,7 +6,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from test_rd_accounting_output import fixtures
-from rd_cost_workflow_v1.engine import build_output, build_outputs, classify_input_workbooks, RuleError, OUTPUT_TEMPLATE
+from rd_cost_workflow_v1.engine import build_output, build_outputs, classify_input_workbooks, RuleError, OUTPUT_TEMPLATE, input_workbook_period
 
 
 def month_fixtures(folder, month, salary, first_hours):
@@ -62,6 +62,18 @@ class MultiMonthTest(unittest.TestCase):
                 for sheet in book:
                     self.assertFalse(any(cell.data_type == "e" for row in sheet for cell in row))
             self.assertEqual(hashes, {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in hashes})
+
+    def test_ledger_summary_month_is_not_accounting_period(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths = fixtures(Path(temp))
+            book = load_workbook(paths[3])
+            book.active.cell(2, 6).value = "12月月结快递费，补结2024/12/31费用"
+            book.save(paths[3])
+            self.assertEqual(input_workbook_period(paths[3]), (9, {2025}))
+            book.active.cell(2, 1).value = "2025/12/1"
+            book.save(paths[3])
+            with self.assertRaisesRegex(RuleError, "不一致或多个期间"):
+                input_workbook_period(paths[3])
 
     def test_missing_month_salary_does_not_publish_partial_results(self):
         with tempfile.TemporaryDirectory() as temp:

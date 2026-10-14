@@ -61,6 +61,9 @@ export async function grantRdRuntimePrivileges(pool, { runtimeRole }) {
     await client.query(`GRANT DELETE ON rd.ledger_entries TO "${runtime}"`);
     await client.query(`REVOKE UPDATE,DELETE ON rd.payroll_labor_snapshots,rd.artifact_registry FROM "${runtime}"`);
     await client.query(`GRANT SELECT,INSERT,DELETE ON rd.access_sessions,rd.access_oauth_states TO "${runtime}"`);
+    await client.query(`GRANT SELECT ON rd.password_accounts TO "${runtime}"`);
+    await client.query(`GRANT SELECT,INSERT,DELETE ON rd.password_sessions,rd.password_login_limits TO "${runtime}"`);
+    await client.query(`GRANT UPDATE(failures) ON rd.password_login_limits TO "${runtime}"`);
     await client.query(`GRANT UPDATE(role,display_name,checked_at) ON rd.access_sessions TO "${runtime}"`);
     await client.query(`GRANT SELECT,INSERT ON rd.payroll_labor_snapshots TO "${runtime}"`);
     await client.query(`GRANT SELECT,INSERT,UPDATE ON rd.payroll_sync_tasks,rd.payroll_labor_current TO "${runtime}"`);

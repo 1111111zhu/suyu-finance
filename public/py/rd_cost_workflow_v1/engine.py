@@ -604,7 +604,6 @@ def allocate_salary(
     project_totals = {code: Decimal("0") for code in project_codes}
     salary_total = sum((row.salary for row in salary_rows), Decimal("0"))
     matched_salary = Decimal("0")
-    allocated_total = Decimal("0")
     shared_people: list[str] = []
     global_weights = {
         item["project_code"]: item["final_hours"]
@@ -613,30 +612,24 @@ def allocate_salary(
     }
     global_hours = sum(global_weights.values(), Decimal("0"))
     if global_hours <= 0:
-        raise RuleError("工时分配率无有效项目工时，无法公摊无工时人员的工资")
+        raise RuleError("工时分配率无有效项目工时，无法分配直接人工")
+    global_rates = displayed_rates_with_residual(
+        project_codes, {code: weight / global_hours for code, weight in global_weights.items()}
+    )
+    # One salary pool uses the same displayed rates as the workbook. Individual
+    # salary levels must not change a project's share of the total labor cost.
+    project_totals.update({code: money(salary_total * global_rates[code]) for code in project_codes})
     for salary_row in salary_rows:
         matched = by_name.get(name_key(salary_row.name))
-        match_type = "姓名" if matched is not None else ""
+        match_type = "工时分配率公摊"
         row_result = {"salary": salary_row, "matched": matched, "match_type": match_type, "amounts": {}}
         if matched is None:
             # 工资表有人员、工时表无人员：按全员工时分配率公摊。
-            weights = global_weights
-            match_type = "工时分配率公摊"
             shared_people.append(salary_row.name)
-        else:
-            denominator = matched["final_hours"]
-            weights = {code: matched["final_by_project"].get(code, Decimal("0")) for code in project_codes}
-            if denominator <= 0 or abs(sum(weights.values(), Decimal("0")) - denominator) > TOLERANCE:
-                raise RuleError(f"{salary_row.name} 的项目最终工时与工时汇总不一致")
-        amounts = allocate_amount(salary_row.salary, project_codes, weights)
+        amounts = {code: money(salary_row.salary * global_rates[code]) for code in project_codes}
         matched_salary += salary_row.salary
-        for code, amount in amounts.items():
-            project_totals[code] += amount
-            allocated_total += amount
         row_result["amounts"] = amounts
         output.append(row_result)
-    if matched_salary != allocated_total:
-        raise RuleError(f"直接人工未勾稽：可分配工资={matched_salary}，已分配={allocated_total}")
     if shared_people:
         warnings.append("以下工资表人员无可用项目工时，已按工时分配率公摊：" + "、".join(shared_people))
     return output, project_totals, salary_total, matched_salary, salary_total - matched_salary
@@ -1477,104 +1470,60 @@ def copy_summary_to_template(
         return new_name
 
     if source_kind == "combination":
-        source_book = load_workbook(source_path, data_only=True, read_only=False)
-        source = source_book[source_sheet]
-        located = locate_combination_summary_sheet(source_path)
-        if located is None:
-            raise RuleError("核算维度与科目组合表在输出时未找到可整理的表头")
-        header_row = located[2]
-        headers = cell_texts(source, header_row, 100)
-        fee_col = headers[COMBINATION_CLEANUP_RULES["source_headers"][0]]
-        project_col = headers[COMBINATION_CLEANUP_RULES["source_headers"][1]]
-        amount_headers = {
-            *COMBINATION_CLEANUP_RULES["primary_amount_headers"],
-            norm(COMBINATION_CLEANUP_RULES["amount_header"]),
-        }
-        amount_cols = [
-            col for label, col in headers.items()
-            if label in amount_headers and col > project_col
-        ]
-        if not amount_cols:
-            raise RuleError("核算维度与科目组合表在输出时未找到首个借方发生额")
-        amount_col = min(amount_cols)
-        last_content_row = max(
-            (
-                row for row in range(header_row + 1, source.max_row + 1)
-                if any(source.cell(row, col).value not in (None, "") for col in (fee_col, project_col, amount_col))
-            ),
-            default=header_row,
-        )
-        source_rows = [
-            [
-                source.cell(row, fee_col).value,
-                source.cell(row, project_col).value,
-                source.cell(row, amount_col).value,
-            ]
-            for row in range(header_row + 1, last_content_row + 1)
-        ]
-        capacity = ws.max_row - 1
-        if len(source_rows) > capacity:
-            # 固定模板不可扩展。优先剔除未映射至固定费用页的分类；若仍
-            # 超限，只保留实际参与本次测算的费用行，金额计算不受影响。
-            filtered_rows: list[list[Any]] = []
-            skipped_fees: list[str] = []
-            current_fee_supported = False
-            for fee_value, project_value, amount_value in source_rows:
-                fee_text = norm(fee_value)
-                if fee_text in {"总计", "合计"}:
-                    continue
-                if fee_text and not fee_text.endswith("小计"):
-                    match = re.search(r"(FYXM\d+[_-]SYS)", fee_text, re.I)
-                    fee_code = code_key(match.group(1)) if match else ""
-                    current_fee_supported = fee_code in FEE_RULES_BY_CODE
-                    if fee_code and not current_fee_supported:
-                        skipped_fees.append(fee_text)
-                if current_fee_supported:
-                    filtered_rows.append([fee_value, project_value, amount_value])
-            if len(filtered_rows) <= capacity:
-                source_rows = filtered_rows
-                if warnings is not None and skipped_fees:
-                    labels = "、".join(dict.fromkeys(skipped_fees))
-                    warnings.append(
-                        "核算维度与科目组合表包含未进入固定费用页的分类，"
-                        f"已从项目分类明细汇总表中剔除：{labels}；直接人工仍按工资表计算"
-                    )
-        if len(source_rows) > capacity:
-            allocatable_rows = [
-                [
-                    f"{record.fee_code.replace('-', '_')}  {record.fee_name}",
-                    f"{record.project_code}  {record.project_name}".strip(),
-                    record.amount,
-                ]
-                for record in records
-                if record.fee_code in FEE_RULES_BY_CODE
-            ]
-            if len(allocatable_rows) <= capacity:
-                source_rows = allocatable_rows
-                if warnings is not None:
-                    warnings.append("项目分类明细汇总表预留区不足，已改按可测算费用明细行整理，不复制小计行")
-        if len(source_rows) > capacity:
-            raise RuleError(
-                f"核算维度与科目组合整理后有{len(source_rows)}行，"
-                f"超出固定模板项目分类明细汇总表的{capacity}行预留区域"
-            )
-        for row in range(1, ws.max_row + 1):
-            for col in range(1, 5):
-                cell = ws.cell(row, col)
-                if not isinstance(cell, MergedCell):
-                    cell.value = None
-        write_values(ws, 1, ["序号", "费用项目", "研发项目", COMBINATION_CLEANUP_RULES["amount_header"]])
-        sequence = 0
-        for target_row, (fee_value, project_value, amount_value) in enumerate(source_rows, start=2):
-            fee_text = norm(fee_value)
-            if fee_text and not fee_text.endswith("小计") and fee_text not in {"五险合计", "总计", "合计"}:
-                sequence += 1
-                sequence_value: int | None = sequence
-            else:
-                sequence_value = None
-            write_values(ws, target_row, [sequence_value, fee_value, project_value, amount_value])
-            if isinstance(amount_value, (int, float, Decimal)):
-                ws.cell(target_row, 4).number_format = "#,##0.00"
+        # Explicit user exception: this sheet is an intact source copy, not a
+        # four-column projection or a fixed-capacity template allocation table.
+        source_book = load_workbook(source_path, data_only=False, read_only=False)
+        try:
+            source = source_book[source_sheet]
+            index = wb.sheetnames.index(new_name)
+            wb.remove(ws)
+            ws = wb.create_sheet(new_name, index)
+            for row in source.iter_rows():
+                for original in row:
+                    target = ws.cell(original.row, original.column)
+                    target.value = original.value
+                    if original.has_style:
+                        # Register style components in the destination workbook;
+                        # cross-workbook style IDs must never be copied verbatim.
+                        target.font = copy(original.font)
+                        target.fill = copy(original.fill)
+                        target.border = copy(original.border)
+                        target.alignment = copy(original.alignment)
+                        target.protection = copy(original.protection)
+                        target.number_format = original.number_format
+                    if original.comment: target.comment = copy(original.comment)
+                    if original.hyperlink: target._hyperlink = copy(original.hyperlink)
+            for merged in source.merged_cells.ranges:
+                ws.merge_cells(str(merged))
+            # Include unstyled/blank cells: this workbook and the template can
+            # have different defaults, and merged placeholders keep borders.
+            for row in source.iter_rows():
+                for original in row:
+                    target = ws.cell(original.row, original.column)
+                    target.font = copy(original.font)
+                    target.fill = copy(original.fill)
+                    target.border = copy(original.border)
+                    target.alignment = copy(original.alignment)
+                    target.protection = copy(original.protection)
+                    target.number_format = original.number_format
+            for key, dimension in source.column_dimensions.items():
+                ws.column_dimensions[key] = copy(dimension)
+            for key, dimension in source.row_dimensions.items():
+                ws.row_dimensions[key] = copy(dimension)
+            ws.freeze_panes = source.freeze_panes
+            ws.sheet_view.showGridLines = source.sheet_view.showGridLines
+            ws.sheet_format = copy(source.sheet_format)
+            ws.sheet_properties = copy(source.sheet_properties)
+            ws.print_options = copy(source.print_options)
+            ws.page_margins = copy(source.page_margins)
+            ws.page_setup = copy(source.page_setup)
+            if source.print_area: ws.print_area = source.print_area
+            if source.print_title_rows: ws.print_title_rows = source.print_title_rows
+            if source.print_title_cols: ws.print_title_cols = source.print_title_cols
+            ws.auto_filter = copy(source.auto_filter)
+            ws.data_validations = copy(source.data_validations)
+        finally:
+            source_book.close()
         return new_name
 
     source_book = load_workbook(source_path, data_only=True, read_only=False)
@@ -2613,6 +2562,7 @@ def write_template_output(
     month: int,
     output_path: Path,
     warnings: list[str],
+    salary_allocations: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     if not OUTPUT_TEMPLATE.is_file():
         raise RuleError(f"缺少固定输出模板：{OUTPUT_TEMPLATE.name}")
@@ -2625,6 +2575,11 @@ def write_template_output(
     write_template_main_sheet(wb, projects, master_costs)
     if summary_source is not None:
         copy_summary_to_template(wb, summary_source, effective_records, month, warnings)
+        if summary_source[2] == "combination":
+            # Only the source-copy sheet is exempt from the template layout.
+            original_layout_signature[TEMPLATE_MONTH_SHEET] = sheet_layout_signature(
+                wb[f"项目分类明细汇总表{month or 1}月"]
+            )
     write_template_material_sheet(
         wb,
         [record for record in effective_records if record.fee_code == DIRECT_MATERIAL_CODE],
@@ -2726,6 +2681,10 @@ def write_template_output(
         if not relocated_header:
             raise RuleError(f"固定模板的{special_sheet_name}缺少费用分配结果预留区域")
         original_layout_signature[special_sheet_name] = sheet_layout_signature(special_ws)
+    from rd_cost_workflow_v1.excel_formulas import apply, save_caches
+    formula_cache = apply(wb, hours_result, projects, effective_records, salary_allocations or [],
+                          month, COST_RULES, DIRECT_MATERIAL_CODE, PUBLIC_PROJECT_CODE,
+                          norm, code_key, standard_fee_allocation_table)
     quote_internal_sheet_references(wb)
     expected = [f"项目分类明细汇总表{month or 1}月" if name == TEMPLATE_MONTH_SHEET else name for name in original_sheets]
     if wb.sheetnames != expected:
@@ -2739,6 +2698,7 @@ def write_template_output(
     wb.calculation.fullCalcOnLoad = True
     wb.calculation.forceFullCalc = True
     wb.save(output_path)
+    save_caches(output_path, formula_cache)
     return wb.sheetnames
 
 
@@ -3311,6 +3271,7 @@ def build_output(
         month,
         output_path,
         warnings,
+        salary_allocations,
     )
     # Export the exact rounded project/category matrix used by the fixed workbook.
     # Freight is already one of these categories; do not add audit other_total again.
@@ -3349,7 +3310,14 @@ def input_workbook_period(path: Path) -> tuple[int, set[int]]:
     try:
         for ws in wb.worksheets:
             inspect_label(ws.title)
-            for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 40), max_col=min(ws.max_column, 120)):
+            # Voucher narratives describe the expense (e.g. January posting of
+            # December courier fees), not the accounting period. Only inspect
+            # ledger prefaces; structured period/date fields are handled below.
+            ledger_header = next((row for row in range(1, min(ws.max_row, 30) + 1)
+                                  if "摘要" in (headers := cell_texts(ws, row, 80))
+                                  and ("借方" in headers or "贷方" in headers)), 0)
+            last_label_row = ledger_header - 1 if ledger_header else min(ws.max_row, 40)
+            for row in ws.iter_rows(min_row=1, max_row=last_label_row, max_col=min(ws.max_column, 120)) if last_label_row > 0 else []:
                 for cell in row:
                     # Only textual period labels, not project IDs or ordinary numbers.
                     if isinstance(cell.value, str):

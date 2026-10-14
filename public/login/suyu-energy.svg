@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 390" fill="none">
+ <defs>
+  <linearGradient id="base" x1="100" y1="100" x2="470" y2="390" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#c8dff6"/></linearGradient>
+  <linearGradient id="side" x1="140" y1="210" x2="470" y2="330"><stop stop-color="#a9ceef"/><stop offset="1" stop-color="#e6f3ff"/></linearGradient>
+  <linearGradient id="blue" x1="180" y1="100" x2="400" y2="230"><stop stop-color="#81baff"/><stop offset="1" stop-color="#2975d5"/></linearGradient>
+  <linearGradient id="glass" x1="300" y1="50" x2="490" y2="250"><stop stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#aad5f9" stop-opacity=".6"/></linearGradient>
+  <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="12"/></filter>
+ </defs>
+ <ellipse cx="301" cy="327" rx="212" ry="30" fill="#8fb5db" opacity=".18" filter="url(#shadow)"/>
+ <path d="m69 259 228-128 232 130v24L301 414 69 283Z" fill="url(#side)" transform="translate(0 -36)"/>
+ <path d="m69 223 228-128 232 130-228 129Z" fill="url(#base)" stroke="#f7fcff" stroke-width="3"/>
+ <path d="m92 224 205-114 208 115-204 114Z" stroke="#c3e0fa" stroke-width="1.5"/>
+ <g stroke="#83b7e6" stroke-width="2" opacity=".65"><path d="m147 236 76-43 72 40 115-64"/><path d="m249 305 59-33v-36l84-47"/><path d="m336 304 41-23 60 33"/></g>
+ <g fill="#72abe6"><ellipse cx="148" cy="236" rx="6" ry="3.5"/><ellipse cx="249" cy="305" rx="6" ry="3.5"/><ellipse cx="436" cy="314" rx="6" ry="3.5"/></g>
+ <!-- Integrated hydrogen-electric controller -->
+ <path d="m184 202 109-61 112 63v39l-111 62-110-63Z" fill="url(#blue)"/>
+ <path d="m184 202 109-61 112 63-111 62Z" fill="#dceeff" stroke="#fafdff" stroke-width="2"/>
+ <path d="m207 200 87-48 89 50-89 50Z" fill="#5b9fec"/>
+ <path d="m232 199 62-34 64 36-64 35Z" fill="#eff8ff"/>
+ <path d="m253 199 41-22 42 23-42 23Z" fill="#2878d6"/>
+ <text x="294" y="206" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="white">H₂</text>
+ <g stroke="#b6d9fc" stroke-width="3"><path d="m203 229 14 8m-1-16 14 8m-1-16 14 8m-1-16 14 8m-1-16 14 8m-1-16 14 8"/><path d="m311 275 13-8m-1-1 13-8m-1-1 13-8m-1-1 13-8m-1-1 13-8m-1-1 13-8"/></g>
+ <!-- Digital control interface -->
+ <path d="m338 57 151 85v117l-151-85Z" fill="url(#glass)" stroke="#fff" stroke-width="2"/>
+ <path d="m351 80 125 70v88l-125-70Z" fill="#f7fcff" opacity=".75"/>
+ <path d="m361 109 41 23m-41-11 72 41" stroke="#88b9e8" stroke-width="5"/>
+ <path d="m364 155 23-5 19 22 16-8 15 23 27 3" stroke="#3f96e0" stroke-width="3"/>
+ <g stroke="#b1d2ed" stroke-width="2"><path d="m362 173 100 56m-100-40 100 56"/></g>
+ <circle cx="467" cy="150" r="4" fill="#55c8b4"/>
+ <!-- Hydrogen energy nodes -->
+ <ellipse cx="141" cy="155" rx="34" ry="19" fill="#b1d7f8"/>
+ <path d="M107 155v45c0 11 68 11 68 0v-45" fill="url(#blue)"/>
+ <ellipse cx="141" cy="155" rx="34" ry="19" fill="#e5f4ff" stroke="white" stroke-width="2"/>
+ <ellipse cx="141" cy="153" rx="21" ry="11" fill="#9bcafa"/>
+ <path d="M124 180v15m10-10v15m10-10v15m10-10v15" stroke="#c1e1ff" stroke-width="3"/>
+ <path d="m108 116 30-17 30 17v23l-30 17-30-17Z" fill="url(#glass)" stroke="white"/>
+ <text x="138" y="129" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" fill="#367aca" font-weight="700">H₂</text>
+ <g transform="translate(423 269)"><path d="m0 0 35-20 35 20v27L35 47 0 27Z" fill="url(#blue)"/><path d="m0 0 35-20L70 0 35 20Z" fill="#d5edff"/><path d="m21-1 14-8 15 8-15 8Z" fill="#55beb1"/></g>
+ <g stroke="#a6cdef" stroke-width="1.5" opacity=".7"><path d="m222 95 28-16 29 16-28 17Z"/><path d="m469 91 27-15 27 15-27 15Z"/><path d="M98 282v15m-8-7h16"/></g>
+</svg>

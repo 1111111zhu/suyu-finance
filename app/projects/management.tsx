@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useRef,useState,type FormEvent} from "react";
+import {useCallback,useEffect,useRef,useState,type FormEvent} from "react";
 import {listTrash,manageRdItem,type ManagedKind,type ManagementAction,type TrashItem} from "../rd-cost/rd-client";
 import "./management.css";
 
@@ -20,17 +20,18 @@ export function ManagementDialog({request,onClose,onBusy,onMutated}:Props){
   const item="item" in request?request.item:null;
   useEffect(()=>{
     const opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
-    live.current=true;dialog.current?.showModal();cancel.current?.focus();
-    return()=>{live.current=false;dialog.current?.close();if(opener?.isConnected)opener.focus();else document.getElementById("management-trigger")?.focus();};
+    const modalElement=dialog.current;
+    live.current=true;modalElement?.showModal();cancel.current?.focus();
+    return()=>{live.current=false;modalElement?.close();if(opener?.isConnected)opener.focus();else document.getElementById("management-trigger")?.focus();};
   },[]);
   useEffect(()=>{cancel.current?.focus();},[mode]);
-  async function refreshTrash(){
+  const refreshTrash=useCallback(async()=>{
     const version=++trashVersion.current;setTrashLoading(true);setError("");
     try{const rows=await listTrash();if(live.current&&version===trashVersion.current)setTrash(rows);}
     catch(e){if(live.current&&version===trashVersion.current)setError(e instanceof Error?e.message:"回收站读取失败。");}
     finally{if(live.current&&version===trashVersion.current)setTrashLoading(false);}
-  }
-  useEffect(()=>{if(request.mode==="trash")void refreshTrash();},[]);
+  },[]);
+  useEffect(()=>{if(request.mode!=="trash")return;const timer=window.setTimeout(()=>void refreshTrash(),0);return()=>window.clearTimeout(timer);},[request.mode,refreshTrash]);
   function close(){if(!lock.current)onClose();}
   function changeMode(next:string){setError("");setMode(next);}
   function submitForm(event:FormEvent){
