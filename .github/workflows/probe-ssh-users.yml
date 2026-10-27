@@ -1,0 +1,34 @@
+name: Probe server ssh users
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: Probe SSH users
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Try candidate users
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
+          CONFIGURED_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -uo pipefail
+          echo "port=$SERVER_PORT configured_user=$CONFIGURED_USER"
+          for u in "$CONFIGURED_USER" root ubuntu lighthouse suyu deploy; do
+            out=$(ssh -p "$SERVER_PORT" -i ~/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=8 "$u@$SERVER_HOST" 'echo OK:$(id -un)@$(hostname)' 2>&1 | tail -1)
+            echo "$u -> $out"
+          done
