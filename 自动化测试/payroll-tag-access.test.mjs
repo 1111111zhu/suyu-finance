@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {memberRole,roleCapabilities,roleAllows,payrollTagIds} from '../server/access/member-policy.mjs';
-test('25 and 33 grant salary access outside finance without research access',()=>{
- assert.deepEqual(payrollTagIds,['25','33']);
+test('14 and 56 grant salary access outside finance without research access',()=>{
+ assert.deepEqual(payrollTagIds,['14','56']);
  const member={userid:'tag-user',status:1,department:[99]};
  for(const tags of [[{userlist:[{userid:'tag-user'}]},{}],[{},{userlist:[{userid:'tag-user'}]}]]) {
   assert.equal(memberRole(member,{},[],10,tags),'payroll');

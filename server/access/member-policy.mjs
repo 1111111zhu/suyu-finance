@@ -1,4 +1,4 @@
-export const payrollTagIds = Object.freeze(['25', '33']);
+export const payrollTagIds = Object.freeze(['14', '56']);
 export function memberRole(member, managerTag, departments, financeId, payrollTags = []) {
   if (member.status !== 1) return 'none';
   const explicit = tag => (tag?.userlist || []).some(user => user.userid === member.userid);
