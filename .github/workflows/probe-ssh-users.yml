@@ -26,9 +26,11 @@ jobs:
           SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
           CONFIGURED_USER: ${{ secrets.SERVER_USER }}
         run: |
-          set -uo pipefail
+          set +e
           echo "port=$SERVER_PORT configured_user=$CONFIGURED_USER"
           for u in "$CONFIGURED_USER" root ubuntu lighthouse suyu deploy; do
             out=$(ssh -p "$SERVER_PORT" -i ~/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=8 "$u@$SERVER_HOST" 'echo OK:$(id -un)@$(hostname)' 2>&1 | tail -1)
-            echo "$u -> $out"
+            rc=$?
+            echo "$u -> rc=$rc $out"
           done
+          exit 0
